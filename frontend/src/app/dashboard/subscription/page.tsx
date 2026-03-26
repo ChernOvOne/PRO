@@ -164,12 +164,7 @@ export default function SubscriptionPage() {
             <Card className="flex flex-col items-center space-y-4">
               <p className="font-semibold w-full">QR-код для подключения</p>
               <div className="p-4 bg-white rounded-2xl shadow-lg">
-                <QRCodeSVG
-                  value={sub.subUrl}
-                  size={200}
-                  errorCorrectionLevel="M"
-                  includeMargin={false}
-                />
+                <QRCodeSVG value={sub.subUrl} size={200} />
               </div>
               <p className="text-xs text-gray-500 text-center">
                 Отсканируй QR-кодом в приложении
