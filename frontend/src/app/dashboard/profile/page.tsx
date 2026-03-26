@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { User, Mail, MessageCircle, Shield, Calendar,
-         CheckCircle2, Edit3, Save, X, Loader2 } from 'lucide-react'
+         Edit3, Save, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { authApi, userApi } from '@/lib/api'
+import { authApi } from '@/lib/api'
 import type { User as UserType } from '@/types'
-import { Card, Badge, Button, Input } from '@/components/ui'
+import { Card, Badge, Input } from '@/components/ui'
 import { formatDate, formatRelative, daysUntil } from '@/lib/utils'
 
 export default function ProfilePage() {
@@ -27,17 +27,12 @@ export default function ProfilePage() {
     setSaving(true)
     try {
       const res = await fetch('/api/user/profile', {
-        method:      'PATCH',
-        credentials: 'include',
-        headers:     { 'Content-Type': 'application/json' },
-        body:        JSON.stringify({ email }),
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       })
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error || 'Ошибка')
-      }
-      const updated = await res.json()
-      setUser(updated)
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Ошибка') }
+      setUser(await res.json())
       setEditing(false)
       toast.success('Email обновлён')
     } catch (err: any) {
@@ -49,15 +44,21 @@ export default function ProfilePage() {
 
   if (loading) return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-gray-800 rounded-2xl animate-pulse" />)}
+      {[...Array(3)].map((_, i) => (
+        <div key={i} className="h-32 bg-gray-800 rounded-2xl animate-pulse" />
+      ))}
     </div>
   )
 
   if (!user) return null
 
   const daysLeft = daysUntil(user.subExpireAt)
-  const STATUS_COLOR: Record<string, 'green'|'red'|'gray'|'yellow'|'blue'> = {
-    ACTIVE: 'green', INACTIVE: 'gray', EXPIRED: 'red', TRIAL: 'blue',
+
+  const statusColor = (s: string): 'green' | 'red' | 'gray' | 'blue' => {
+    if (s === 'ACTIVE')  return 'green'
+    if (s === 'EXPIRED') return 'red'
+    if (s === 'TRIAL')   return 'blue'
+    return 'gray'
   }
 
   return (
@@ -67,9 +68,7 @@ export default function ProfilePage() {
         <p className="text-gray-400 text-sm mt-0.5">Настройки аккаунта</p>
       </div>
 
-      {/* Identity */}
       <Card className="space-y-5">
-        {/* Avatar row */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-brand-600/20 border border-brand-500/30
                           flex items-center justify-center text-2xl font-bold text-brand-300 flex-shrink-0">
@@ -79,8 +78,8 @@ export default function ProfilePage() {
             <p className="font-semibold text-lg">
               {user.telegramName || user.email?.split('@')[0] || 'Пользователь'}
             </p>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge color={STATUS_COLOR[user.subStatus] || 'gray'}>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <Badge color={statusColor(user.subStatus)}>
                 {user.subStatus === 'ACTIVE' ? 'Подписка активна' : 'Нет подписки'}
               </Badge>
               {user.role === 'ADMIN' && <Badge color="purple">Admin</Badge>}
@@ -89,7 +88,6 @@ export default function ProfilePage() {
         </div>
 
         <div className="space-y-3 border-t border-gray-800 pt-4">
-          {/* Telegram */}
           {user.telegramId && (
             <div className="flex items-center gap-3 py-2">
               <MessageCircle className="w-5 h-5 text-gray-500 flex-shrink-0" />
@@ -101,29 +99,22 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* Email */}
           <div className="flex items-start gap-3 py-2">
             <Mail className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-xs text-gray-500 mb-1">Email</p>
               {editing ? (
                 <div className="flex gap-2">
-                  <Input
-                    type="email"
-                    value={email}
+                  <Input type="email" value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="py-2 text-sm"
-                    autoFocus
-                  />
+                    placeholder="you@example.com" className="py-2 text-sm" autoFocus />
                   <button onClick={saveEmail} disabled={saving}
-                          className="p-2 bg-brand-600/20 hover:bg-brand-600/30 border border-brand-500/30
-                                     text-brand-400 rounded-xl transition-colors flex-shrink-0">
+                    className="p-2 bg-brand-600/20 hover:bg-brand-600/30 border border-brand-500/30
+                               text-brand-400 rounded-xl transition-colors flex-shrink-0">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   </button>
                   <button onClick={() => { setEditing(false); setEmail(user.email || '') }}
-                          className="p-2 text-gray-500 hover:text-white hover:bg-gray-700
-                                     rounded-xl transition-colors flex-shrink-0">
+                    className="p-2 text-gray-500 hover:text-white hover:bg-gray-700 rounded-xl transition-colors flex-shrink-0">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -133,7 +124,7 @@ export default function ProfilePage() {
                     {user.email || 'Не указан'}
                   </p>
                   <button onClick={() => setEditing(true)}
-                          className="p-1 text-gray-500 hover:text-white transition-colors">
+                    className="p-1 text-gray-500 hover:text-white transition-colors">
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -141,7 +132,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Member since */}
           <div className="flex items-center gap-3 py-2">
             <Calendar className="w-5 h-5 text-gray-500 flex-shrink-0" />
             <div>
@@ -162,7 +152,6 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      {/* Subscription summary */}
       <Card className="space-y-4">
         <h2 className="font-semibold flex items-center gap-2">
           <Shield className="w-4 h-4 text-brand-400" />
@@ -171,14 +160,13 @@ export default function ProfilePage() {
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-gray-800 rounded-xl">
             <p className="text-xs text-gray-500">Статус</p>
-              {user.subStatus}
-            </Badge>
+            <div className="mt-1">
+              <Badge color={statusColor(user.subStatus)}>{user.subStatus}</Badge>
+            </div>
           </div>
           <div className="p-3 bg-gray-800 rounded-xl">
             <p className="text-xs text-gray-500">Осталось дней</p>
-            <p className="font-bold text-lg mt-0.5">
-              {daysLeft !== null ? daysLeft : '—'}
-            </p>
+            <p className="font-bold text-lg mt-0.5">{daysLeft !== null ? daysLeft : '—'}</p>
           </div>
           {user.subExpireAt && (
             <div className="p-3 bg-gray-800 rounded-xl col-span-2">
@@ -189,7 +177,6 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      {/* Referral code */}
       <Card className="space-y-3">
         <h2 className="font-semibold flex items-center gap-2">
           <User className="w-4 h-4 text-brand-400" />
@@ -206,23 +193,18 @@ export default function ProfilePage() {
             }}
             className="text-xs px-3 py-1.5 bg-brand-600/20 hover:bg-brand-600/30
                        border border-brand-500/30 text-brand-400 rounded-lg transition-colors">
-            Копировать ссылку
+            Копировать
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Поделись ссылкой — получи бонусные дни за каждого оплатившего
-        </p>
       </Card>
 
-      {/* Danger zone */}
-      <Card className="space-y-3 border-red-900/20">
+      <Card className="space-y-3">
         <h2 className="font-semibold text-red-400 text-sm">Удаление аккаунта</h2>
         <p className="text-gray-500 text-sm">
-          Для удаления аккаунта и всех данных обратитесь в поддержку.
-          Действующая подписка не возвращается автоматически.
+          Для удаления обратитесь в поддержку.
         </p>
         <a href="https://t.me/hideyou_support" target="_blank" rel="noopener"
-           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-white transition-colors">
+           className="inline-flex text-sm text-gray-500 hover:text-white transition-colors">
           Написать в поддержку →
         </a>
       </Card>
