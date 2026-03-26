@@ -18,7 +18,7 @@ import { logger }           from '../utils/logger'
 
 const prisma = new PrismaClient()
 
-async function syncSubscriptions() {
+export async function syncSubscriptions() {
   const startTime = Date.now()
   logger.info('=== Subscription sync started ===')
 
