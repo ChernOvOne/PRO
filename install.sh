@@ -190,67 +190,127 @@ setup_env() {
 }
 
 # ── SSL ──────────────────────────────────────────────────────
+# ── Освободить порт 80 ───────────────────────────────────────
+free_port_80() {
+  if ss -tlnp 2>/dev/null | grep -q ':80 ' || lsof -i :80 2>/dev/null | grep -q LISTEN; then
+    info "Порт 80 занят — освобождаю..."
+    systemctl stop nginx   2>/dev/null || true
+    systemctl stop apache2 2>/dev/null || true
+    systemctl stop httpd   2>/dev/null || true
+    docker compose stop nginx 2>/dev/null || true
+    sleep 1
+    # Принудительно если всё ещё занят
+    if ss -tlnp 2>/dev/null | grep -q ':80 ' || lsof -i :80 2>/dev/null | grep -q LISTEN; then
+      fuser -k 80/tcp 2>/dev/null || true
+      sleep 1
+    fi
+    ok "Порт 80 освобождён"
+  else
+    ok "Порт 80 свободен"
+  fi
+}
+
+# ── Проверка DNS ──────────────────────────────────────────────
+check_dns() {
+  local domain="$1"
+  local server_ip
+  # Принудительно получаем IPv4
+  server_ip=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null     || curl -4 -s --max-time 5 icanhazip.com 2>/dev/null     || curl -4 -s --max-time 5 api.ipify.org 2>/dev/null     || curl -4 -s --max-time 5 ipv4.icanhazip.com 2>/dev/null     || echo "")
+
+  echo ""
+  echo -e "  ${YELLOW}${BOLD}Проверка DNS-записей${RESET}"
+
+  if [[ -z "$server_ip" ]]; then
+    warn "Не удалось определить внешний IP сервера"
+    server_ip="<IP сервера>"
+  else
+    info "IP этого сервера: ${BOLD}${server_ip}${RESET}"
+  fi
+
+  echo ""
+  echo -e "  В DNS должны быть три A-записи:"
+  echo -e "  ${CYAN}${domain}${RESET}        →  ${server_ip}"
+  echo -e "  ${CYAN}api.${domain}${RESET}    →  ${server_ip}"
+  echo -e "  ${CYAN}admin.${domain}${RESET}  →  ${server_ip}"
+  echo ""
+
+  # Проверяем резолвинг каждого домена
+  local all_ok=true
+  for subdomain in "" "api." "admin."; do
+    local fqdn="${subdomain}${domain}"
+    local resolved
+    resolved=$(dig +short -4 "$fqdn" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1       || host -t A "$fqdn" 2>/dev/null | awk '/has address/{print $NF}' | head -1       || echo "")
+    if [[ -n "$resolved" ]]; then
+      if [[ "$resolved" == "$server_ip" ]]; then
+        ok "${fqdn} → ${resolved} ✓"
+      else
+        warn "${fqdn} → ${resolved} (ожидался ${server_ip})"
+        all_ok=false
+      fi
+    else
+      warn "${fqdn} — не резолвится (нет DNS-записи)"
+      all_ok=false
+    fi
+  done
+
+  echo ""
+  if [[ "$all_ok" == "false" ]]; then
+    echo -e "  ${YELLOW}Некоторые домены не настроены. Добавь A-записи и подожди 5-10 минут.${RESET}"
+    ask "Всё равно продолжить? [д/Н]"
+    read -r dns_ans
+    [[ "$dns_ans" =~ ^[дДyY]$ ]] || return 1
+  fi
+  return 0
+}
+
 setup_ssl() {
   step "SSL-сертификаты (Let's Encrypt)"
   local domain; domain=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
   [[ -z "$domain" ]] && { warn "DOMAIN не задан в .env — пропускаю"; return; }
 
+  # Устанавливаем certbot если нет
   command -v certbot &>/dev/null || {
     info "Устанавливаю certbot..."
     detect_os
     case "$OS_NAME" in
-      ubuntu|debian) apt-get install -y -qq certbot python3-certbot-nginx ;;
-      *) dnf install -y -q certbot python3-certbot-nginx 2>/dev/null \
-           || yum install -y -q certbot python3-certbot-nginx ;;
+      ubuntu|debian) apt-get install -y -qq certbot ;;
+      *) dnf install -y -q certbot 2>/dev/null || yum install -y -q certbot ;;
     esac
   }
 
-  # ── Предупреждение про DNS ────────────────────────────────
-  echo ""
-  echo -e "  ${YELLOW}${BOLD}Важно: DNS-записи${RESET}"
-  echo -e "  Перед выпуском сертификата убедись, что в DNS прописаны"
-  echo -e "  три A-записи, все указывают на IP этого сервера:"
-  echo ""
-  echo -e "  ${CYAN}${domain}${RESET}        →  $(curl -s ifconfig.me 2>/dev/null || echo 'IP сервера')"
-  echo -e "  ${CYAN}api.${domain}${RESET}    →  $(curl -s ifconfig.me 2>/dev/null || echo 'IP сервера')"
-  echo -e "  ${CYAN}admin.${domain}${RESET}  →  $(curl -s ifconfig.me 2>/dev/null || echo 'IP сервера')"
-  echo ""
-  echo -e "  ${DIM}Если поддомены api и admin ещё не добавлены — добавь их"
-  echo -e "  в панели DNS и подожди 5-10 минут перед продолжением.${RESET}"
-  echo ""
+  # Устанавливаем dig для проверки DNS
+  command -v dig &>/dev/null || apt-get install -y -qq dnsutils 2>/dev/null || true
+
+  # Показываем DNS инструкцию и проверяем
+  check_dns "$domain" || return
 
   ask "Выпустить сертификат Let's Encrypt для ${domain}? [д/Н]"
   read -r ans
-  if [[ "$ans" =~ ^[дДyY]$ ]]; then
-    printf "  ${CYAN}%-42s${RESET}" "Email для Let's Encrypt: "; read -r email
-    certbot certonly --standalone \
-      -d "$domain" -d "api.$domain" -d "admin.$domain" \
-      --email "$email" --agree-tos --non-interactive \
-      --pre-hook  "docker compose stop nginx" \
-      --post-hook "docker compose start nginx" 2>&1 | tee -a "$LOG_FILE"
+  [[ "$ans" =~ ^[дДyY]$ ]] || { info "Пропускаю SSL — настрой позже через пункт [3]"; return; }
 
-    if [[ $? -eq 0 ]]; then
-      sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
-      ok "SSL-сертификат выпущен для $domain"
-    else
-      warn "Не удалось выпустить сертификат для всех поддоменов."
-      echo ""
-      echo -e "  Попробуй выпустить только для основного домена:"
-      echo -e "  ${CYAN}certbot certonly --standalone -d ${domain} --email ${email} --agree-tos --non-interactive${RESET}"
-      echo ""
-      ask "Выпустить только для ${domain} (без api и admin)? [д/Н]"
-      read -r ans2
-      if [[ "$ans2" =~ ^[дДyY]$ ]]; then
-        certbot certonly --standalone \
-          -d "$domain" \
-          --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
-        sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
-        ok "SSL-сертификат выпущен для $domain (только основной домен)"
-        warn "Поддомены api.${domain} и admin.${domain} работают без SSL — добавь DNS-записи и повтори пункт [3]"
-      fi
-    fi
+  printf "  ${CYAN}%-42s${RESET}" "Email для Let's Encrypt: "; read -r email
+
+  # Освобождаем порт 80 ПЕРЕД запуском certbot
+  free_port_80
+
+  # Выпускаем сертификат для всех трёх доменов
+  info "Выпускаю сертификат..."
+  certbot certonly --standalone     -d "$domain" -d "api.$domain" -d "admin.$domain"     --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
+
+  if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+    sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
+    ok "SSL-сертификат выпущен для ${domain} и поддоменов"
   else
-    info "Пропускаю SSL — настрой позже через пункт [3] меню"
+    warn "Не удалось выпустить сертификат для всех поддоменов."
+    ask "Выпустить только для ${domain} (без api и admin)? [д/Н]"
+    read -r ans2
+    if [[ "$ans2" =~ ^[дДyY]$ ]]; then
+      free_port_80
+      certbot certonly --standalone         -d "$domain"         --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
+      sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
+      ok "SSL выпущен для ${domain}"
+      warn "Добавь DNS для api.${domain} и admin.${domain}, потом повтори пункт [3]"
+    fi
   fi
 }
 
