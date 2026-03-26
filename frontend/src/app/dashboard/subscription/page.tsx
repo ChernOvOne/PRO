@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Shield, Copy, CheckCircle2, RefreshCw, Download,
-  Wifi, Clock, HardDrive, ArrowRight, AlertCircle,
+  Wifi, ArrowRight, AlertCircle,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import toast from 'react-hot-toast'
@@ -45,10 +45,11 @@ export default function SubscriptionPage() {
     setSyncing(true)
     try {
       const res = await userApi.sync()
-      if (res.linked) {
+      const r = res as any
+      if (r.linked) {
         toast.success('Подписка найдена и привязана!')
         await load()
-      } else if (res.synced) {
+      } else if (r.synced) {
         toast.success('Данные обновлены')
         await load()
       } else {
@@ -173,7 +174,7 @@ export default function SubscriptionPage() {
               <p className="text-xs text-gray-500 text-center">
                 Отсканируй QR-кодом в приложении
               </p>
-              <Button variant="secondary" size="sm" onClick={downloadConfig} className="w-full justify-center">
+              <Button variant="secondary" size="sm" onClick={downloadConfig}>
                 <Download className="w-3.5 h-3.5" />
                 Скачать ссылку как файл
               </Button>
