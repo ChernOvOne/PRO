@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, DeviceType } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -53,7 +53,7 @@ async function seed() {
   const instructions = [
     {
       id:          'ins-ios',
-      deviceType:  'IOS',
+      deviceType:  'IOS' as DeviceType,
       title:       'Подключение на iPhone / iPad',
       sortOrder:   0,
       content: `## Шаг 1 — Установи приложение
@@ -72,7 +72,7 @@ async function seed() {
     },
     {
       id:          'ins-android',
-      deviceType:  'ANDROID',
+      deviceType:  'ANDROID' as DeviceType,
       title:       'Подключение на Android',
       sortOrder:   1,
       content: `## Шаг 1 — Установи приложение
@@ -89,7 +89,7 @@ async function seed() {
     },
     {
       id:          'ins-windows',
-      deviceType:  'WINDOWS',
+      deviceType:  'WINDOWS' as DeviceType,
       title:       'Подключение на Windows',
       sortOrder:   2,
       content: `## Шаг 1 — Установи приложение
@@ -106,7 +106,7 @@ async function seed() {
     },
     {
       id:          'ins-macos',
-      deviceType:  'MACOS',
+      deviceType:  'MACOS' as DeviceType,
       title:       'Подключение на macOS',
       sortOrder:   3,
       content: `## Шаг 1 — Установи приложение
