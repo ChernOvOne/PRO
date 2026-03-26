@@ -171,7 +171,6 @@ export default function ProfilePage() {
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-gray-800 rounded-xl">
             <p className="text-xs text-gray-500">Статус</p>
-            <Badge color={STATUS_COLOR[user.subStatus] || 'gray'} className="mt-1">
               {user.subStatus}
             </Badge>
           </div>
