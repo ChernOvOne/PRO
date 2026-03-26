@@ -78,7 +78,8 @@ export async function setupCronJobs() {
     name:     'sync-subscriptions',
     interval: 60 * 60_000,
     fn:       async () => {
-      const { default: syncFn } = await import('../scripts/sync-subscriptions')
+      const { syncSubscriptions } = await import('../scripts/sync-subscriptions')
+      await syncSubscriptions()
     },
   })
 
