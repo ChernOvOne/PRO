@@ -10,7 +10,7 @@ class EmailService {
     this.enabled = !!(config.smtp.host && config.smtp.user && config.smtp.pass)
 
     if (this.enabled) {
-      this.transporter = nodemailer.createTransporter({
+      this.transporter = nodemailer.createTransport({
         host:   config.smtp.host!,
         port:   config.smtp.port,
         secure: config.smtp.port === 465,
