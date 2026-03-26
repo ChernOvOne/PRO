@@ -19,7 +19,7 @@ export async function userRoutes(app: FastifyInstance) {
         bonusHistory: { orderBy: { appliedAt: 'desc' }, take: 10 },
       },
     })
-    if (!user) return app.httpErrors?.notFound('User not found')
+    if (!user) return reply.status(404).send({ error: 'User not found' })
 
     // Sync subscription from REMNAWAVE if linked
     let rmStats = null
