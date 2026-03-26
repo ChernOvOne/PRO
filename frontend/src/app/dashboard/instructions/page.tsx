@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Monitor, Apple, Linux as LinuxIcon,
+import { Monitor, Apple, Terminal as LinuxIcon,
          Smartphone, Router, HelpCircle } from 'lucide-react'
 
 const DEVICE_ICONS: Record<string, any> = {
