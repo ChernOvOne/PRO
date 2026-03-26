@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  :root {
+    --brand: #5569ff;
+    --brand-dark: #3a48f5;
+  }
+
+  ::selection {
+    background: rgba(85, 105, 255, 0.35);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+
+  .glass-dark {
+    @apply bg-gray-900/80 backdrop-blur-md border border-gray-800;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3
+           bg-brand-600 hover:bg-brand-500 active:bg-brand-700
+           text-white font-medium rounded-xl
+           transition-all duration-200 ease-out
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3
+           bg-gray-800 hover:bg-gray-700 text-white font-medium rounded-xl
+           border border-gray-700 transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-gray-400 hover:text-white hover:bg-white/5
+           rounded-xl transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-2xl p-6;
+  }
+
+  .input {
+    @apply w-full px-4 py-3 bg-gray-800 border border-gray-700
+           rounded-xl text-white placeholder-gray-500
+           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/50
+           transition-colors;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-green  { @apply badge bg-emerald-500/15 text-emerald-400; }
+  .badge-red    { @apply badge bg-red-500/15 text-red-400; }
+  .badge-yellow { @apply badge bg-yellow-500/15 text-yellow-400; }
+  .badge-blue   { @apply badge bg-blue-500/15 text-blue-400; }
+  .badge-gray   { @apply badge bg-gray-500/15 text-gray-400; }
+
+  .skeleton {
+    @apply bg-gray-800 rounded-lg animate-pulse;
+  }
+}
+
+/* Gradient glow backgrounds for landing */
+.glow-brand {
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(85,105,255,0.3), transparent);
+}
+
+.glow-teal {
+  background: radial-gradient(ellipse 60% 40% at 80% 50%, rgba(20,184,166,0.15), transparent);
+}

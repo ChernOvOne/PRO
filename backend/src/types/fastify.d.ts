@@ -1,0 +1,34 @@
+import '@fastify/jwt'
+import 'fastify'
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (
+      request: FastifyRequest,
+      reply:   FastifyReply,
+    ) => Promise<void>
+
+    adminOnly: (
+      request: FastifyRequest,
+      reply:   FastifyReply,
+    ) => Promise<void>
+  }
+
+  interface FastifyRequest {
+    user: JWTPayload
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: JWTPayload
+    user:    JWTPayload
+  }
+}
+
+export interface JWTPayload {
+  sub:  string   // user ID
+  role: 'USER' | 'ADMIN'
+  iat?: number
+  exp?: number
+}

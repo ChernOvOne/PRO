@@ -1,0 +1,208 @@
+// ============================================================
+//  HIDEYOU — Prisma Schema
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ────────────────────────────────────────────────────
+model User {
+  id            String    @id @default(uuid())
+  email         String?   @unique
+  telegramId    String?   @unique @map("telegram_id")
+  telegramName  String?   @map("telegram_name")
+  passwordHash  String?   @map("password_hash")
+
+  // REMNAWAVE mapping
+  remnawaveUuid String?   @unique @map("remnawave_uuid")
+  // Subscription synced from REMNAWAVE
+  subExpireAt   DateTime? @map("sub_expire_at")
+  subStatus     SubStatus @default(INACTIVE) @map("sub_status")
+  subLink       String?   @map("sub_link") // REMNAWAVE subscription URL
+
+  role          Role      @default(USER)
+  isActive      Boolean   @default(true) @map("is_active")
+
+  // Referral
+  referralCode  String    @unique @default(cuid()) @map("referral_code")
+  referredById  String?   @map("referred_by_id")
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals     User[]    @relation("Referrals")
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastLoginAt   DateTime? @map("last_login_at")
+
+  // Relations
+  payments      Payment[]
+  bonusHistory  ReferralBonus[]
+  sessions      Session[]
+  importRecord  ImportRecord?
+
+  @@map("users")
+}
+
+// ── Sessions ─────────────────────────────────────────────────
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  userAgent String?  @map("user_agent")
+  ip        String?
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("sessions")
+}
+
+// ── Tariffs ──────────────────────────────────────────────────
+model Tariff {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  durationDays    Int      @map("duration_days")
+  priceRub        Float    @map("price_rub")       // Price in RUB
+  priceUsdt       Float?   @map("price_usdt")      // Price in USDT
+  deviceLimit     Int      @default(3) @map("device_limit")
+  trafficGb       Int?     @map("traffic_gb")      // null = unlimited
+  isActive        Boolean  @default(true) @map("is_active")
+  isFeatured      Boolean  @default(false) @map("is_featured") // Show as recommended
+  sortOrder       Int      @default(0) @map("sort_order")
+
+  // REMNAWAVE config
+  remnawaveTagIds String[] @map("remnawave_tag_ids") // Tags applied to user
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  payments        Payment[]
+
+  @@map("tariffs")
+}
+
+// ── Payments ─────────────────────────────────────────────────
+model Payment {
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id])
+  tariffId        String        @map("tariff_id")
+  tariff          Tariff        @relation(fields: [tariffId], references: [id])
+
+  provider        PaymentProvider
+  providerOrderId String?       @map("provider_order_id") // External payment ID
+  amount          Float
+  currency        String        @default("RUB")
+  status          PaymentStatus @default(PENDING)
+
+  // ЮKassa specific
+  yukassaPaymentId String?      @map("yukassa_payment_id")
+  yukassaStatus   String?       @map("yukassa_status")
+
+  // CryptoPay specific
+  cryptoInvoiceId  Int?         @map("crypto_invoice_id")
+  cryptoCurrency   String?      @map("crypto_currency")
+  cryptoAmount     String?      @map("crypto_amount")
+
+  confirmedAt     DateTime?     @map("confirmed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  referralBonus   ReferralBonus?
+
+  @@map("payments")
+}
+
+// ── Referral bonuses ─────────────────────────────────────────
+model ReferralBonus {
+  id              String   @id @default(uuid())
+  referrerId      String   @map("referrer_id")
+  referrer        User     @relation(fields: [referrerId], references: [id])
+  triggeredByPaymentId String @unique @map("triggered_by_payment_id")
+  triggeredByPayment Payment @relation(fields: [triggeredByPaymentId], references: [id])
+  bonusDays       Int      @map("bonus_days")
+  appliedAt       DateTime @default(now()) @map("applied_at")
+
+  @@map("referral_bonuses")
+}
+
+// ── Connection instructions ───────────────────────────────────
+model Instruction {
+  id          String   @id @default(uuid())
+  title       String
+  deviceType  DeviceType @map("device_type")
+  content     String   // Markdown content
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("instructions")
+}
+
+// ── Settings (admin configurable) ────────────────────────────
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// ── Import tracking ───────────────────────────────────────────
+model ImportRecord {
+  id              String   @id @default(uuid())
+  userId          String?  @unique @map("user_id")
+  user            User?    @relation(fields: [userId], references: [id])
+  sourceEmail     String?  @map("source_email")
+  sourceTelegramId String? @map("source_telegram_id")
+  remnawaveUuid   String?  @map("remnawave_uuid")
+  matchedBy       String?  @map("matched_by") // "email" | "telegram_id"
+  importedAt      DateTime @default(now()) @map("imported_at")
+  status          String   @default("pending")
+
+  @@map("import_records")
+}
+
+// ── Enums ────────────────────────────────────────────────────
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  TRIAL
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  YUKASSA
+  CRYPTOPAY
+  MANUAL
+}
+
+enum DeviceType {
+  WINDOWS
+  MACOS
+  LINUX
+  IOS
+  ANDROID
+  ROUTER
+  OTHER
+}
