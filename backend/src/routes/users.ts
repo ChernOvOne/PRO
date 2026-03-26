@@ -8,7 +8,7 @@ export async function userRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] }
 
   // ── Dashboard summary ──────────────────────────────────────
-  app.get('/dashboard', auth, async (req) => {
+  app.get('/dashboard', auth, async (req, reply) => {
     const userId = (req.user as any).sub
 
     const user = await prisma.user.findUnique({
