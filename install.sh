@@ -566,11 +566,9 @@ setup_ssl() {
     --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
 
   if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-    sed -i "s|MAIN_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
-    sed -i "s|ADMIN_DOMAIN_PLACEHOLDER|${admin_domain}|g" nginx/nginx.conf
-    sed -i "s|API_DOMAIN_PLACEHOLDER|${api_domain}|g"     nginx/nginx.conf
-    sed -i "s|CERT_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
     ok "SSL-сертификат выпущен для: ${cert_domains[*]}"
+    apply_nginx_conf
+    docker compose restart nginx 2>/dev/null || true
   else
     warn "Не удалось выпустить сертификат для всех доменов."
     ask "Выпустить только для ${main_domain}? [д/Н]"; read -r ans2
@@ -579,11 +577,9 @@ setup_ssl() {
       certbot certonly --standalone -d "$main_domain" \
         --cert-name "$main_domain" \
         --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
-      sed -i "s|MAIN_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
-      sed -i "s|ADMIN_DOMAIN_PLACEHOLDER|${main_domain}|g"  nginx/nginx.conf
-      sed -i "s|API_DOMAIN_PLACEHOLDER|${main_domain}|g"    nginx/nginx.conf
-      sed -i "s|CERT_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
       ok "SSL выпущен для ${main_domain}"
+      apply_nginx_conf
+      docker compose restart nginx 2>/dev/null || true
       warn "Добавь DNS для ${admin_domain} и ${api_domain}, затем повтори пункт [3]"
     fi
   fi
@@ -592,7 +588,54 @@ setup_ssl() {
 # ── Контейнеры ────────────────────────────────────────────────
 pull_images()    { step "Скачивание образов";  docker compose pull 2>&1 | tee -a "$LOG_FILE"; ok "Готово"; }
 build_services() { step "Сборка сервисов";      docker compose build --no-cache 2>&1 | tee -a "$LOG_FILE"; ok "Собрано"; }
-start_all()      { step "Запуск сервисов";      docker compose up -d 2>&1 | tee -a "$LOG_FILE"; ok "Запущено"; }
+
+# ── Генерация nginx.conf из шаблона ──────────────────────────
+# Если SSL-сертификат существует — SSL-конфиг.
+# Если нет — HTTP-only конфиг (работает до получения сертификата).
+apply_nginx_conf() {
+  if [[ ! -f "$ENV_FILE" ]]; then return; fi
+
+  local main_domain;  main_domain=$(grep  "^DOMAIN="       "$ENV_FILE" | cut -d= -f2)
+  local admin_domain; admin_domain=$(grep "^ADMIN_DOMAIN=" "$ENV_FILE" | cut -d= -f2)
+  local api_domain;   api_domain=$(grep   "^API_DOMAIN="   "$ENV_FILE" | cut -d= -f2)
+
+  if [[ -z "$main_domain" ]]; then
+    warn "DOMAIN не задан — nginx.conf не обновлён"
+    return
+  fi
+
+  [[ -z "$admin_domain" ]] && admin_domain="$main_domain"
+  [[ -z "$api_domain"   ]] && api_domain="$main_domain"
+
+  local cert_path="/etc/letsencrypt/live/${main_domain}/fullchain.pem"
+
+  if [[ -f "$cert_path" ]]; then
+    if [[ ! -f "nginx/nginx.conf.template" ]]; then
+      warn "nginx/nginx.conf.template не найден"
+      return
+    fi
+    cp "nginx/nginx.conf.template" "nginx/nginx.conf"
+    sed -i "s|MAIN_DOMAIN|${main_domain}|g"   "nginx/nginx.conf"
+    sed -i "s|ADMIN_DOMAIN|${admin_domain}|g" "nginx/nginx.conf"
+    sed -i "s|API_DOMAIN|${api_domain}|g"     "nginx/nginx.conf"
+    sed -i "s|CERT_DOMAIN|${main_domain}|g"   "nginx/nginx.conf"
+    ok "nginx.conf: SSL-режим (${main_domain}, ${admin_domain}, ${api_domain})"
+  else
+    if [[ -f "nginx/nginx.conf.nossl" ]]; then
+      cp "nginx/nginx.conf.nossl" "nginx/nginx.conf"
+      ok "nginx.conf: HTTP-only режим (SSL не настроен — запусти пункт [3])"
+    else
+      warn "nginx/nginx.conf.nossl не найден"
+    fi
+  fi
+}
+
+start_all() {
+  step "Запуск сервисов"
+  apply_nginx_conf
+  docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+  ok "Запущено"
+}
 stop_all()       { step "Остановка сервисов";   docker compose down 2>&1 | tee -a "$LOG_FILE"; ok "Остановлено"; }
 
 # ── Миграции БД ───────────────────────────────────────────────
@@ -795,6 +838,7 @@ do_update() {
   run_migrations
 
   info "Перезапускаю сервисы..."
+  apply_nginx_conf
   docker compose up -d 2>&1 | tee -a "$LOG_FILE"
 
   install_lk_command 2>/dev/null || true
@@ -963,6 +1007,7 @@ full_install() {
   run_migrations
 
   step "Запуск всех сервисов"
+  apply_nginx_conf
   docker compose up -d 2>&1 | tee -a "$LOG_FILE"
   sleep 10
 
