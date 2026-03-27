@@ -166,8 +166,28 @@ setup_env() {
   put "CRYPTOPAY_API_TOKEN" "Токен CryptoPay (@CryptoBot): "       "" "true"
   put "TELEGRAM_BOT_TOKEN"  "Токен Telegram-бота (@BotFather): "   "" "true"
   put "TELEGRAM_BOT_NAME"   "Username бота (без @): "              ""
+  # Auto-generate secrets
   sed -i "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
+  sed -i "s|^COOKIE_SECRET=.*|COOKIE_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
   sed -i "s|^REDIS_SESSION_SECRET=.*|REDIS_SESSION_SECRET=$(openssl rand -hex 16)|" "$ENV_FILE"
+
+  # Auto-set APP_URL from DOMAIN
+  local domain; domain=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
+  if [[ -n "$domain" ]]; then
+    sed -i "s|^APP_URL=.*|APP_URL=https://${domain}|" "$ENV_FILE"
+    sed -i "s|^YUKASSA_RETURN_URL=.*|YUKASSA_RETURN_URL=https://${domain}/dashboard/payment-success|" "$ENV_FILE"
+  fi
+
+  # Auto-update DATABASE_URL and REDIS_URL with actual passwords
+  local pg_pass; pg_pass=$(grep "^POSTGRES_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
+  local rd_pass; rd_pass=$(grep "^REDIS_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
+  if [[ -n "$pg_pass" ]]; then
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://hideyou:${pg_pass}@postgres:5432/hideyou|" "$ENV_FILE"
+  fi
+  if [[ -n "$rd_pass" ]]; then
+    sed -i "s|^REDIS_URL=.*|REDIS_URL=redis://:${rd_pass}@redis:6379|" "$ENV_FILE"
+  fi
+
   ok "Файл .env настроен"
 }
 
@@ -352,8 +372,94 @@ restart_svc() {
 do_update() {
   step "Обновление HIDEYOU"
 
-  local branch
-  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  info "Получаю информацию из git..."
+  git fetch --all --tags 2>&1 | tee -a "$LOG_FILE"
+
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  local current_commit
+  current_commit=$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)
+
+  echo ""
+  info "Текущая ветка: ${BOLD}${current_branch}${RESET}"
+  info "Текущая версия: ${BOLD}${current_commit}${RESET}"
+  echo ""
+
+  # Collect available tags
+  local tags=()
+  while IFS= read -r tag; do
+    [[ -n "$tag" ]] && tags+=("$tag")
+  done < <(git tag --sort=-version:refname 2>/dev/null | head -20)
+
+  # Collect available branches
+  local branches=()
+  while IFS= read -r br; do
+    br="${br#origin/}"
+    [[ -n "$br" && "$br" != "HEAD" ]] && branches+=("$br")
+  done < <(git branch -r --format='%(refname:short)' 2>/dev/null | head -10)
+
+  echo -e "  ${BOLD}Выберите версию для обновления:${RESET}"
+  echo ""
+  echo -e "  ${CYAN}[1]${RESET} Последняя версия ветки ${BOLD}${current_branch}${RESET} (по умолчанию)"
+
+  local idx=2
+  declare -A choices
+
+  if [[ ${#tags[@]} -gt 0 ]]; then
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Релизы (теги) ─────────────────${RESET}"
+    for tag in "${tags[@]}"; do
+      echo -e "  ${CYAN}[$idx]${RESET} $tag"
+      choices[$idx]="tag:$tag"
+      idx=$((idx + 1))
+      [[ $idx -gt 11 ]] && break
+    done
+  fi
+
+  if [[ ${#branches[@]} -gt 1 ]]; then
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Ветки ─────────────────────────${RESET}"
+    for br in "${branches[@]}"; do
+      [[ "$br" == "$current_branch" ]] && continue
+      echo -e "  ${CYAN}[$idx]${RESET} ветка: $br"
+      choices[$idx]="branch:$br"
+      idx=$((idx + 1))
+      [[ $idx -gt 16 ]] && break
+    done
+  fi
+
+  echo ""
+  printf "  ${BOLD}Выбери [1]:${RESET} "
+  read -r ver_choice
+  ver_choice="${ver_choice:-1}"
+
+  local target_ref=""
+  local target_desc=""
+
+  if [[ "$ver_choice" == "1" ]]; then
+    target_ref="origin/${current_branch}"
+    target_desc="последняя версия ветки ${current_branch}"
+  elif [[ -n "${choices[$ver_choice]:-}" ]]; then
+    local choice="${choices[$ver_choice]}"
+    local type="${choice%%:*}"
+    local value="${choice#*:}"
+    if [[ "$type" == "tag" ]]; then
+      target_ref="$value"
+      target_desc="релиз $value"
+    else
+      target_ref="origin/$value"
+      target_desc="ветка $value"
+      git checkout "$value" 2>/dev/null || git checkout -b "$value" "origin/$value" 2>/dev/null
+    fi
+  else
+    warn "Неизвестный выбор: $ver_choice — использую последнюю версию"
+    target_ref="origin/${current_branch}"
+    target_desc="последняя версия ветки ${current_branch}"
+  fi
+
+  echo ""
+  info "Обновляюсь до: ${BOLD}${target_desc}${RESET}"
+
   local before
   before=$(git rev-parse HEAD 2>/dev/null || echo "")
 
@@ -361,11 +467,8 @@ do_update() {
   local env_backup="/tmp/hideyou_env_backup_$(date +%s)"
   [[ -f "$ENV_FILE" ]] && cp "$ENV_FILE" "$env_backup" && info ".env сохранён во временный файл"
 
-  info "Получаю последний код из git..."
-  git fetch origin 2>&1 | tee -a "$LOG_FILE"
-
-  # Принудительно сбрасываем все локальные изменения и берём версию из git
-  git reset --hard "origin/${branch}" 2>&1 | tee -a "$LOG_FILE"
+  # Принудительно сбрасываем все локальные изменения и берём нужную версию
+  git reset --hard "$target_ref" 2>&1 | tee -a "$LOG_FILE"
   git clean -fd --exclude=".env" --exclude="backups/" --exclude="data/" 2>&1 | tee -a "$LOG_FILE"
 
   # Восстанавливаем .env
@@ -435,8 +538,30 @@ do_restore() {
 # ── Администратор / Импорт ────────────────────────────────────
 create_admin() {
   step "Создание администратора"
+
+  # Ensure services are running
+  if ! docker compose ps backend 2>/dev/null | grep -q "Up"; then
+    info "Backend не запущен — запускаю..."
+    docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+    info "Жду готовности backend..."
+    local n=30
+    while ! docker compose exec -T backend curl -sf http://localhost:4000/health &>/dev/null; do
+      sleep 2; n=$((n-1))
+      [[ $n -le 0 ]] && { err "Backend не запустился. Проверь: docker compose logs backend"; return 1; }
+      printf "."
+    done
+    echo ""
+    ok "Backend готов"
+  fi
+
   printf "  ${CYAN}Email: ${RESET}"; read -r email
   printf "  ${CYAN}Пароль: ${RESET}"; read -rs pwd; echo ""
+
+  if [[ -z "$email" || -z "$pwd" ]]; then
+    err "Email и пароль обязательны"
+    return 1
+  fi
+
   docker compose exec -T backend node dist/scripts/create-admin.js \
     --email "$email" --password "$pwd" 2>&1 | tee -a "$LOG_FILE"
   ok "Администратор создан: $email"
