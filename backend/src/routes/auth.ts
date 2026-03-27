@@ -24,11 +24,11 @@ const EmailLoginSchema = z.object({
 
 export async function authRoutes(app: FastifyInstance) {
   // ── Telegram OAuth ─────────────────────────────────────────
+  // ВАЖНО: не передаём Zod-объект в schema.body — AJV не понимает Zod-схемы,
+  // т.к. required у Zod не является массивом → FST_ERR_SCH_VALIDATION_BUILD.
+  // Валидация выполняется вручную через .parse() внутри обработчика.
   app.post('/telegram', {
-    schema: {
-      body: TelegramAuthSchema,
-      tags: ['Auth'],
-    },
+    schema: { tags: ['Auth'] },
   }, async (req, reply) => {
     const data = TelegramAuthSchema.parse(req.body)
 
@@ -65,7 +65,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (!user) {
       // Try to find existing REMNAWAVE subscription
-      const rmUser = await remnawave.getUserByTelegramId(telegramId)
+      const rmUser = await remnawave.getUserByTelegramId(telegramId).catch(() => null)
 
       user = await prisma.user.create({
         data: {
@@ -119,7 +119,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Sync with REMNAWAVE if needed
     if (!user.remnawaveUuid && user.email) {
-      const rmUser = await remnawave.getUserByEmail(user.email)
+      const rmUser = await remnawave.getUserByEmail(user.email).catch(() => null)
       if (rmUser) {
         await prisma.user.update({
           where: { id: user.id },
