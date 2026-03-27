@@ -123,7 +123,7 @@ export interface AdminUser extends User {
 
 export interface AdminPayment extends Payment {
   user:   Pick<User, 'email' | 'telegramName' | 'telegramId'>
-  tariff: Pick<Tariff, 'name'>
+  tariff: Pick<Tariff, 'name' | 'durationDays'>
 }
 
 // ── API responses ─────────────────────────────────────────────
