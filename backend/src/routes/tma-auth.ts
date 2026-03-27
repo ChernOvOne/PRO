@@ -98,7 +98,7 @@ export async function tmaAuthRoute(app: FastifyInstance) {
         sameSite: config.isProd ? 'none' : 'lax', // 'none' required for TMA
         maxAge:   30 * 24 * 3600,
         path:     '/',
-        domain:   config.isProd ? `.${config.domain}` : undefined,
+        domain:   config.isProd ? config.cookieDomain : undefined,
       })
       .send({ token, user: safeUser })
   })

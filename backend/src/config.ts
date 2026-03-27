@@ -71,6 +71,18 @@ export const config = {
   jwtSecret:  env.JWT_SECRET,
   jwtExpires: env.JWT_EXPIRES_IN,
   cookieSecret: env.COOKIE_SECRET || env.JWT_SECRET,
+  // Вычисляем корневой домен для куки:
+  // lk.example.com  → .example.com  (чтобы кука работала на admin.example.com тоже)
+  // example.com     → .example.com
+  // localhost        → undefined (не указываем domain)
+  cookieDomain: (() => {
+    const d = env.DOMAIN
+    if (!d || d === 'localhost' || d.startsWith('127.') || d.startsWith('192.168.')) return undefined
+    const parts = d.split('.')
+    // берём последние два сегмента: example.com
+    const root = parts.slice(-2).join('.')
+    return `.${root}`
+  })(),
 
   db: {
     url: env.DATABASE_URL,
