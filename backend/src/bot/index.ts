@@ -64,7 +64,7 @@ bot.command('status', async (ctx) => {
       ? Math.max(0, Math.ceil((expireAt.getTime() - Date.now()) / 86400_000))
       : null
 
-    const usedGb  = (rmUser.usedTrafficBytes / 1e9).toFixed(2)
+    const usedGb  = ((rmUser.userTraffic?.usedTrafficBytes ?? 0) / 1e9).toFixed(2)
     const limitGb = rmUser.trafficLimitBytes
       ? `/ ${(rmUser.trafficLimitBytes / 1e9).toFixed(0)} ГБ`
       : '(безлимит)'
