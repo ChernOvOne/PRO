@@ -5,20 +5,23 @@ const envSchema = z.object({
   PORT:                  z.coerce.number().default(4000),
   DOMAIN:                z.string().default('localhost'),
   APP_URL:               z.string().default('http://localhost:3000'),
+  APP_SECRET:            z.string().optional(),
   JWT_SECRET:            z.string().min(32),
   JWT_EXPIRES_IN:        z.string().default('30d'),
-  COOKIE_SECRET:         z.string().min(1).optional(),
+  COOKIE_SECRET:         z.string().optional(),
 
   DATABASE_URL:          z.string(),
   REDIS_URL:             z.string(),
   REDIS_PASSWORD:        z.string().optional(),
 
-  REMNAWAVE_URL:         z.string().url(),
-  REMNAWAVE_TOKEN:       z.string(),
+  REMNAWAVE_URL:         z.string().url().default('http://localhost:3000'),
+  // Опционально — сервис запустится без токена, функции REMNAWAVE будут недоступны
+  REMNAWAVE_TOKEN:       z.string().optional().default(''),
   REMNAWAVE_SUBSCRIPTION_URL: z.string().optional(),
 
-  TELEGRAM_BOT_TOKEN:    z.string(),
-  TELEGRAM_BOT_NAME:     z.string(),
+  // Опционально — сервис запустится без токена, Telegram-функции будут недоступны
+  TELEGRAM_BOT_TOKEN:    z.string().optional().default(''),
+  TELEGRAM_BOT_NAME:     z.string().optional().default(''),
   TELEGRAM_LOGIN_BOT_TOKEN: z.string().optional(),
 
   YUKASSA_SHOP_ID:       z.string().optional(),
@@ -80,14 +83,16 @@ export const config = {
 
   remnawave: {
     url:             env.REMNAWAVE_URL,
-    token:           env.REMNAWAVE_TOKEN,
+    token:           env.REMNAWAVE_TOKEN ?? '',
     subscriptionUrl: env.REMNAWAVE_SUBSCRIPTION_URL || env.REMNAWAVE_URL,
+    configured:      !!(env.REMNAWAVE_TOKEN),
   },
 
   telegram: {
-    botToken:       env.TELEGRAM_BOT_TOKEN,
-    botName:        env.TELEGRAM_BOT_NAME,
-    loginBotToken:  env.TELEGRAM_LOGIN_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN,
+    botToken:       env.TELEGRAM_BOT_TOKEN ?? '',
+    botName:        env.TELEGRAM_BOT_NAME ?? '',
+    loginBotToken:  env.TELEGRAM_LOGIN_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || '',
+    configured:     !!(env.TELEGRAM_BOT_TOKEN),
   },
 
   yukassa: {
@@ -116,6 +121,7 @@ export const config = {
     user:  env.SMTP_USER,
     pass:  env.SMTP_PASS,
     from:  env.SMTP_FROM || `noreply@${env.DOMAIN}`,
+    configured: !!(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS),
   },
 
   features: {
