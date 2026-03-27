@@ -21,31 +21,25 @@ export async function userRoutes(app: FastifyInstance) {
     })
     if (!user) return reply.status(404).send({ error: 'User not found' })
 
-    // Sync subscription from REMNAWAVE if linked
+    // Синхронизация подписки из REMNAWAVE
     let rmStats = null
     if (user.remnawaveUuid) {
-      try {
-        const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
-        rmStats = {
-          status:          rmUser.status,
-          expireAt:        rmUser.expireAt,
-          usedTrafficBytes: rmUser.usedTrafficBytes,
-          trafficLimitBytes: rmUser.trafficLimitBytes,
+      const synced = await remnawave.syncUserSubscription(user.remnawaveUuid)
+      if (synced) {
+        rmStats = synced
+        // Обновляем локальный кеш если данные изменились
+        const statusMap: Record<string, string> = {
+          ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED',
         }
-        // Update local cache if differs
-        if (
-          rmUser.expireAt !== user.subExpireAt?.toISOString() ||
-          (rmUser.status !== 'ACTIVE' && user.subStatus === 'ACTIVE')
-        ) {
-          await prisma.user.update({
-            where: { id: userId },
-            data:  {
-              subExpireAt: rmUser.expireAt ? new Date(rmUser.expireAt) : null,
-              subStatus:   rmUser.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
-            },
-          })
-        }
-      } catch { /* REMNAWAVE unavailable — use cached data */ }
+        await prisma.user.update({
+          where: { id: userId },
+          data:  {
+            subExpireAt: synced.expireAt ? new Date(synced.expireAt) : null,
+            subStatus:   (statusMap[synced.status] ?? 'INACTIVE') as any,
+            subLink:     synced.subscriptionUrl,
+          },
+        })
+      }
     }
 
     const { passwordHash, ...safeUser } = user as any
@@ -58,7 +52,7 @@ export async function userRoutes(app: FastifyInstance) {
     }
   })
 
-  // ── Get subscription QR + link ──────────────────────────────
+  // ── Get subscription QR + link + REMNAWAVE stats ──────────
   app.get('/subscription', auth, async (req, reply) => {
     const userId = (req.user as any).sub
     const user   = await prisma.user.findUnique({ where: { id: userId } })
@@ -71,7 +65,27 @@ export async function userRoutes(app: FastifyInstance) {
       })
     }
 
-    const subUrl = user.subLink || remnawave.getSubscriptionUrl(user.remnawaveUuid)
+    // Получаем актуальные данные из REMNAWAVE (трафик, онлайн, дни)
+    const rmData = await remnawave.syncUserSubscription(user.remnawaveUuid)
+
+    const subUrl = rmData?.subscriptionUrl
+      || user.subLink
+      || remnawave.getSubscriptionUrl(user.remnawaveUuid)
+
+    // Обновляем кеш
+    if (rmData) {
+      const statusMap: Record<string, string> = {
+        ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED',
+      }
+      await prisma.user.update({
+        where: { id: userId },
+        data:  {
+          subExpireAt: rmData.expireAt ? new Date(rmData.expireAt) : null,
+          subStatus:   (statusMap[rmData.status] ?? 'INACTIVE') as any,
+          subLink:     subUrl,
+        },
+      })
+    }
 
     // Generate QR code as base64
     const qrBase64 = await QRCode.toDataURL(subUrl, {
@@ -83,9 +97,16 @@ export async function userRoutes(app: FastifyInstance) {
 
     return {
       subUrl,
-      qrCode:  qrBase64,
-      expireAt: user.subExpireAt,
-      status:   user.subStatus,
+      qrCode:             qrBase64,
+      expireAt:           rmData?.expireAt          ?? user.subExpireAt,
+      status:             rmData?.status             ?? user.subStatus,
+      // Расширенные данные из REMNAWAVE
+      usedTrafficBytes:   rmData?.usedTrafficBytes   ?? 0,
+      trafficLimitBytes:  rmData?.trafficLimitBytes  ?? null,
+      daysLeft:           rmData?.daysLeft           ?? null,
+      trafficUsedPercent: rmData?.trafficUsedPercent ?? null,
+      onlineAt:           rmData?.onlineAt           ?? null,
+      subLastOpenedAt:    rmData?.subLastOpenedAt    ?? null,
     }
   })
 

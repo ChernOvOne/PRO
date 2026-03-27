@@ -100,10 +100,17 @@ export interface RMStats {
 
 // ── Subscription ──────────────────────────────────────────────
 export interface SubscriptionData {
-  subUrl:   string
-  qrCode:   string
-  expireAt: string | null
-  status:   SubStatus
+  subUrl:             string
+  qrCode:             string
+  expireAt:           string | null
+  status:             SubStatus
+  // Расширенные данные из REMNAWAVE
+  usedTrafficBytes?:  number
+  trafficLimitBytes?: number | null
+  daysLeft?:          number | null
+  trafficUsedPercent?: number | null
+  onlineAt?:          string | null
+  subLastOpenedAt?:   string | null
 }
 
 // ── Admin ─────────────────────────────────────────────────────

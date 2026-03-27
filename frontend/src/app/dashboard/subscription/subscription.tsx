@@ -4,15 +4,17 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Shield, Copy, CheckCircle2, RefreshCw, Download,
-  Wifi, ArrowRight, AlertCircle,
+  Wifi, ArrowRight, AlertCircle, Clock, Activity,
+  Signal, Calendar,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import toast from 'react-hot-toast'
 import { userApi } from '@/lib/api'
 import type { SubscriptionData } from '@/types'
 import { Button, Badge, Card, Skeleton } from '@/components/ui'
+import { formatDate, formatBytes, formatRelative } from '@/lib/utils'
 
-export default function SubscriptionPage() {
+export default function SubscriptionContent() {
   const [sub,     setSub]     = useState<SubscriptionData | null>(null)
   const [loading, setLoading] = useState(true)
   const [noSub,   setNoSub]   = useState(false)
@@ -44,12 +46,11 @@ export default function SubscriptionPage() {
   const sync = async () => {
     setSyncing(true)
     try {
-      const res = await userApi.sync()
-      const r = res as any
-      if (r.linked) {
+      const res = await userApi.sync() as any
+      if (res.linked) {
         toast.success('Подписка найдена и привязана!')
         await load()
-      } else if (r.synced) {
+      } else if (res.synced) {
         toast.success('Данные обновлены')
         await load()
       } else {
@@ -59,222 +60,235 @@ export default function SubscriptionPage() {
     finally { setSyncing(false) }
   }
 
-  const downloadConfig = () => {
-    if (!sub?.subUrl) return
-    const blob = new Blob([sub.subUrl], { type: 'text/plain' })
-    const a    = document.createElement('a')
-    a.href     = URL.createObjectURL(blob)
-    a.download = 'hideyou-subscription.txt'
-    a.click()
+  // ── Статус ──────────────────────────────────────────────────
+  const statusConfig = {
+    ACTIVE:   { label: 'Активна',    color: 'bg-green-500/20  text-green-400',  dot: 'bg-green-400'  },
+    INACTIVE: { label: 'Неактивна',  color: 'bg-gray-500/20   text-gray-400',   dot: 'bg-gray-400'   },
+    EXPIRED:  { label: 'Истекла',    color: 'bg-red-500/20    text-red-400',    dot: 'bg-red-400'    },
+    TRIAL:    { label: 'Пробная',    color: 'bg-yellow-500/20 text-yellow-400', dot: 'bg-yellow-400' },
+    LIMITED:  { label: 'Лимит',      color: 'bg-orange-500/20 text-orange-400', dot: 'bg-orange-400' },
+    DISABLED: { label: 'Отключена',  color: 'bg-gray-500/20   text-gray-400',   dot: 'bg-gray-400'   },
   }
+  const st = (sub?.status && statusConfig[sub.status as keyof typeof statusConfig])
+    || statusConfig.INACTIVE
 
-  if (loading) return <SubSkeleton />
+  if (loading) return (
+    <div className="space-y-4">
+      {[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+    </div>
+  )
 
-  const daysLeft = sub?.expireAt
-    ? Math.max(0, Math.ceil((new Date(sub.expireAt).getTime() - Date.now()) / 86400_000))
-    : null
+  if (noSub) return (
+    <div className="space-y-6">
+      <Card className="p-8 text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-gray-800 flex items-center justify-center mx-auto">
+          <Shield className="w-8 h-8 text-gray-600" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Нет активной подписки</h2>
+          <p className="text-gray-400 text-sm">Выбери тариф чтобы начать пользоваться VPN</p>
+        </div>
+        <div className="flex gap-3 justify-center flex-wrap">
+          <Link href="/dashboard/plans">
+            <Button variant="primary">Выбрать тариф</Button>
+          </Link>
+          <Button variant="ghost" onClick={sync} loading={syncing}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Найти существующую
+          </Button>
+        </div>
+      </Card>
+    </div>
+  )
 
-  const isExpiringSoon = daysLeft !== null && daysLeft <= 5 && daysLeft > 0
+  if (!sub) return null
+
+  const usedPct = sub.trafficUsedPercent ?? (
+    sub.trafficLimitBytes && sub.trafficLimitBytes > 0
+      ? Math.min(100, Math.round((sub.usedTrafficBytes ?? 0) / sub.trafficLimitBytes * 100))
+      : null
+  )
+  const usedColor = !usedPct ? 'bg-brand-500'
+    : usedPct >= 90 ? 'bg-red-500'
+    : usedPct >= 70 ? 'bg-orange-500'
+    : 'bg-brand-500'
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Моя подписка</h1>
-          <p className="text-gray-400 text-sm mt-0.5">QR-код и ссылка для подключения</p>
-        </div>
-        <Button variant="ghost" size="sm" loading={syncing} onClick={sync}>
-          <RefreshCw className="w-4 h-4" />
-          Синхронизировать
-        </Button>
-      </div>
+    <div className="space-y-4">
 
-      {/* No subscription */}
-      {(noSub || !sub) && (
-        <Card className="text-center py-14 space-y-5">
-          <div className="w-16 h-16 rounded-2xl bg-gray-800 flex items-center
-                          justify-center mx-auto">
-            <Shield className="w-8 h-8 text-gray-600" />
+      {/* Статус и сроки */}
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-2.5 h-2.5 rounded-full ${st.dot} animate-pulse`} />
+            <span className="font-semibold">Подписка</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${st.color}`}>
+              {st.label}
+            </span>
           </div>
-          <div>
-            <p className="font-semibold text-lg">Нет активной подписки</p>
-            <p className="text-gray-500 text-sm mt-1">
-              Выбери тариф — доступ откроется сразу после оплаты
+          <Button variant="ghost" size="sm" onClick={sync} loading={syncing}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Обновить
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Дней осталось */}
+          <div className="bg-gray-800/50 rounded-xl p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Calendar className="w-3.5 h-3.5" />
+              Осталось дней
+            </div>
+            <div className="text-xl font-bold">
+              {sub.daysLeft !== null && sub.daysLeft !== undefined
+                ? sub.daysLeft > 0 ? sub.daysLeft : <span className="text-red-400">0</span>
+                : '—'}
+            </div>
+          </div>
+
+          {/* Истекает */}
+          <div className="bg-gray-800/50 rounded-xl p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Clock className="w-3.5 h-3.5" />
+              Истекает
+            </div>
+            <div className="text-sm font-medium">
+              {sub.expireAt
+                ? formatDate(sub.expireAt, { day: 'numeric', month: 'short', year: 'numeric' })
+                : '—'}
+            </div>
+          </div>
+
+          {/* Онлайн */}
+          <div className="bg-gray-800/50 rounded-xl p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Signal className="w-3.5 h-3.5" />
+              Последний онлайн
+            </div>
+            <div className="text-sm font-medium">
+              {sub.onlineAt ? formatRelative(sub.onlineAt) : '—'}
+            </div>
+          </div>
+
+          {/* Открыта подписка */}
+          <div className="bg-gray-800/50 rounded-xl p-3 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Activity className="w-3.5 h-3.5" />
+              Синхронизация
+            </div>
+            <div className="text-sm font-medium">
+              {sub.subLastOpenedAt ? formatRelative(sub.subLastOpenedAt) : '—'}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Трафик */}
+      {(sub.usedTrafficBytes !== undefined || sub.trafficLimitBytes !== undefined) && (
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-gray-400">
+              <Wifi className="w-4 h-4" />
+              Трафик
+            </div>
+            <span className="text-gray-300 font-medium">
+              {formatBytes(sub.usedTrafficBytes ?? 0)}
+              {sub.trafficLimitBytes
+                ? ` / ${formatBytes(sub.trafficLimitBytes)}`
+                : ' / ∞'}
+            </span>
+          </div>
+          <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${usedColor}`}
+              style={{ width: `${usedPct ?? 0}%` }}
+            />
+          </div>
+          {usedPct !== null && (
+            <p className="text-xs text-gray-500">
+              Использовано {usedPct}%
+              {usedPct >= 90 && (
+                <span className="text-orange-400 ml-2">— скоро закончится</span>
+              )}
             </p>
+          )}
+        </Card>
+      )}
+
+      {/* Ссылка подписки */}
+      <Card className="p-5 space-y-4">
+        <h3 className="font-medium flex items-center gap-2">
+          <Download className="w-4 h-4 text-brand-400" />
+          Ссылка для подключения
+        </h3>
+
+        <div className="bg-gray-800 rounded-xl p-3 flex items-center gap-2 group">
+          <code className="flex-1 text-xs text-gray-300 truncate font-mono">
+            {sub.subUrl}
+          </code>
+          <button
+            onClick={() => copy(sub.subUrl, 'url')}
+            className="shrink-0 text-gray-500 hover:text-white transition-colors"
+          >
+            {copied === 'url'
+              ? <CheckCircle2 className="w-4 h-4 text-green-400" />
+              : <Copy className="w-4 h-4" />}
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Вставь эту ссылку в приложение VPN: Hiddify, NekoRay, V2RayN, Streisand и другие.
+        </p>
+
+        <Link href="/dashboard/instructions">
+          <Button variant="ghost" size="sm" className="w-full justify-center">
+            Инструкции по подключению
+            <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+          </Button>
+        </Link>
+      </Card>
+
+      {/* QR-код */}
+      <Card className="p-5 space-y-4">
+        <h3 className="font-medium flex items-center gap-2">
+          <Wifi className="w-4 h-4 text-brand-400" />
+          QR-код для мобильных приложений
+        </h3>
+
+        <div className="flex justify-center">
+          <div className="bg-white p-4 rounded-2xl">
+            <QRCodeSVG
+              value={sub.subUrl}
+              size={200}
+              level="M"
+              includeMargin={false}
+            />
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/dashboard/plans" className="btn-primary">
-              Выбрать тариф <ArrowRight className="w-4 h-4" />
+        </div>
+
+        <p className="text-xs text-gray-500 text-center">
+          Отсканируй камерой в приложении Hiddify или другом VPN-клиенте
+        </p>
+      </Card>
+
+      {/* Предупреждение если скоро истекает */}
+      {sub.daysLeft !== null && sub.daysLeft !== undefined && sub.daysLeft <= 7 && sub.daysLeft > 0 && (
+        <Card className="p-4 border border-yellow-500/30 bg-yellow-500/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-yellow-300">
+                Подписка истекает через {sub.daysLeft} {sub.daysLeft === 1 ? 'день' : 'дней'}
+              </p>
+              <p className="text-xs text-gray-400">Продли сейчас чтобы не потерять доступ</p>
+            </div>
+            <Link href="/dashboard/plans" className="ml-auto shrink-0">
+              <Button variant="primary" size="sm">Продлить</Button>
             </Link>
-            <Button variant="secondary" onClick={sync} loading={syncing}>
-              <RefreshCw className="w-4 h-4" />
-              У меня уже есть подписка
-            </Button>
           </div>
         </Card>
       )}
 
-      {sub && (
-        <>
-          {/* Status banner */}
-          <div className={`rounded-2xl p-4 border flex items-center gap-3
-                           ${sub.status === 'ACTIVE'
-                             ? 'bg-emerald-500/10 border-emerald-500/20'
-                             : 'bg-red-500/10 border-red-500/20'}`}>
-            <div className={`w-2 h-2 rounded-full flex-shrink-0
-                              ${sub.status === 'ACTIVE' ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-            <div className="flex-1">
-              <p className={`font-medium text-sm ${sub.status === 'ACTIVE' ? 'text-emerald-300' : 'text-red-300'}`}>
-                {sub.status === 'ACTIVE' ? 'Подписка активна' : 'Подписка неактивна'}
-              </p>
-              {sub.expireAt && (
-                <p className={`text-xs mt-0.5 ${sub.status === 'ACTIVE' ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {sub.status === 'ACTIVE' ? 'Действует до' : 'Истекла'}{' '}
-                  {new Date(sub.expireAt).toLocaleDateString('ru', {
-                    day: 'numeric', month: 'long', year: 'numeric',
-                  })}
-                  {daysLeft !== null && sub.status === 'ACTIVE' && ` (${daysLeft} дн.)`}
-                </p>
-              )}
-            </div>
-            {sub.status === 'ACTIVE' && (
-              <Link href="/dashboard/plans">
-                <Button variant="secondary" size="sm">Продлить</Button>
-              </Link>
-            )}
-          </div>
-
-          {/* Expiry warning */}
-          {isExpiringSoon && (
-            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10
-                            border border-amber-500/20 text-amber-300">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-sm">Подписка истекает через {daysLeft} дн.</p>
-                <p className="text-xs text-amber-400/70 mt-0.5">
-                  Продли сейчас чтобы не потерять доступ
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* QR Code */}
-            <Card className="flex flex-col items-center space-y-4">
-              <p className="font-semibold w-full">QR-код для подключения</p>
-              <div className="p-4 bg-white rounded-2xl shadow-lg">
-                <QRCodeSVG value={sub.subUrl} size={200} />
-              </div>
-              <p className="text-xs text-gray-500 text-center">
-                Отсканируй QR-кодом в приложении
-              </p>
-              <Button variant="secondary" size="sm" onClick={downloadConfig}>
-                <Download className="w-3.5 h-3.5" />
-                Скачать ссылку как файл
-              </Button>
-            </Card>
-
-            {/* Sub URL + stats */}
-            <div className="space-y-4">
-              <Card className="space-y-3">
-                <p className="font-semibold">Ссылка-подписка</p>
-                <div className="flex items-center gap-2 p-3 bg-gray-800
-                                rounded-xl border border-gray-700">
-                  <p className="flex-1 text-xs font-mono text-gray-400 truncate">
-                    {sub.subUrl}
-                  </p>
-                  <button
-                    onClick={() => copy(sub.subUrl, 'url')}
-                    className="flex-shrink-0 p-1.5 text-gray-400 hover:text-white
-                               hover:bg-gray-700 rounded-lg transition-colors">
-                    {copied === 'url'
-                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Вставь эту ссылку в поле «Добавить подписку» в приложении
-                </p>
-              </Card>
-
-              {/* How to use */}
-              <Card className="space-y-3">
-                <p className="font-semibold flex items-center gap-2">
-                  <Wifi className="w-4 h-4 text-brand-400" />
-                  Как подключиться
-                </p>
-                <ol className="space-y-2">
-                  {[
-                    'Установи одно из рекомендуемых приложений',
-                    'Скопируй ссылку-подписку или отсканируй QR-код',
-                    'Вставь в приложение → "Добавить подписку"',
-                    'Нажми "Подключиться" и готово',
-                  ].map((s, i) => (
-                    <li key={i} className="flex gap-2.5 text-sm">
-                      <span className="w-5 h-5 rounded-full bg-brand-600/20 text-brand-400
-                                       text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
-                        {i + 1}
-                      </span>
-                      <span className="text-gray-400">{s}</span>
-                    </li>
-                  ))}
-                </ol>
-                <Link href="/dashboard/instructions"
-                      className="flex items-center gap-1.5 text-brand-400 hover:text-brand-300
-                                 text-sm transition-colors font-medium">
-                  Подробные инструкции для каждого устройства
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </Card>
-            </div>
-          </div>
-
-          {/* Recommended apps */}
-          <Card className="space-y-4">
-            <p className="font-semibold">Рекомендуемые приложения</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {APPS.map(app => (
-                <a key={app.name} href={app.url} target="_blank" rel="noopener"
-                   className="flex flex-col items-center gap-2 p-4 bg-gray-800 hover:bg-gray-750
-                              border border-gray-700 hover:border-gray-600
-                              rounded-xl text-center transition-colors group">
-                  <span className="text-2xl">{app.icon}</span>
-                  <div>
-                    <p className="text-sm font-medium group-hover:text-white transition-colors">
-                      {app.name}
-                    </p>
-                    <p className="text-xs text-gray-500">{app.platform}</p>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </Card>
-        </>
-      )}
-    </div>
-  )
-}
-
-const APPS = [
-  { name: 'Streisand',  platform: 'iOS',     icon: '📱', url: 'https://apps.apple.com/app/streisand/id6450534064' },
-  { name: 'v2rayNG',    platform: 'Android', icon: '🤖', url: 'https://play.google.com/store/apps/details?id=com.v2ray.ang' },
-  { name: 'Hiddify',    platform: 'Windows', icon: '🪟', url: 'https://github.com/hiddify/hiddify-next/releases/latest' },
-  { name: 'Hiddify',    platform: 'macOS',   icon: '🍎', url: 'https://github.com/hiddify/hiddify-next/releases/latest' },
-]
-
-function SubSkeleton() {
-  return (
-    <div className="max-w-3xl mx-auto space-y-6 animate-pulse">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-20 rounded-2xl" />
-      <div className="grid md:grid-cols-2 gap-6">
-        <Skeleton className="h-80 rounded-2xl" />
-        <div className="space-y-4">
-          <Skeleton className="h-36 rounded-2xl" />
-          <Skeleton className="h-44 rounded-2xl" />
-        </div>
-      </div>
     </div>
   )
 }
