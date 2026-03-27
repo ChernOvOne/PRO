@@ -173,8 +173,7 @@ export async function userRoutes(app: FastifyInstance) {
   })
 
   // ── Sync subscription from REMNAWAVE ──────────────────────
-  // POST без тела — указываем schema чтобы Fastify не ругался на пустой body
-  app.post('/sync', { ...auth, schema: { body: {} } }, async (req) => {
+  app.post('/sync', auth, async (req) => {
     const userId = (req.user as any).sub
     const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) return { ok: false }

@@ -13,6 +13,25 @@ const app = Fastify({
 
 async function bootstrap() {
   try {
+    // Разрешаем POST-запросы с пустым телом и Content-Type: application/json.
+    // Без этого Fastify возвращает 400 когда тело пустое но заголовок указан.
+    app.addContentTypeParser(
+      'application/json',
+      { parseAs: 'string' },
+      (req, body: string, done) => {
+        if (!body || body.trim() === '') {
+          done(null, {})
+          return
+        }
+        try {
+          done(null, JSON.parse(body))
+        } catch (err: any) {
+          err.statusCode = 400
+          done(err, undefined)
+        }
+      },
+    )
+
     await registerPlugins(app)
     await registerRoutes(app)
     await app.listen({ port: config.port, host: '0.0.0.0' })

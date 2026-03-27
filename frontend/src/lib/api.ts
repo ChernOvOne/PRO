@@ -46,7 +46,7 @@ export const userApi = {
   instructions: () => apiFetch<Instruction[]>('/user/instructions'),
   payments:     () => apiFetch<Payment[]>('/user/payments'),
   referral:     () => apiFetch<ReferralInfo>('/user/referral'),
-  sync:         () => apiFetch<{ ok: boolean; linked?: boolean }>('/user/sync', { method: 'POST' }),
+  sync:         () => apiFetch<{ ok: boolean; linked?: boolean }>('/user/sync', { method: 'POST', body: '{}' }),
 }
 
 // ── Public ────────────────────────────────────────────────────
