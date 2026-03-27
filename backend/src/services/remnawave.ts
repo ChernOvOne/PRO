@@ -2,28 +2,37 @@ import axios, { AxiosInstance } from 'axios'
 import { config } from '../config'
 import { logger } from '../utils/logger'
 
-// ── Types ─────────────────────────────────────────────────────
-// Соответствуют Remnawave API v1.6+
+// ── Types — точно соответствуют реальному ответу Remnawave API ─
+export interface RemnawaveUserTraffic {
+  usedTrafficBytes:          number
+  lifetimeUsedTrafficBytes:  number
+  onlineAt:                  string | null
+  lastConnectedNodeUuid:     string | null
+  firstConnectedAt:          string | null
+}
+
 export interface RemnawaveUser {
-  uuid:               string
-  username:           string
-  status:             'ACTIVE' | 'DISABLED' | 'LIMITED' | 'EXPIRED'
-  expireAt:           string | null
-  usedTrafficBytes:   number
-  trafficLimitBytes:  number | null
-  trafficLimitStrategy: 'NO_RESET' | 'MONTH' | 'WEEK' | 'DAY'
-  subLastUserAgent:   string | null
-  subLastOpenedAt:    string | null
-  subRevokedAt:       string | null
-  onlineAt:           string | null
-  email:              string | null
-  telegramId:         string | null
-  description:        string | null
-  shortUuid:          string
-  subscriptionUrl:    string    // полный URL подписки из панели
-  hwidDeviceLimit:    number | null
-  createdAt:          string
-  updatedAt:          string
+  uuid:                 string
+  id:                   number
+  shortUuid:            string
+  username:             string
+  status:               'ACTIVE' | 'DISABLED' | 'LIMITED' | 'EXPIRED'
+  trafficLimitBytes:    number   // 0 = безлимит
+  trafficLimitStrategy: string
+  expireAt:             string | null
+  telegramId:           number | null   // ЧИСЛО, не строка!
+  email:                string | null
+  description:          string | null
+  tag:                  string | null
+  hwidDeviceLimit:      number
+  subRevokedAt:         string | null
+  subLastUserAgent:     string | null
+  subLastOpenedAt:      string | null
+  lastTrafficResetAt:   string | null
+  createdAt:            string
+  updatedAt:            string
+  subscriptionUrl:      string
+  userTraffic:          RemnawaveUserTraffic  // трафик в отдельном объекте!
 }
 
 export interface RemnawaveUsersResponse {
@@ -36,10 +45,10 @@ export interface CreateUserPayload {
   expireAt?:          string | null
   trafficLimitBytes?: number
   email?:             string | null
-  telegramId?:        string | null
+  telegramId?:        number | null   // число!
   description?:       string | null
+  tagIds?:            string[]
   activeUserInbounds?: Array<{ uuid: string }>
-  tagIds?:            string[]   // теги тарифа для Remnawave
 }
 
 export interface UpdateUserPayload {
@@ -47,8 +56,14 @@ export interface UpdateUserPayload {
   status?:            'ACTIVE' | 'DISABLED'
   trafficLimitBytes?: number | null
   email?:             string | null
-  telegramId?:        string | null
+  telegramId?:        number | null
   description?:       string | null
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+// Из реального ответа: поле response может быть массивом или объектом
+function unwrap(data: any): any {
+  return data?.response ?? data
 }
 
 // ── Service ───────────────────────────────────────────────────
@@ -60,7 +75,7 @@ class RemnawaveService {
     this.configured = !!(config.remnawave.token)
 
     this.client = axios.create({
-      baseURL:  config.remnawave.url,
+      baseURL: config.remnawave.url,
       headers: {
         'Authorization': `Bearer ${config.remnawave.token}`,
         'Content-Type':  'application/json',
@@ -82,7 +97,6 @@ class RemnawaveService {
     )
   }
 
-  // Проверка что токен задан — не крашим если не настроен
   private check(): boolean {
     if (!this.configured) {
       logger.warn('REMNAWAVE_TOKEN not configured — skipping API call')
@@ -91,201 +105,181 @@ class RemnawaveService {
     return true
   }
 
-  // ── Поиск пользователей ───────────────────────────────────
-
-  // Получить по UUID — основной метод для синхронизации подписки
+  // ── Получить по UUID ────────────────────────────────────────
   async getUserByUuid(uuid: string): Promise<RemnawaveUser> {
-    const res = await this.client.get(`/api/users/${uuid}`)
-    // Remnawave возвращает { response: {...} }
-    return res.data.response ?? res.data
+    const res  = await this.client.get(`/api/users/${uuid}`)
+    const data = unwrap(res.data)
+    // Может вернуть массив или объект
+    if (Array.isArray(data)) return data[0]
+    return data
   }
 
-  // Получить по email — используется при привязке аккаунта
-  // Remnawave API v1.6+: GET /api/users/get-by-email?email=xxx
-  async getUserByEmail(email: string): Promise<RemnawaveUser | null> {
-    if (!this.check()) return null
-    try {
-      const res = await this.client.get('/api/users/get-by-email', {
-        params: { email },
-      })
-      return res.data.response ?? res.data ?? null
-    } catch (err: any) {
-      if (err.response?.status === 404) return null
-      // Fallback: поиск через общий список если эндпоинт не найден
-      return this.searchUserByField('email', email)
-    }
-  }
-
-  // Получить по Telegram ID — используется при Telegram-авторизации
-  // Remnawave API v1.6+: GET /api/users/get-by-telegram-id?telegramId=xxx
+  // ── Поиск по Telegram ID ────────────────────────────────────
+  // Реальный эндпоинт: GET /api/users — с параметром поиска по telegramId
+  // telegramId в Remnawave — число (int), передаём как число
   async getUserByTelegramId(telegramId: string): Promise<RemnawaveUser | null> {
     if (!this.check()) return null
     try {
-      const res = await this.client.get('/api/users/get-by-telegram-id', {
-        params: { telegramId },
-      })
-      return res.data.response ?? res.data ?? null
-    } catch (err: any) {
-      if (err.response?.status === 404) return null
-      return this.searchUserByField('telegramId', telegramId)
-    }
-  }
+      const tgIdNum = parseInt(telegramId, 10)
+      if (isNaN(tgIdNum)) return null
 
-  // Fallback поиск через список — на случай старых версий API
-  private async searchUserByField(
-    field: 'email' | 'telegramId',
-    value: string,
-  ): Promise<RemnawaveUser | null> {
-    try {
-      const res = await this.client.get('/api/users', {
-        params: { start: 0, size: 10, search: value },
-      })
-      const users: RemnawaveUser[] = res.data.users ?? res.data.response?.users ?? []
-      return users.find(u => {
-        if (field === 'email')      return u.email      === value
-        if (field === 'telegramId') return u.telegramId === value
-        return false
-      }) ?? null
+      // Пробуем специальный эндпоинт (если есть в версии панели)
+      try {
+        const res = await this.client.get('/api/users/get-by-telegram-id', {
+          params: { telegramId: tgIdNum },
+        })
+        const data = unwrap(res.data)
+        if (Array.isArray(data)) {
+          // Возвращает массив — берём ACTIVE если есть, иначе первый
+          return this.pickBestUser(data)
+        }
+        return data ?? null
+      } catch (e: any) {
+        if (e.response?.status !== 400 && e.response?.status !== 404) throw e
+        // Fallback: поиск через общий список
+      }
+
+      // Fallback: GET /api/users?search=telegramId
+      return await this.searchByTelegramId(tgIdNum)
     } catch {
       return null
     }
   }
 
-  // Получить всех пользователей (для admin)
-  async getAllUsers(start = 0, size = 25): Promise<RemnawaveUsersResponse> {
-    const res = await this.client.get('/api/users', {
-      params: { start, size },
+  // Поиск через общий список пользователей
+  private async searchByTelegramId(telegramId: number): Promise<RemnawaveUser | null> {
+    try {
+      // Remnawave поддерживает поиск по telegramId через GET /api/users
+      const res  = await this.client.get('/api/users', {
+        params: { start: 0, size: 10, telegramId },
+      })
+      const data = unwrap(res.data)
+      const users: RemnawaveUser[] = Array.isArray(data)
+        ? data
+        : (data.users ?? [])
+      const matched = users.filter(u => u.telegramId === telegramId)
+      return this.pickBestUser(matched)
+    } catch {
+      return null
+    }
+  }
+
+  // ── Поиск по Email ──────────────────────────────────────────
+  async getUserByEmail(email: string): Promise<RemnawaveUser | null> {
+    if (!this.check()) return null
+    try {
+      try {
+        const res  = await this.client.get('/api/users/get-by-email', {
+          params: { email },
+        })
+        const data = unwrap(res.data)
+        if (Array.isArray(data)) return this.pickBestUser(data)
+        return data ?? null
+      } catch (e: any) {
+        if (e.response?.status !== 400 && e.response?.status !== 404) throw e
+      }
+
+      // Fallback: GET /api/users?search=email
+      const res  = await this.client.get('/api/users', {
+        params: { start: 0, size: 10, search: email },
+      })
+      const data  = unwrap(res.data)
+      const users: RemnawaveUser[] = Array.isArray(data) ? data : (data.users ?? [])
+      const matched = users.filter(u => u.email === email)
+      return this.pickBestUser(matched)
+    } catch {
+      return null
+    }
+  }
+
+  // Из нескольких записей выбираем лучшую:
+  // 1. ACTIVE с самой поздней датой истечения
+  // 2. иначе самую свежую по expireAt
+  private pickBestUser(users: RemnawaveUser[]): RemnawaveUser | null {
+    if (!users.length) return null
+    if (users.length === 1) return users[0]
+
+    const active = users.filter(u => u.status === 'ACTIVE')
+    const pool   = active.length ? active : users
+
+    return pool.reduce((best, u) => {
+      const bestDate = best.expireAt ? new Date(best.expireAt).getTime() : 0
+      const uDate    = u.expireAt    ? new Date(u.expireAt).getTime()    : 0
+      return uDate > bestDate ? u : best
     })
-    const data = res.data.response ?? res.data
+  }
+
+  // ── Все пользователи (для admin) ────────────────────────────
+  async getAllUsers(start = 0, size = 25): Promise<RemnawaveUsersResponse> {
+    const res  = await this.client.get('/api/users', { params: { start, size } })
+    const data = unwrap(res.data)
     return {
-      users: data.users ?? [],
+      users: Array.isArray(data) ? data : (data.users ?? []),
       total: data.total ?? 0,
     }
   }
 
-  // ── Управление пользователями ─────────────────────────────
-
+  // ── CRUD ────────────────────────────────────────────────────
   async createUser(payload: CreateUserPayload): Promise<RemnawaveUser> {
     const res = await this.client.post('/api/users', payload)
-    return res.data.response ?? res.data
+    return unwrap(res.data)
   }
 
   async updateUser(uuid: string, payload: UpdateUserPayload): Promise<RemnawaveUser> {
     const res = await this.client.patch(`/api/users/${uuid}`, payload)
-    return res.data.response ?? res.data
+    return unwrap(res.data)
   }
 
-  // Включить пользователя: POST /api/users/{uuid}/enable
   async enableUser(uuid: string): Promise<RemnawaveUser> {
     try {
       const res = await this.client.post(`/api/users/${uuid}/enable`)
-      return res.data.response ?? res.data
+      return unwrap(res.data)
     } catch {
-      // Fallback для старых версий
       return this.updateUser(uuid, { status: 'ACTIVE' })
     }
   }
 
-  // Выключить пользователя: POST /api/users/{uuid}/disable
   async disableUser(uuid: string): Promise<RemnawaveUser> {
     try {
       const res = await this.client.post(`/api/users/${uuid}/disable`)
-      return res.data.response ?? res.data
+      return unwrap(res.data)
     } catch {
       return this.updateUser(uuid, { status: 'DISABLED' })
     }
   }
 
-  // Сброс трафика: POST /api/users/{uuid}/reset-traffic
   async resetTraffic(uuid: string): Promise<RemnawaveUser> {
     const res = await this.client.post(`/api/users/${uuid}/reset-traffic`)
-    return res.data.response ?? res.data
+    return unwrap(res.data)
   }
 
-  // Отозвать подписку (принудительный реконнект клиентов)
   async revokeSubscription(uuid: string): Promise<RemnawaveUser> {
     const res = await this.client.post(`/api/users/${uuid}/revoke-subscription`)
-    return res.data.response ?? res.data
+    return unwrap(res.data)
   }
 
-  // ── Продление подписки ────────────────────────────────────
-
+  // ── Продление подписки ──────────────────────────────────────
   async extendSubscription(
     uuid:    string,
     days:    number,
     current: Date | null = null,
   ): Promise<RemnawaveUser> {
     const base = current ? new Date(current) : new Date()
-    // Если дата в прошлом — продлеваем от сегодня
     if (base < new Date()) base.setTime(Date.now())
     base.setDate(base.getDate() + days)
-
-    return this.updateUser(uuid, {
-      expireAt: base.toISOString(),
-      status:   'ACTIVE',
-    })
+    return this.updateUser(uuid, { expireAt: base.toISOString(), status: 'ACTIVE' })
   }
 
-  // ── URL подписки ──────────────────────────────────────────
-
-  // Возвращает URL подписки — предпочитаем тот что вернул сам REMNAWAVE
-  getSubscriptionUrl(uuid: string, rmSubscriptionUrl?: string): string {
+  // ── URL подписки ─────────────────────────────────────────────
+  getSubscriptionUrl(uuid: string, rmSubscriptionUrl?: string | null): string {
     if (rmSubscriptionUrl) return rmSubscriptionUrl
     return `${config.remnawave.subscriptionUrl}/sub/${uuid}`
   }
 
-  // ── Системная статистика ──────────────────────────────────
-
-  async getSystemStats() {
-    const res = await this.client.get('/api/system/stats')
-    return res.data.response ?? res.data
-  }
-
-  async getBandwidthStats() {
-    try {
-      const res = await this.client.get('/api/system/bandwidth-stats')
-      return res.data.response ?? res.data
-    } catch { return null }
-  }
-
-  async getNodes() {
-    const res = await this.client.get('/api/nodes')
-    return res.data.response ?? res.data
-  }
-
-  // ── Хелпер: найти или создать пользователя ────────────────
-
-  async findOrCreateUser(params: {
-    email?:      string
-    telegramId?: string
-    username:    string
-    expireAt?:   string
-  }): Promise<{ user: RemnawaveUser; created: boolean }> {
-    let existing: RemnawaveUser | null = null
-
-    if (params.email) {
-      existing = await this.getUserByEmail(params.email)
-    }
-    if (!existing && params.telegramId) {
-      existing = await this.getUserByTelegramId(params.telegramId)
-    }
-
-    if (existing) return { user: existing, created: false }
-
-    const user = await this.createUser({
-      username:   params.username,
-      email:      params.email ?? null,
-      telegramId: params.telegramId ?? null,
-      expireAt:   params.expireAt ?? null,
-    })
-    return { user, created: true }
-  }
-
-  // ── Полная синхронизация подписки пользователя ────────────
-  // Возвращает актуальные данные подписки для отображения в ЛК
-
+  // ── Полная синхронизация для ЛК ────────────────────────────
+  // Собирает все нужные данные для отображения подписки пользователю
   async syncUserSubscription(remnawaveUuid: string): Promise<{
-    status:             'ACTIVE' | 'DISABLED' | 'LIMITED' | 'EXPIRED'
+    status:             string
     expireAt:           string | null
     usedTrafficBytes:   number
     trafficLimitBytes:  number | null
@@ -298,29 +292,28 @@ class RemnawaveService {
     try {
       const rm = await this.getUserByUuid(remnawaveUuid)
 
-      // Считаем дни до истечения
+      // Трафик теперь в userTraffic (из реального ответа API)
+      const usedBytes  = rm.userTraffic?.usedTrafficBytes  ?? 0
+      const limitBytes = rm.trafficLimitBytes > 0 ? rm.trafficLimitBytes : null
+
       let daysLeft: number | null = null
       if (rm.expireAt) {
         const ms = new Date(rm.expireAt).getTime() - Date.now()
         daysLeft = Math.max(0, Math.ceil(ms / 86_400_000))
       }
 
-      // Процент использованного трафика
       let trafficUsedPercent: number | null = null
-      if (rm.trafficLimitBytes && rm.trafficLimitBytes > 0) {
-        trafficUsedPercent = Math.min(
-          100,
-          Math.round((rm.usedTrafficBytes / rm.trafficLimitBytes) * 100),
-        )
+      if (limitBytes && limitBytes > 0) {
+        trafficUsedPercent = Math.min(100, Math.round(usedBytes / limitBytes * 100))
       }
 
       return {
         status:             rm.status,
         expireAt:           rm.expireAt,
-        usedTrafficBytes:   rm.usedTrafficBytes,
-        trafficLimitBytes:  rm.trafficLimitBytes,
+        usedTrafficBytes:   usedBytes,
+        trafficLimitBytes:  limitBytes,
         subscriptionUrl:    this.getSubscriptionUrl(rm.uuid, rm.subscriptionUrl),
-        onlineAt:           rm.onlineAt,
+        onlineAt:           rm.userTraffic?.onlineAt ?? null,
         subLastOpenedAt:    rm.subLastOpenedAt,
         daysLeft,
         trafficUsedPercent,
@@ -328,6 +321,45 @@ class RemnawaveService {
     } catch {
       return null
     }
+  }
+
+  // ── Статистика ───────────────────────────────────────────────
+  async getSystemStats() {
+    try {
+      const res = await this.client.get('/api/system/stats')
+      return unwrap(res.data)
+    } catch { return null }
+  }
+
+  async getNodes() {
+    try {
+      const res = await this.client.get('/api/nodes')
+      return unwrap(res.data)
+    } catch { return null }
+  }
+
+  // ── Хелпер: найти или создать ───────────────────────────────
+  async findOrCreateUser(params: {
+    email?:      string
+    telegramId?: string
+    username:    string
+    expireAt?:   string
+  }): Promise<{ user: RemnawaveUser; created: boolean }> {
+    let existing: RemnawaveUser | null = null
+
+    if (params.email)      existing = await this.getUserByEmail(params.email)
+    if (!existing && params.telegramId)
+      existing = await this.getUserByTelegramId(params.telegramId)
+
+    if (existing) return { user: existing, created: false }
+
+    const user = await this.createUser({
+      username:   params.username,
+      email:      params.email      ?? null,
+      telegramId: params.telegramId ? parseInt(params.telegramId, 10) : null,
+      expireAt:   params.expireAt   ?? null,
+    })
+    return { user, created: true }
   }
 }
 
