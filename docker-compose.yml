@@ -71,6 +71,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
+      # NEXT_PUBLIC_* переменные запекаются в JS-бандл во время сборки,
+      # поэтому их нужно передавать как build args, а не только как environment.
+      args:
+        - NEXT_PUBLIC_TG_BOT_NAME=${TELEGRAM_BOT_NAME}
+        - NEXT_PUBLIC_API_URL=/api
     container_name: hideyou_frontend
     restart: unless-stopped
     env_file: .env
