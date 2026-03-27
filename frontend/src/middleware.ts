@@ -19,8 +19,12 @@ export function middleware(req: NextRequest) {
   const token        = req.cookies.get('token')?.value
 
   // Redirect logged-in users away from /login
+  // Не можем знать роль из middleware (JWT не декодируем) — идём на /dashboard,
+  // а admin/layout сам перенаправит если нужно. Но если пришли с /admin — туда и шлём.
   if (pathname === '/login' && token) {
-    return NextResponse.redirect(new URL('/dashboard', req.url))
+    const from = req.nextUrl.searchParams.get('from')
+    const target = from?.startsWith('/admin') ? '/admin' : '/dashboard'
+    return NextResponse.redirect(new URL(target, req.url))
   }
 
   // Allow public paths without auth
