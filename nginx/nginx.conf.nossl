@@ -29,6 +29,12 @@ http {
   limit_req_zone $binary_remote_addr zone=webhook:5m rate=300r/m;
   limit_conn_zone $binary_remote_addr zone=perip:10m;
 
+  # Docker встроенный DNS резолвер — переразрешает имена при каждом запросе.
+  # Без этого nginx кеширует IP при старте и после rebuild контейнеров
+  # получает "Connection refused" на старый IP.
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  resolver_timeout 5s;
+
   upstream backend_pool  { server backend:4000;  keepalive 32; }
   upstream frontend_pool { server frontend:3000; keepalive 16; }
 
