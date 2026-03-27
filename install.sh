@@ -587,7 +587,18 @@ setup_ssl() {
 
 # ── Контейнеры ────────────────────────────────────────────────
 pull_images()    { step "Скачивание образов";  docker compose pull 2>&1 | tee -a "$LOG_FILE"; ok "Готово"; }
-build_services() { step "Сборка сервисов";      docker compose build --no-cache 2>&1 | tee -a "$LOG_FILE"; ok "Собрано"; }
+build_services() {
+  step "Сборка сервисов"
+  docker compose build --no-cache 2>&1 | tee -a "$LOG_FILE"
+  ok "Собрано"
+  # После пересборки контейнеры получают новые IP — nginx кешировал старые.
+  # Перезапускаем nginx чтобы он переразрешил имена через Docker DNS.
+  if docker compose ps nginx 2>/dev/null | grep -q "Up\|running"; then
+    info "Перезапускаю nginx (обновляю DNS-кеш после пересборки)..."
+    docker compose restart nginx 2>&1 | tee -a "$LOG_FILE"
+    ok "nginx перезапущен"
+  fi
+}
 
 # ── Генерация nginx.conf из шаблона ──────────────────────────
 # Если SSL-сертификат существует — SSL-конфиг.
