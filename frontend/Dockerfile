@@ -12,6 +12,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV INTERNAL_API_URL=http://backend:4000
 
+# Build-time args — NEXT_PUBLIC_* запекаются в бандл при сборке
+ARG NEXT_PUBLIC_TG_BOT_NAME
+ARG NEXT_PUBLIC_API_URL=/api
+ENV NEXT_PUBLIC_TG_BOT_NAME=${NEXT_PUBLIC_TG_BOT_NAME}
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN npm run build
 
 # ── Production ────────────────────────────────────────────────
