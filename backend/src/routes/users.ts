@@ -173,7 +173,8 @@ export async function userRoutes(app: FastifyInstance) {
   })
 
   // ── Sync subscription from REMNAWAVE ──────────────────────
-  app.post('/sync', auth, async (req) => {
+  // POST без тела — указываем schema чтобы Fastify не ругался на пустой body
+  app.post('/sync', { ...auth, schema: { body: {} } }, async (req) => {
     const userId = (req.user as any).sub
     const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) return { ok: false }
@@ -185,13 +186,17 @@ export async function userRoutes(app: FastifyInstance) {
       if (!rmUser && user.telegramId) rmUser = await remnawave.getUserByTelegramId(user.telegramId)
 
       if (rmUser) {
+        const subLink = remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl)
+        const statusMap: Record<string, string> = {
+          ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED',
+        }
         await prisma.user.update({
           where: { id: userId },
           data: {
             remnawaveUuid: rmUser.uuid,
-            subStatus:     rmUser.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+            subStatus:     (statusMap[rmUser.status] ?? 'INACTIVE') as any,
             subExpireAt:   rmUser.expireAt ? new Date(rmUser.expireAt) : null,
-            subLink:       remnawave.getSubscriptionUrl(rmUser.uuid),
+            subLink,
           },
         })
         return { ok: true, linked: true }
@@ -211,7 +216,7 @@ export async function userRoutes(app: FastifyInstance) {
   })
 
   // ── Apply referral code ────────────────────────────────────
-  app.post('/apply-referral', auth, async (req, reply) => {
+  app.post('/apply-referral', { ...auth, schema: { body: { type: 'object' } } }, async (req, reply) => {
     const userId = (req.user as any).sub
     const { code } = req.body as { code?: string }
 

@@ -13,14 +13,21 @@ export async function registerPlugins(app: FastifyInstance) {
   await app.register(securityPlugin)
 
   // ── CORS ────────────────────────────────────────────────
+  // Собираем все разрешённые домены из .env.
+  // Используем отдельные ADMIN_DOMAIN и API_DOMAIN — они могут отличаться от DOMAIN.
+  const corsOrigins: (string | RegExp)[] = [
+    config.appUrl,
+    `https://${config.domain}`,
+  ]
+  // Добавляем adminDomain и apiDomain если они заданы и отличаются от основного
+  if (config.adminDomain) corsOrigins.push(`https://${config.adminDomain}`)
+  if (config.apiDomain)   corsOrigins.push(`https://${config.apiDomain}`)
+  if (config.isDev) {
+    corsOrigins.push('http://localhost:3000', 'http://localhost:4000')
+  }
+
   await app.register(fastifyCors, {
-    origin: [
-      config.appUrl,
-      `https://${config.domain}`,
-      `https://admin.${config.domain}`,
-      `https://api.${config.domain}`,
-      ...(config.isDev ? ['http://localhost:3000', 'http://localhost:4000'] : []),
-    ],
+    origin: corsOrigins,
     credentials: true,
   })
 
