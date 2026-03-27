@@ -59,14 +59,13 @@ async function importUsers() {
 
     try {
       // Check if already in our DB
-      const existing = await prisma.user.findFirst({
-        where: {
-          OR: [
-            row.email       ? { email:      row.email }                  : {},
-            row.telegram_id ? { telegramId: row.telegram_id }            : {},
-          ].filter(Boolean),
-        },
-      })
+      const orConditions: any[] = []
+      if (row.email)       orConditions.push({ email: row.email })
+      if (row.telegram_id) orConditions.push({ telegramId: row.telegram_id })
+
+      const existing = orConditions.length > 0
+        ? await prisma.user.findFirst({ where: { OR: orConditions } })
+        : null
 
       if (existing?.remnawaveUuid) {
         skipped++

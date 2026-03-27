@@ -77,7 +77,12 @@ export async function syncSubscriptions() {
   await prisma.$disconnect()
 }
 
-syncSubscriptions().catch(err => {
-  logger.error('Sync crashed:', err)
-  process.exit(1)
-})
+// Run if executed directly (not imported by scheduler)
+if (require.main === module) {
+  syncSubscriptions()
+    .catch(err => {
+      logger.error('Sync crashed:', err)
+      process.exit(1)
+    })
+    .finally(() => prisma.$disconnect())
+}

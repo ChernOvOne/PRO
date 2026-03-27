@@ -18,6 +18,7 @@ export async function registerPlugins(app: FastifyInstance) {
       config.appUrl,
       `https://${config.domain}`,
       `https://admin.${config.domain}`,
+      `https://api.${config.domain}`,
       ...(config.isDev ? ['http://localhost:3000', 'http://localhost:4000'] : []),
     ],
     credentials: true,

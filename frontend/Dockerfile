@@ -10,6 +10,7 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV INTERNAL_API_URL=http://backend:4000
 
 RUN npm run build
 

@@ -96,6 +96,7 @@ export async function authRoutes(app: FastifyInstance) {
         sameSite: 'lax',
         maxAge:   30 * 24 * 3600,
         path:     '/',
+        domain:   config.isProd ? `.${config.domain}` : undefined,
       })
       .send({ token, user: sanitizeUser(user) })
   })
@@ -146,6 +147,7 @@ export async function authRoutes(app: FastifyInstance) {
         sameSite: 'lax',
         maxAge:   30 * 24 * 3600,
         path:     '/',
+        domain:   config.isProd ? `.${config.domain}` : undefined,
       })
       .send({ token, user: sanitizeUser(user) })
   })
@@ -164,7 +166,10 @@ export async function authRoutes(app: FastifyInstance) {
   // ── Logout ─────────────────────────────────────────────────
   app.post('/logout', async (_, reply) => {
     return reply
-      .clearCookie('token', { path: '/' })
+      .clearCookie('token', {
+        path:   '/',
+        domain: config.isProd ? `.${config.domain}` : undefined,
+      })
       .send({ ok: true })
   })
 }
