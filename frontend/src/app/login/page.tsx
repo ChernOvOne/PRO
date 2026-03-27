@@ -56,9 +56,10 @@ function LoginContent() {
         }
 
         toast.success('Добро пожаловать!')
-        // Редиректим в зависимости от роли
+        // Используем window.location для полной перезагрузки страницы
+        // router.push иногда не подхватывает куку сразу после логина
         const target = data.user?.role === 'ADMIN' ? '/admin' : '/dashboard'
-        router.push(target)
+        window.location.href = target
       } catch (err: any) {
         toast.error(err.message)
         setLoading(false)
@@ -101,9 +102,8 @@ function LoginContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Неверный email или пароль')
       toast.success('Добро пожаловать!')
-      // Редиректим в зависимости от роли
       const target = data.user?.role === 'ADMIN' ? '/admin' : '/dashboard'
-      router.push(target)
+      window.location.href = target
     } catch (err: any) {
       toast.error(err.message)
     } finally {

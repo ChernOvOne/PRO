@@ -238,7 +238,7 @@ export class PaymentService {
       const rmUser = await remnawave.createUser({
         username:   user.email || `tg_${user.telegramId}`,
         email:      user.email ?? undefined,
-        telegramId: user.telegramId ?? undefined,
+        telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
         expireAt:   new Date(Date.now() + tariff.durationDays * 86400_000).toISOString(),
         tagIds:     tariff.remnawaveTagIds,
       })
