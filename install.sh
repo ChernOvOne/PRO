@@ -92,46 +92,127 @@ https://download.docker.com/linux/$OS_NAME $(lsb_release -cs) stable" \
 }
 
 # ── .env ─────────────────────────────────────────────────────
+# Все токены необязательных сервисов можно заполнить позже через меню [18]
 create_env_template() {
   cat > "$ENV_FILE" << 'ENVEOF'
 NODE_ENV=production
+
+# ── Домены (задаются при установке) ──────────────────────────
 DOMAIN=
+ADMIN_DOMAIN=
+API_DOMAIN=
 APP_URL=
+
+# ── Безопасность (генерируются автоматически) ─────────────────
 APP_SECRET=
 JWT_SECRET=
 JWT_EXPIRES_IN=30d
 COOKIE_SECRET=
-REMNAWAVE_URL=http://localhost:3000
-REMNAWAVE_TOKEN=
+
+# ── База данных ───────────────────────────────────────────────
 POSTGRES_PASSWORD=
 DATABASE_URL=postgresql://hideyou:POSTGRES_PASSWORD@postgres:5432/hideyou
+
+# ── Redis ─────────────────────────────────────────────────────
 REDIS_PASSWORD=
 REDIS_SESSION_SECRET=
 REDIS_URL=redis://:REDIS_PASSWORD@redis:6379
+
+# ── REMNAWAVE ─────────────────────────────────────────────────
+REMNAWAVE_URL=http://localhost:3000
+REMNAWAVE_TOKEN=
+
+# ── Telegram (можно задать позже: меню [18]) ──────────────────
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_NAME=HideYouBot
 TELEGRAM_LOGIN_BOT_TOKEN=
+
+# ── ЮKassa (можно задать позже: меню [18]) ────────────────────
 YUKASSA_SHOP_ID=
 YUKASSA_SECRET_KEY=
 YUKASSA_RETURN_URL=
 YUKASSA_WEBHOOK_SECRET=
+
+# ── CryptoPay (можно задать позже: меню [18]) ─────────────────
 CRYPTOPAY_API_TOKEN=
 CRYPTOPAY_NETWORK=mainnet
-REFERRAL_BONUS_DAYS=30
-REFERRAL_MIN_DAYS=30
+
+# ── Email / SMTP (можно задать позже: меню [18]) ──────────────
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
+
+# ── Реферальная система ───────────────────────────────────────
+REFERRAL_BONUS_DAYS=30
+REFERRAL_MIN_DAYS=30
+
+# ── Функции ───────────────────────────────────────────────────
 FEATURE_CRYPTO_PAYMENTS=true
 FEATURE_REFERRAL=true
 FEATURE_EMAIL_AUTH=true
 FEATURE_TELEGRAM_AUTH=true
 FEATURE_TRIAL=false
 TRIAL_DAYS=3
+
 LOG_LEVEL=info
 ENVEOF
+}
+
+# Записать/обновить ключ в .env.
+# ИСПРАВЛЕНО: использует $default если значение в файле пустое и пользователь нажал Enter.
+put() {
+  local key="$1" prompt="$2" default="${3:-}" secret="${4:-false}"
+  # Читаем текущее значение из файла
+  local cur
+  cur=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+  # Если в файле пусто — берём дефолт (это исправляет баг с JWT_SECRET)
+  [[ -z "$cur" ]] && cur="$default"
+
+  printf "  ${CYAN}%-42s${RESET}" "$prompt"
+  local v
+  if [[ "$secret" == "true" ]]; then read -rs v; echo ""; else read -r v; fi
+  # Если пользователь ничего не ввёл — оставляем cur (который уже включает default)
+  v="${v:-$cur}"
+
+  # Экранируем для sed (символы |, /, \, ^, $, ., *, +, ?, (, ), {, [)
+  local esc
+  esc=$(printf '%s\n' "$v" | sed 's/[[\.*^$()+?{|]/\\&/g; s|/|\\/|g')
+
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${esc}|" "$ENV_FILE"
+  else
+    echo "${key}=${v}" >> "$ENV_FILE"
+  fi
+}
+
+# Обновить один ключ (используется в configure_tokens)
+put_key() {
+  local key="$1" prompt="$2" default="${3:-}" secret="${4:-false}"
+  local cur
+  cur=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+
+  if [[ "$secret" == "true" ]]; then
+    local masked
+    masked=$([ -n "$cur" ] && echo "●●●●●●●●" || echo "не задан")
+    printf "  ${CYAN}%-38s${RESET}${DIM}[%s]${RESET} " "$prompt" "$masked"
+    local v; read -rs v; echo ""
+    v="${v:-${cur:-$default}}"
+  else
+    printf "  ${CYAN}%-38s${RESET}${DIM}[%s]${RESET} " "$prompt" "${cur:-не задан}"
+    local v; read -r v
+    v="${v:-${cur:-$default}}"
+  fi
+
+  local esc
+  esc=$(printf '%s\n' "$v" | sed 's/[[\.*^$()+?{|]/\\&/g; s|/|\\/|g')
+
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${esc}|" "$ENV_FILE"
+  else
+    echo "${key}=${v}" >> "$ENV_FILE"
+  fi
 }
 
 setup_env() {
@@ -144,51 +225,210 @@ setup_env() {
   create_env_template
   info "Создан .env"
   echo ""
-  echo -e "  ${BOLD}Заполни настройки${RESET} (Enter — оставить по умолчанию):"
+  echo -e "  ${BOLD}Настройка доменов${RESET}"
+  echo -e "  ${DIM}Каждый домен задаётся отдельно. Пример: lk.example.com / admin.example.com${RESET}"
   echo ""
-  put() {
-    local key="$1" prompt="$2" default="$3" secret="${4:-false}"
-    local cur; cur=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "$default")
-    printf "  ${CYAN}%-42s${RESET}" "$prompt"
-    if [[ "$secret" == "true" ]]; then read -rs v; echo ""; else read -r v; fi
-    v="${v:-$cur}"
-    local esc; esc=$(printf '%s\n' "$v" | sed 's/[[\.*^$()+?{|]/\\&/g')
-    sed -i "s|^${key}=.*|${key}=${esc}|" "$ENV_FILE"
-  }
-  put "DOMAIN"              "Домен (например hideyou.app): "      ""
-  put "REMNAWAVE_URL"       "URL панели REMNAWAVE: "               "http://localhost:3000"
-  put "REMNAWAVE_TOKEN"     "Токен API REMNAWAVE: "                "" "true"
-  put "POSTGRES_PASSWORD"   "Пароль PostgreSQL: "                  "$(openssl rand -hex 16)" "true"
-  put "REDIS_PASSWORD"      "Пароль Redis: "                       "$(openssl rand -hex 16)" "true"
-  put "JWT_SECRET"          "JWT секрет (пусто = авто): "          "$(openssl rand -hex 32)" "true"
-  put "YUKASSA_SHOP_ID"     "ID магазина ЮKassa: "                 ""
-  put "YUKASSA_SECRET_KEY"  "Секретный ключ ЮKassa: "              "" "true"
-  put "CRYPTOPAY_API_TOKEN" "Токен CryptoPay (@CryptoBot): "       "" "true"
-  put "TELEGRAM_BOT_TOKEN"  "Токен Telegram-бота (@BotFather): "   "" "true"
-  put "TELEGRAM_BOT_NAME"   "Username бота (без @): "              ""
-  # Auto-generate secrets
-  sed -i "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
-  sed -i "s|^COOKIE_SECRET=.*|COOKIE_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
+
+  put "DOMAIN"       "Основной домен (лендинг/кабинет): "  ""
+  put "ADMIN_DOMAIN" "Домен панели администратора: "        ""
+  put "API_DOMAIN"   "Домен API (для вебхуков и прочего): " ""
+
+  echo ""
+  echo -e "  ${BOLD}REMNAWAVE${RESET}"
+  echo ""
+  put "REMNAWAVE_URL"   "URL панели REMNAWAVE: "               "http://localhost:3000"
+  put "REMNAWAVE_TOKEN" "Токен API REMNAWAVE (Enter = позже): " "" "true"
+
+  echo ""
+  echo -e "  ${BOLD}Telegram${RESET} ${DIM}(Enter = пропустить, настроить позже через [18])${RESET}"
+  echo ""
+  put "TELEGRAM_BOT_TOKEN" "Токен Telegram-бота: "  "" "true"
+  put "TELEGRAM_BOT_NAME"  "Username бота (без @): " ""
+
+  echo ""
+  echo -e "  ${BOLD}База данных и безопасность${RESET}"
+  echo ""
+  put "POSTGRES_PASSWORD" "Пароль PostgreSQL (Enter = авто): " "$(openssl rand -hex 16)" "true"
+  put "REDIS_PASSWORD"    "Пароль Redis (Enter = авто): "      "$(openssl rand -hex 16)" "true"
+
+  # JWT_SECRET — всегда генерируем автоматически если пустой
+  local jwt_cur
+  jwt_cur=$(grep "^JWT_SECRET=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+  if [[ -z "$jwt_cur" ]]; then
+    local jwt_new; jwt_new="$(openssl rand -hex 32)"
+    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${jwt_new}|" "$ENV_FILE"
+    ok "JWT_SECRET сгенерирован автоматически (64 символа)"
+  fi
+
+  # Генерация остальных секретов
+  sed -i "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -hex 32)|"                     "$ENV_FILE"
+  sed -i "s|^COOKIE_SECRET=.*|COOKIE_SECRET=$(openssl rand -hex 32)|"               "$ENV_FILE"
   sed -i "s|^REDIS_SESSION_SECRET=.*|REDIS_SESSION_SECRET=$(openssl rand -hex 16)|" "$ENV_FILE"
 
-  # Auto-set APP_URL from DOMAIN
+  # APP_URL из основного домена
   local domain; domain=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
   if [[ -n "$domain" ]]; then
     sed -i "s|^APP_URL=.*|APP_URL=https://${domain}|" "$ENV_FILE"
     sed -i "s|^YUKASSA_RETURN_URL=.*|YUKASSA_RETURN_URL=https://${domain}/dashboard/payment-success|" "$ENV_FILE"
   fi
 
-  # Auto-update DATABASE_URL and REDIS_URL with actual passwords
+  # DATABASE_URL и REDIS_URL с реальными паролями
   local pg_pass; pg_pass=$(grep "^POSTGRES_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
   local rd_pass; rd_pass=$(grep "^REDIS_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
   if [[ -n "$pg_pass" ]]; then
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://hideyou:${pg_pass}@postgres:5432/hideyou|" "$ENV_FILE"
+    local pg_esc; pg_esc=$(printf '%s\n' "$pg_pass" | sed 's/[[\.*^$()+?{|]/\\&/g; s|/|\\/|g')
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://hideyou:${pg_esc}@postgres:5432/hideyou|" "$ENV_FILE"
   fi
   if [[ -n "$rd_pass" ]]; then
-    sed -i "s|^REDIS_URL=.*|REDIS_URL=redis://:${rd_pass}@redis:6379|" "$ENV_FILE"
+    local rd_esc; rd_esc=$(printf '%s\n' "$rd_pass" | sed 's/[[\.*^$()+?{|]/\\&/g; s|/|\\/|g')
+    sed -i "s|^REDIS_URL=.*|REDIS_URL=redis://:${rd_esc}@redis:6379|" "$ENV_FILE"
   fi
 
+  echo ""
   ok "Файл .env настроен"
+  echo -e "  ${DIM}Токены ЮKassa, CryptoPay, SMTP — настрой позже через меню [18]${RESET}"
+}
+
+# ── Настройка токенов из CLI ───────────────────────────────────
+configure_tokens() {
+  step "Настройка токенов и внешних сервисов"
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    err ".env не найден. Сначала запусти [1] Полную установку или [2] Настройку окружения"
+    return 1
+  fi
+
+  show_token_status() {
+    local key="$1" label="$2"
+    local val; val=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+    if [[ -n "$val" ]]; then
+      echo -e "  ${GREEN}●${RESET}  ${label}"
+    else
+      echo -e "  ${DIM}○  ${YELLOW}${label}${RESET} ${DIM}(не задан)${RESET}"
+    fi
+  }
+
+  while true; do
+    echo ""
+    echo -e "  ${BOLD}Состояние токенов:${RESET}  ${DIM}● задан  ○ не задан${RESET}"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── REMNAWAVE ─────────────────────────────────${RESET}"
+    show_token_status "REMNAWAVE_URL"   "REMNAWAVE URL"
+    show_token_status "REMNAWAVE_TOKEN" "REMNAWAVE Token"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Telegram ──────────────────────────────────${RESET}"
+    show_token_status "TELEGRAM_BOT_TOKEN"       "Bot Token"
+    show_token_status "TELEGRAM_LOGIN_BOT_TOKEN" "Login Bot Token (доп.)"
+    show_token_status "TELEGRAM_BOT_NAME"        "Bot Username"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Платёжные системы ─────────────────────────${RESET}"
+    show_token_status "YUKASSA_SHOP_ID"        "ЮKassa Shop ID"
+    show_token_status "YUKASSA_SECRET_KEY"     "ЮKassa Secret Key"
+    show_token_status "YUKASSA_WEBHOOK_SECRET" "ЮKassa Webhook Secret"
+    show_token_status "CRYPTOPAY_API_TOKEN"    "CryptoPay API Token"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Email / SMTP ──────────────────────────────${RESET}"
+    show_token_status "SMTP_HOST" "SMTP Host"
+    show_token_status "SMTP_USER" "SMTP User"
+    show_token_status "SMTP_PASS" "SMTP Password"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Безопасность ──────────────────────────────${RESET}"
+    show_token_status "JWT_SECRET" "JWT Secret"
+    echo ""
+    sep
+    echo -e "  ${BOLD}Что настроить?${RESET}"
+    echo ""
+    echo -e "  ${CYAN}[1]${RESET}  REMNAWAVE (URL + токен)"
+    echo -e "  ${CYAN}[2]${RESET}  Telegram Bot"
+    echo -e "  ${CYAN}[3]${RESET}  ЮKassa"
+    echo -e "  ${CYAN}[4]${RESET}  CryptoPay"
+    echo -e "  ${CYAN}[5]${RESET}  Email / SMTP"
+    echo -e "  ${CYAN}[6]${RESET}  JWT и секреты безопасности"
+    echo -e "  ${CYAN}[7]${RESET}  Домены"
+    echo -e "  ${CYAN}[0]${RESET}  Назад в главное меню"
+    echo ""
+    printf "  ${BOLD}Выбор:${RESET} "; read -r tok_choice
+
+    local changed=false
+    case "$tok_choice" in
+      1)
+        echo ""
+        put_key "REMNAWAVE_URL"   "REMNAWAVE URL: "      "http://localhost:3000"
+        put_key "REMNAWAVE_TOKEN" "REMNAWAVE Token: "    "" "true"
+        changed=true
+        ;;
+      2)
+        echo ""
+        put_key "TELEGRAM_BOT_TOKEN"       "Bot Token (@BotFather): "       "" "true"
+        put_key "TELEGRAM_LOGIN_BOT_TOKEN" "Login Bot Token (если другой): " "" "true"
+        put_key "TELEGRAM_BOT_NAME"        "Bot Username (без @): "         ""
+        changed=true
+        ;;
+      3)
+        echo ""
+        put_key "YUKASSA_SHOP_ID"        "ЮKassa Shop ID: "         ""
+        put_key "YUKASSA_SECRET_KEY"     "ЮKassa Secret Key: "      "" "true"
+        put_key "YUKASSA_WEBHOOK_SECRET" "ЮKassa Webhook Secret: "  "" "true"
+        # Авто RETURN_URL если домен задан
+        local yd; yd=$(grep "^DOMAIN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "")
+        local yr; yr=$(grep "^YUKASSA_RETURN_URL=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+        if [[ -n "$yd" && -z "$yr" ]]; then
+          sed -i "s|^YUKASSA_RETURN_URL=.*|YUKASSA_RETURN_URL=https://${yd}/dashboard/payment-success|" "$ENV_FILE"
+        fi
+        changed=true
+        ;;
+      4)
+        echo ""
+        put_key "CRYPTOPAY_API_TOKEN" "CryptoPay API Token: "     "" "true"
+        put_key "CRYPTOPAY_NETWORK"   "Сеть (mainnet/testnet): "  "mainnet"
+        changed=true
+        ;;
+      5)
+        echo ""
+        put_key "SMTP_HOST" "SMTP Host: "       ""
+        put_key "SMTP_PORT" "SMTP Port: "       "587"
+        put_key "SMTP_USER" "SMTP User: "       ""
+        put_key "SMTP_PASS" "SMTP Password: "   "" "true"
+        put_key "SMTP_FROM" "From Address: "    ""
+        changed=true
+        ;;
+      6)
+        echo ""
+        echo -e "  ${DIM}Пусто = сгенерировать новый${RESET}"
+        local new_jwt; new_jwt="$(openssl rand -hex 32)"
+        put_key "JWT_SECRET" "JWT Secret: " "$new_jwt" "true"
+        ask "Регенерировать APP_SECRET и COOKIE_SECRET тоже? [д/Н]"; read -r regen
+        if [[ "$regen" =~ ^[дДyY]$ ]]; then
+          sed -i "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -hex 32)|"       "$ENV_FILE"
+          sed -i "s|^COOKIE_SECRET=.*|COOKIE_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
+          ok "APP_SECRET и COOKIE_SECRET обновлены"
+        fi
+        changed=true
+        ;;
+      7)
+        echo ""
+        put_key "DOMAIN"       "Основной домен: "          ""
+        put_key "ADMIN_DOMAIN" "Домен панели администратора: " ""
+        put_key "API_DOMAIN"   "Домен API: "               ""
+        # Обновляем APP_URL
+        local d7; d7=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
+        [[ -n "$d7" ]] && sed -i "s|^APP_URL=.*|APP_URL=https://${d7}|" "$ENV_FILE"
+        changed=true
+        ;;
+      0) break ;;
+      *) warn "Неизвестный пункт: $tok_choice"; continue ;;
+    esac
+
+    if [[ "$changed" == "true" ]]; then
+      echo ""
+      ok "Настройки записаны в .env"
+      ask "Перезапустить сервисы для применения? [Д/н]"; read -r rs
+      if [[ ! "$rs" =~ ^[нНnN]$ ]]; then
+        docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+        ok "Сервисы перезапущены"
+      fi
+    fi
+  done
 }
 
 # ── SSL ───────────────────────────────────────────────────────
@@ -211,7 +451,6 @@ free_port_80() {
 }
 
 get_ipv4() {
-  # Принудительно только IPv4
   curl -4 -s --max-time 5 https://api.ipify.org      2>/dev/null | grep -E '^[0-9]+\.' | head -1 || \
   curl -4 -s --max-time 5 https://ipv4.icanhazip.com 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || \
   curl -4 -s --max-time 5 http://ifconfig.me         2>/dev/null | grep -E '^[0-9]+\.' | head -1 || \
@@ -219,7 +458,9 @@ get_ipv4() {
 }
 
 check_dns() {
-  local domain="$1"
+  local main_domain="$1"
+  local admin_domain="$2"
+  local api_domain="$3"
   local server_ip
   server_ip=$(get_ipv4)
 
@@ -233,18 +474,16 @@ check_dns() {
   fi
 
   echo ""
-  echo -e "  В DNS нужны три A-записи (тип A, не AAAA):"
-  echo -e "  ${CYAN}${domain}${RESET}        →  ${server_ip}"
-  echo -e "  ${CYAN}api.${domain}${RESET}    →  ${server_ip}"
-  echo -e "  ${CYAN}admin.${domain}${RESET}  →  ${server_ip}"
+  echo -e "  Нужны A-записи (тип A, не AAAA):"
+  echo -e "  ${CYAN}${main_domain}${RESET}    →  ${server_ip}"
+  echo -e "  ${CYAN}${admin_domain}${RESET}   →  ${server_ip}"
+  echo -e "  ${CYAN}${api_domain}${RESET}     →  ${server_ip}"
   echo ""
 
-  # Проверяем резолвинг
   command -v dig &>/dev/null || apt-get install -y -qq dnsutils 2>/dev/null || true
 
   local all_ok=true
-  for sub in "" "api." "admin."; do
-    local fqdn="${sub}${domain}"
+  for fqdn in "$main_domain" "$admin_domain" "$api_domain"; do
     local resolved
     resolved=$(dig +short "$fqdn" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1 || \
                host -t A "$fqdn" 2>/dev/null | awk '/has address/{print $NF}' | head -1 || \
@@ -273,8 +512,22 @@ check_dns() {
 
 setup_ssl() {
   step "SSL-сертификаты (Let's Encrypt)"
-  local domain; domain=$(grep "^DOMAIN=" "$ENV_FILE" | cut -d= -f2)
-  [[ -z "$domain" ]] && { warn "DOMAIN не задан в .env"; return; }
+
+  local main_domain;  main_domain=$(grep  "^DOMAIN="       "$ENV_FILE" | cut -d= -f2)
+  local admin_domain; admin_domain=$(grep "^ADMIN_DOMAIN=" "$ENV_FILE" | cut -d= -f2)
+  local api_domain;   api_domain=$(grep   "^API_DOMAIN="   "$ENV_FILE" | cut -d= -f2)
+
+  if [[ -z "$main_domain" ]]; then
+    warn "DOMAIN не задан в .env. Задай домены через [2] или [18]→[7]"
+    return
+  fi
+  if [[ -z "$admin_domain" || -z "$api_domain" ]]; then
+    warn "ADMIN_DOMAIN или API_DOMAIN не заданы в .env"
+    ask "Продолжить используя только ${main_domain}? [д/Н]"; read -r only_main
+    [[ "$only_main" =~ ^[дДyY]$ ]] || return
+    admin_domain="$main_domain"
+    api_domain="$main_domain"
+  fi
 
   command -v certbot &>/dev/null || {
     info "Устанавливаю certbot..."
@@ -285,9 +538,9 @@ setup_ssl() {
     esac
   }
 
-  check_dns "$domain" || return
+  check_dns "$main_domain" "$admin_domain" "$api_domain" || return
 
-  ask "Выпустить сертификат Let's Encrypt для ${domain}? [д/Н]"
+  ask "Выпустить сертификат Let's Encrypt? [д/Н]"
   read -r ans
   [[ "$ans" =~ ^[дДyY]$ ]] || { info "Пропускаю SSL — настрой позже через пункт [3]"; return; }
 
@@ -295,24 +548,43 @@ setup_ssl() {
 
   free_port_80
 
-  info "Выпускаю сертификат для ${domain}, api.${domain}, admin.${domain}..."
+  # Уникальные домены для certbot
+  local -a cert_domains=("$main_domain")
+  [[ "$admin_domain" != "$main_domain" ]] && cert_domains+=("$admin_domain")
+  [[ "$api_domain" != "$main_domain" && "$api_domain" != "$admin_domain" ]] && cert_domains+=("$api_domain")
+
+  local certbot_d_args=""
+  for d in "${cert_domains[@]}"; do
+    certbot_d_args="$certbot_d_args -d $d"
+  done
+
+  info "Выпускаю сертификат для: ${cert_domains[*]}..."
+  # shellcheck disable=SC2086
   certbot certonly --standalone \
-    -d "$domain" -d "api.$domain" -d "admin.$domain" \
+    $certbot_d_args \
+    --cert-name "$main_domain" \
     --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
 
   if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-    sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
-    ok "SSL-сертификат выпущен!"
+    sed -i "s|MAIN_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
+    sed -i "s|ADMIN_DOMAIN_PLACEHOLDER|${admin_domain}|g" nginx/nginx.conf
+    sed -i "s|API_DOMAIN_PLACEHOLDER|${api_domain}|g"     nginx/nginx.conf
+    sed -i "s|CERT_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
+    ok "SSL-сертификат выпущен для: ${cert_domains[*]}"
   else
-    warn "Не удалось выпустить для всех поддоменов."
-    ask "Выпустить только для ${domain}? [д/Н]"; read -r ans2
+    warn "Не удалось выпустить сертификат для всех доменов."
+    ask "Выпустить только для ${main_domain}? [д/Н]"; read -r ans2
     if [[ "$ans2" =~ ^[дДyY]$ ]]; then
       free_port_80
-      certbot certonly --standalone -d "$domain" \
+      certbot certonly --standalone -d "$main_domain" \
+        --cert-name "$main_domain" \
         --email "$email" --agree-tos --non-interactive 2>&1 | tee -a "$LOG_FILE"
-      sed -i "s|DOMAIN_PLACEHOLDER|${domain}|g" nginx/nginx.conf
-      ok "SSL выпущен для ${domain}"
-      warn "Добавь DNS api.${domain} и admin.${domain}, потом повтори пункт [3]"
+      sed -i "s|MAIN_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
+      sed -i "s|ADMIN_DOMAIN_PLACEHOLDER|${main_domain}|g"  nginx/nginx.conf
+      sed -i "s|API_DOMAIN_PLACEHOLDER|${main_domain}|g"    nginx/nginx.conf
+      sed -i "s|CERT_DOMAIN_PLACEHOLDER|${main_domain}|g"   nginx/nginx.conf
+      ok "SSL выпущен для ${main_domain}"
+      warn "Добавь DNS для ${admin_domain} и ${api_domain}, затем повтори пункт [3]"
     fi
   fi
 }
@@ -323,14 +595,50 @@ build_services() { step "Сборка сервисов";      docker compose bui
 start_all()      { step "Запуск сервисов";      docker compose up -d 2>&1 | tee -a "$LOG_FILE"; ok "Запущено"; }
 stop_all()       { step "Остановка сервисов";   docker compose down 2>&1 | tee -a "$LOG_FILE"; ok "Остановлено"; }
 
+# ── Миграции БД ───────────────────────────────────────────────
+# ИСПРАВЛЕНО:
+#  1. Prisma теперь перенесён в dependencies (не devDependencies) — доступен в проде
+#  2. Используем `docker compose run --rm --no-deps` — не требует работающего backend
+#  3. Ждём postgres через healthcheck
 run_migrations() {
   step "Миграции БД"
-  info "Жду PostgreSQL..."
-  local n=30
-  while ! docker compose exec -T postgres pg_isready -U hideyou &>/dev/null; do
-    sleep 2; n=$((n-1)); [[ $n -le 0 ]] && { err "PostgreSQL не запустился"; exit 1; }; printf "."
-  done; echo ""
-  docker compose exec -T backend npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE"
+
+  # Запускаем postgres если не запущен
+  if ! docker compose ps postgres 2>/dev/null | grep -q "Up\|running"; then
+    info "Запускаю PostgreSQL..."
+    docker compose up -d postgres 2>&1 | tee -a "$LOG_FILE"
+  fi
+
+  info "Жду готовности PostgreSQL..."
+  local n=40
+  until docker compose exec -T postgres pg_isready -U hideyou -d hideyou &>/dev/null; do
+    sleep 3; n=$((n-1))
+    [[ $n -le 0 ]] && { err "PostgreSQL не запустился. Проверь: docker compose logs postgres"; return 1; }
+    printf "."
+  done
+  echo ""
+  ok "PostgreSQL готов"
+
+  info "Применяю миграции Prisma..."
+  local db_url
+  db_url=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
+
+  # Запускаем миграцию через временный контейнер (не требует backend-сервиса)
+  # prisma migrate deploy использует только DATABASE_URL
+  docker compose run --rm --no-deps \
+    -e DATABASE_URL="$db_url" \
+    backend \
+    npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE"
+
+  local exit_code=${PIPESTATUS[0]}
+  if [[ $exit_code -ne 0 ]]; then
+    warn "run --rm завершился с кодом $exit_code. Пробую exec если backend уже запущен..."
+    docker compose exec -T backend npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE" || {
+      err "Миграции не прошли. Проверь логи: docker compose logs backend"
+      return 1
+    }
+  fi
+
   ok "Миграции применены"
 }
 
@@ -385,13 +693,11 @@ do_update() {
   info "Текущая версия: ${BOLD}${current_commit}${RESET}"
   echo ""
 
-  # Collect available tags
   local tags=()
   while IFS= read -r tag; do
     [[ -n "$tag" ]] && tags+=("$tag")
   done < <(git tag --sort=-version:refname 2>/dev/null | head -20)
 
-  # Collect available branches
   local branches=()
   while IFS= read -r br; do
     br="${br#origin/}"
@@ -433,8 +739,7 @@ do_update() {
   read -r ver_choice
   ver_choice="${ver_choice:-1}"
 
-  local target_ref=""
-  local target_desc=""
+  local target_ref="" target_desc=""
 
   if [[ "$ver_choice" == "1" ]]; then
     target_ref="origin/${current_branch}"
@@ -452,7 +757,7 @@ do_update() {
       git checkout "$value" 2>/dev/null || git checkout -b "$value" "origin/$value" 2>/dev/null
     fi
   else
-    warn "Неизвестный выбор: $ver_choice — использую последнюю версию"
+    warn "Неизвестный выбор — использую последнюю версию"
     target_ref="origin/${current_branch}"
     target_desc="последняя версия ветки ${current_branch}"
   fi
@@ -463,15 +768,12 @@ do_update() {
   local before
   before=$(git rev-parse HEAD 2>/dev/null || echo "")
 
-  # Сохраняем .env
   local env_backup="/tmp/hideyou_env_backup_$(date +%s)"
-  [[ -f "$ENV_FILE" ]] && cp "$ENV_FILE" "$env_backup" && info ".env сохранён во временный файл"
+  [[ -f "$ENV_FILE" ]] && cp "$ENV_FILE" "$env_backup" && info ".env сохранён"
 
-  # Принудительно сбрасываем все локальные изменения и берём нужную версию
   git reset --hard "$target_ref" 2>&1 | tee -a "$LOG_FILE"
   git clean -fd --exclude=".env" --exclude="backups/" --exclude="data/" 2>&1 | tee -a "$LOG_FILE"
 
-  # Восстанавливаем .env
   if [[ -f "$env_backup" ]]; then
     cp "$env_backup" "$ENV_FILE"
     rm -f "$env_backup"
@@ -481,7 +783,6 @@ do_update() {
   local after
   after=$(git rev-parse HEAD 2>/dev/null || echo "")
 
-  # Проверяем изменился ли install.sh
   local script_changed=false
   if [[ -n "$before" && "$before" != "$after" ]]; then
     git diff --name-only "$before" "$after" 2>/dev/null | grep -q "install.sh" && script_changed=true
@@ -491,9 +792,7 @@ do_update() {
   docker compose build 2>&1 | tee -a "$LOG_FILE"
 
   info "Применяю миграции..."
-  docker compose up -d postgres 2>&1 | tee -a "$LOG_FILE"
-  sleep 5
-  docker compose exec -T backend npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE" || true
+  run_migrations
 
   info "Перезапускаю сервисы..."
   docker compose up -d 2>&1 | tee -a "$LOG_FILE"
@@ -535,36 +834,69 @@ do_restore() {
   ok "База восстановлена"
 }
 
-# ── Администратор / Импорт ────────────────────────────────────
+# ── Администратор ─────────────────────────────────────────────
+# ИСПРАВЛЕНО:
+#  1. Проверяем JWT_SECRET перед стартом (без него backend не запустится)
+#  2. Ждём healthcheck backend-а перед созданием
+#  3. Запускаем миграции если ещё не применены
 create_admin() {
   step "Создание администратора"
 
-  # Ensure services are running
-  if ! docker compose ps backend 2>/dev/null | grep -q "Up"; then
-    info "Backend не запущен — запускаю..."
-    docker compose up -d 2>&1 | tee -a "$LOG_FILE"
-    info "Жду готовности backend..."
-    local n=30
-    while ! docker compose exec -T backend curl -sf http://localhost:4000/health &>/dev/null; do
-      sleep 2; n=$((n-1))
-      [[ $n -le 0 ]] && { err "Backend не запустился. Проверь: docker compose logs backend"; return 1; }
-      printf "."
-    done
-    echo ""
-    ok "Backend готов"
+  # JWT_SECRET обязателен (min 32 символа), без него backend падает сразу
+  local jwt
+  jwt=$(grep "^JWT_SECRET=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
+  if [[ ${#jwt} -lt 32 ]]; then
+    warn "JWT_SECRET не задан или короче 32 символов — генерирую новый..."
+    local new_jwt; new_jwt="$(openssl rand -hex 32)"
+    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${new_jwt}|" "$ENV_FILE"
+    ok "JWT_SECRET обновлён в .env"
   fi
 
-  printf "  ${CYAN}Email: ${RESET}"; read -r email
-  printf "  ${CYAN}Пароль: ${RESET}"; read -rs pwd; echo ""
+  # Убеждаемся что БД и миграции готовы
+  if ! docker compose ps postgres 2>/dev/null | grep -q "Up\|running"; then
+    info "Запускаю PostgreSQL и Redis..."
+    docker compose up -d postgres redis 2>&1 | tee -a "$LOG_FILE"
+    sleep 5
+    run_migrations
+  fi
 
-  if [[ -z "$email" || -z "$pwd" ]]; then
+  # Запускаем backend если не запущен
+  if ! docker compose ps backend 2>/dev/null | grep -q "Up\|running"; then
+    info "Запускаю backend..."
+    docker compose up -d backend 2>&1 | tee -a "$LOG_FILE"
+  fi
+
+  info "Жду готовности backend (health check)..."
+  local n=40
+  until docker compose exec -T backend curl -sf http://localhost:4000/health &>/dev/null; do
+    sleep 3; n=$((n-1))
+    if [[ $n -le 0 ]]; then
+      err "Backend не отвечает. Проверь: docker compose logs backend"
+      ask "Попробовать создать администратора всё равно? [д/Н]"; read -r force
+      [[ "$force" =~ ^[дДyY]$ ]] || return 1
+      break
+    fi
+    printf "."
+  done
+  echo ""
+
+  printf "  ${CYAN}Email: ${RESET}";  read -r admin_email
+  printf "  ${CYAN}Пароль: ${RESET}"; read -rs admin_pwd; echo ""
+
+  if [[ -z "$admin_email" || -z "$admin_pwd" ]]; then
     err "Email и пароль обязательны"
     return 1
   fi
 
   docker compose exec -T backend node dist/scripts/create-admin.js \
-    --email "$email" --password "$pwd" 2>&1 | tee -a "$LOG_FILE"
-  ok "Администратор создан: $email"
+    --email "$admin_email" --password "$admin_pwd" 2>&1 | tee -a "$LOG_FILE"
+
+  if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+    ok "Администратор создан: $admin_email"
+  else
+    err "Не удалось создать администратора. Проверь: docker compose logs backend"
+    return 1
+  fi
 }
 
 import_users() {
@@ -596,7 +928,7 @@ install_lk_command() {
 cd "${project_dir}" && bash install.sh "\$@"
 LKEOF
   chmod +x /usr/local/bin/lk
-  ok "Команда lk установлена"
+  ok "Команда lk установлена (доступна из любой папки)"
 }
 
 # ── Полная установка ──────────────────────────────────────────
@@ -604,7 +936,7 @@ full_install() {
   banner
   step "Полная установка HIDEYOU"
   info "Лог: $LOG_FILE"; echo ""
-  [[ $EUID -ne 0 ]] && warn "Запущено не от root"
+  [[ $EUID -ne 0 ]] && warn "Запущено не от root — некоторые шаги могут не работать"
 
   step "Проверка зависимостей"
   check_docker || {
@@ -622,21 +954,43 @@ full_install() {
   setup_ssl
   pull_images
   build_services
-  start_all
+
+  # БД первой — затем миграции — затем всё остальное
+  step "Запуск базы данных"
+  docker compose up -d postgres redis 2>&1 | tee -a "$LOG_FILE"
   sleep 8
+
   run_migrations
-  seed_db
+
+  step "Запуск всех сервисов"
+  docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+  sleep 10
+
   install_lk_command
 
   echo ""; sep; ok "HIDEYOU успешно установлен!"; sep; echo ""
-  local domain; domain=$(grep "^DOMAIN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "IP-сервера")
+
+  local domain;       domain=$(grep "^DOMAIN="       "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "IP-сервера")
+  local admin_domain; admin_domain=$(grep "^ADMIN_DOMAIN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "")
+  local api_domain;   api_domain=$(grep   "^API_DOMAIN="   "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "")
+
   echo -e "  ${BOLD}Адреса:${RESET}"
-  echo -e "  ${GREEN}Лендинг:${RESET}        https://${domain}"
-  echo -e "  ${GREEN}Кабинет:${RESET}        https://${domain}/dashboard"
-  echo -e "  ${GREEN}Админ-панель:${RESET}   https://admin.${domain}"
+  echo -e "  ${GREEN}Лендинг / Кабинет:${RESET}  https://${domain}"
+  [[ -n "$admin_domain" ]] && echo -e "  ${GREEN}Админ-панель:${RESET}       https://${admin_domain}"
+  [[ -n "$api_domain"   ]] && echo -e "  ${GREEN}API:${RESET}                https://${api_domain}"
   echo ""
   echo -e "  ${GREEN}${BOLD}Управление:${RESET}  ${BOLD}lk${RESET}  (из любой папки)"
   echo ""
+
+  # Проверка наличия важных токенов
+  local remna_token; remna_token=$(grep "^REMNAWAVE_TOKEN=" "$ENV_FILE" | cut -d= -f2-)
+  local tg_token;    tg_token=$(grep "^TELEGRAM_BOT_TOKEN=" "$ENV_FILE" | cut -d= -f2-)
+  if [[ -z "$remna_token" || -z "$tg_token" ]]; then
+    warn "Некоторые токены не заданы — сервис запущен, но часть функций недоступна."
+    info "Заполни токены через меню [18] после создания администратора."
+    echo ""
+  fi
+
   ask "Создать администратора прямо сейчас? [Д/н]"; read -r ans
   [[ ! "$ans" =~ ^[нНnN]$ ]] && create_admin
 }
@@ -651,7 +1005,7 @@ main_menu() {
     echo -e "  ${BOLD}Главное меню${RESET}\n"
     echo -e "  ${CYAN}${BOLD}── Установка ─────────────────────────${RESET}"
     echo -e "  ${BOLD}[1]${RESET}  Полная установка (с нуля)"
-    echo -e "  ${BOLD}[2]${RESET}  Настроить .env"
+    echo -e "  ${BOLD}[2]${RESET}  Настроить .env (домены, пароли)"
     echo -e "  ${BOLD}[3]${RESET}  Настроить SSL"
     echo ""
     echo -e "  ${CYAN}${BOLD}── Управление сервисами ──────────────${RESET}"
@@ -667,6 +1021,9 @@ main_menu() {
     echo -e "  ${BOLD}[11]${RESET} Миграции БД"
     echo -e "  ${BOLD}[12]${RESET} Резервная копия"
     echo -e "  ${BOLD}[13]${RESET} Восстановить БД"
+    echo ""
+    echo -e "  ${CYAN}${BOLD}── Токены / Интеграции ───────────────${RESET}"
+    echo -e "  ${BOLD}[18]${RESET} ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, CryptoPay, SMTP...)${RESET}"
     echo ""
     echo -e "  ${CYAN}${BOLD}── Обслуживание ──────────────────────${RESET}"
     echo -e "  ${BOLD}[14]${RESET} Обновить HIDEYOU"
@@ -695,6 +1052,7 @@ main_menu() {
       15) build_services ;;
       16) full_reset ;;
       17) install_lk_command ;;
+      18) configure_tokens ;;
       0)  echo ""; info "До свидания!"; echo ""; exit 0 ;;
       *)  warn "Неизвестный пункт: $choice" ;;
     esac
@@ -712,9 +1070,10 @@ case "${1:-menu}" in
   logs|логи)            show_logs ;;
   backup|резерв)        do_backup ;;
   migrate|миграции)     run_migrations ;;
+  tokens|токены)        configure_tokens ;;
   reset|сброс)          full_reset ;;
   menu|меню|"")         main_menu ;;
   *)
-    echo "Использование: $0 [install|update|start|stop|status|logs|backup|migrate|reset]"
+    echo "Использование: $0 [install|update|start|stop|status|logs|backup|migrate|tokens|reset]"
     exit 1 ;;
 esac
