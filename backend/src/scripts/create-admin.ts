@@ -5,10 +5,21 @@ const prisma = new PrismaClient()
 
 async function createAdmin() {
   const args: Record<string,string> = {}
-  process.argv.slice(2).forEach(arg => {
-    const [k, v] = arg.replace('--','').split('=')
-    args[k] = v
-  })
+  const argv = process.argv.slice(2)
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (arg.startsWith('--')) {
+      const stripped = arg.replace(/^--/, '')
+      if (stripped.includes('=')) {
+        // --key=value format
+        const eqIdx = stripped.indexOf('=')
+        args[stripped.slice(0, eqIdx)] = stripped.slice(eqIdx + 1)
+      } else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+        // --key value format
+        args[stripped] = argv[++i]
+      }
+    }
+  }
 
   const email    = args.email    || process.env.ADMIN_EMAIL
   const password = args.password || process.env.ADMIN_PASSWORD

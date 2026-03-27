@@ -1,10 +1,8 @@
 import { Bot, InlineKeyboard, webhookCallback } from 'grammy'
-import { PrismaClient } from '@prisma/client'
 import { config }       from '../config'
 import { logger }       from '../utils/logger'
+import { prisma }       from '../db'
 import { remnawave }    from '../services/remnawave'
-
-const prisma = new PrismaClient()
 
 export const bot = new Bot(config.telegram.botToken)
 
@@ -156,7 +154,7 @@ export async function notifyPaymentSuccess(telegramId: string, tariffName: strin
       {
         parse_mode:   'Markdown',
         reply_markup: new InlineKeyboard()
-          .webApp('📱 Личный кабинет', `${process.env.APP_URL}/dashboard`),
+          .webApp('📱 Личный кабинет', `${config.appUrl}/dashboard`),
       },
     )
   } catch (err) {
@@ -172,7 +170,7 @@ export async function notifyExpiryWarning(telegramId: string, daysLeft: number) 
       {
         parse_mode:   'Markdown',
         reply_markup: new InlineKeyboard()
-          .webApp('💳 Продлить', `${process.env.APP_URL}/dashboard/plans`),
+          .webApp('💳 Продлить', `${config.appUrl}/dashboard/plans`),
       },
     )
   } catch (err) {

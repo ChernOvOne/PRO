@@ -9,10 +9,13 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    // In Docker, backend is at http://backend:4000
+    // In local dev, use http://localhost:4000
+    const apiTarget = process.env.INTERNAL_API_URL || 'http://backend:4000'
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://backend:4000/api'}/:path*`,
+        destination: `${apiTarget}/api/:path*`,
       },
     ]
   },

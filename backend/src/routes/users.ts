@@ -35,7 +35,7 @@ export async function userRoutes(app: FastifyInstance) {
         // Update local cache if differs
         if (
           rmUser.expireAt !== user.subExpireAt?.toISOString() ||
-          rmUser.status !== 'ACTIVE' && user.subStatus === 'ACTIVE'
+          (rmUser.status !== 'ACTIVE' && user.subStatus === 'ACTIVE')
         ) {
           await prisma.user.update({
             where: { id: userId },

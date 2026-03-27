@@ -7,7 +7,7 @@ const envSchema = z.object({
   APP_URL:               z.string().default('http://localhost:3000'),
   JWT_SECRET:            z.string().min(32),
   JWT_EXPIRES_IN:        z.string().default('30d'),
-  COOKIE_SECRET:         z.string().min(16),
+  COOKIE_SECRET:         z.string().min(1).optional(),
 
   DATABASE_URL:          z.string(),
   REDIS_URL:             z.string(),
@@ -67,7 +67,7 @@ export const config = {
   appUrl:     env.APP_URL,
   jwtSecret:  env.JWT_SECRET,
   jwtExpires: env.JWT_EXPIRES_IN,
-  cookieSecret: env.COOKIE_SECRET,
+  cookieSecret: env.COOKIE_SECRET || env.JWT_SECRET,
 
   db: {
     url: env.DATABASE_URL,
