@@ -88,10 +88,15 @@ class RemnawaveService {
       err => {
         const status = err.response?.status
         const msg    = err.response?.data?.message || err.message
-        logger.error(`REMNAWAVE API error [${status}]: ${msg}`, {
-          url:    err.config?.url,
-          method: err.config?.method,
-        })
+        // 400/404 — ожидаемые ответы при поиске, не логируем как ERROR
+        if (status !== 400 && status !== 404) {
+          logger.error(`REMNAWAVE API error [${status}]: ${msg}`, {
+            url:    err.config?.url,
+            method: err.config?.method,
+          })
+        } else {
+          logger.debug(`REMNAWAVE ${status} on ${err.config?.url} — trying fallback`)
+        }
         throw err
       },
     )
@@ -123,70 +128,101 @@ class RemnawaveService {
       const tgIdNum = parseInt(telegramId, 10)
       if (isNaN(tgIdNum)) return null
 
-      // Пробуем специальный эндпоинт (если есть в версии панели)
-      try {
-        const res = await this.client.get('/api/users/get-by-telegram-id', {
-          params: { telegramId: tgIdNum },
-        })
-        const data = unwrap(res.data)
-        if (Array.isArray(data)) {
-          // Возвращает массив — берём ACTIVE если есть, иначе первый
-          return this.pickBestUser(data)
+      // Пробуем варианты endpoint в порядке приоритета
+      const endpoints = [
+        // Вариант 1: path param (наиболее распространённый в REST API)
+        () => this.client.get(`/api/users/get-by-telegram-id/${tgIdNum}`),
+        // Вариант 2: query param telegramId
+        () => this.client.get('/api/users/get-by-telegram-id', { params: { telegramId: tgIdNum } }),
+        // Вариант 3: query param telegram_id (snake_case)
+        () => this.client.get('/api/users/get-by-telegram-id', { params: { telegram_id: tgIdNum } }),
+      ]
+
+      for (const attempt of endpoints) {
+        try {
+          const res  = await attempt()
+          const data = unwrap(res.data)
+          if (Array.isArray(data)) return this.pickBestUser(data)
+          if (data) return data
+        } catch (e: any) {
+          // 400/404 — этот вариант не работает, пробуем следующий
+          if (e.response?.status === 400 || e.response?.status === 404) continue
+          throw e  // другая ошибка — пробрасываем
         }
-        return data ?? null
-      } catch (e: any) {
-        if (e.response?.status !== 400 && e.response?.status !== 404) throw e
-        // Fallback: поиск через общий список
       }
 
-      // Fallback: GET /api/users?search=telegramId
-      return await this.searchByTelegramId(tgIdNum)
+      // Финальный fallback: получаем всех пользователей и фильтруем на клиенте.
+      // Перебираем страницы пока не найдём нужного telegramId.
+      return await this.searchByTelegramIdFallback(tgIdNum)
     } catch {
       return null
     }
   }
 
-  // Поиск через общий список пользователей
-  private async searchByTelegramId(telegramId: number): Promise<RemnawaveUser | null> {
-    try {
-      // Remnawave поддерживает поиск по telegramId через GET /api/users
-      const res  = await this.client.get('/api/users', {
-        params: { start: 0, size: 10, telegramId },
-      })
-      const data = unwrap(res.data)
-      const users: RemnawaveUser[] = Array.isArray(data)
-        ? data
-        : (data.users ?? [])
-      const matched = users.filter(u => u.telegramId === telegramId)
-      return this.pickBestUser(matched)
-    } catch {
-      return null
+  // Поиск перебором страниц — используется если специальный endpoint недоступен
+  private async searchByTelegramIdFallback(telegramId: number): Promise<RemnawaveUser | null> {
+    const pageSize = 100
+    let start = 0
+    for (let page = 0; page < 20; page++) {  // максимум 2000 пользователей
+      try {
+        const res  = await this.client.get('/api/users', {
+          params: { start, size: pageSize },
+        })
+        const data  = unwrap(res.data)
+        const users: RemnawaveUser[] = Array.isArray(data) ? data : (data.users ?? [])
+        if (!users.length) break  // конец списка
+
+        const matched = users.filter(u => u.telegramId === telegramId)
+        if (matched.length) return this.pickBestUser(matched)
+
+        if (users.length < pageSize) break  // последняя страница
+        start += pageSize
+      } catch {
+        break
+      }
     }
+    return null
   }
 
   // ── Поиск по Email ──────────────────────────────────────────
   async getUserByEmail(email: string): Promise<RemnawaveUser | null> {
     if (!this.check()) return null
     try {
-      try {
-        const res  = await this.client.get('/api/users/get-by-email', {
-          params: { email },
-        })
-        const data = unwrap(res.data)
-        if (Array.isArray(data)) return this.pickBestUser(data)
-        return data ?? null
-      } catch (e: any) {
-        if (e.response?.status !== 400 && e.response?.status !== 404) throw e
+      const endpoints = [
+        () => this.client.get(`/api/users/get-by-email/${encodeURIComponent(email)}`),
+        () => this.client.get('/api/users/get-by-email', { params: { email } }),
+      ]
+
+      for (const attempt of endpoints) {
+        try {
+          const res  = await attempt()
+          const data = unwrap(res.data)
+          if (Array.isArray(data)) return this.pickBestUser(data)
+          if (data) return data
+        } catch (e: any) {
+          if (e.response?.status === 400 || e.response?.status === 404) continue
+          throw e
+        }
       }
 
-      // Fallback: GET /api/users?search=email
-      const res  = await this.client.get('/api/users', {
-        params: { start: 0, size: 10, search: email },
-      })
-      const data  = unwrap(res.data)
-      const users: RemnawaveUser[] = Array.isArray(data) ? data : (data.users ?? [])
-      const matched = users.filter(u => u.email === email)
-      return this.pickBestUser(matched)
+      // Fallback: перебор страниц
+      const pageSize = 100
+      let start = 0
+      for (let page = 0; page < 20; page++) {
+        try {
+          const res   = await this.client.get('/api/users', {
+            params: { start, size: pageSize },
+          })
+          const data  = unwrap(res.data)
+          const users: RemnawaveUser[] = Array.isArray(data) ? data : (data.users ?? [])
+          if (!users.length) break
+          const matched = users.filter(u => u.email === email)
+          if (matched.length) return this.pickBestUser(matched)
+          if (users.length < pageSize) break
+          start += pageSize
+        } catch { break }
+      }
+      return null
     } catch {
       return null
     }
