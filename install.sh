@@ -851,6 +851,9 @@ do_update() {
   info "Перезапускаю сервисы..."
   apply_nginx_conf
   docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+  # Перезапускаем nginx чтобы сбросить DNS-кеш после смены IP контейнеров
+  sleep 3
+  docker compose restart nginx 2>&1 | tee -a "$LOG_FILE"
 
   install_lk_command 2>/dev/null || true
 
