@@ -1,5 +1,5 @@
+import { createHash, createHmac, randomUUID } from 'crypto'
 import axios from 'axios'
-import { randomUUID } from 'crypto'
 import { config }    from '../config'
 import { logger }    from '../utils/logger'
 import { prisma }    from '../db'
@@ -115,11 +115,10 @@ class CryptoPayService {
   }
 
   verifyWebhookSignature(token: string, body: string): boolean {
-    const crypto = require('crypto')
-    const secretKey = crypto.createHash('sha256')
+    const secretKey = createHash('sha256')
       .update(config.cryptopay.apiToken!)
       .digest()
-    const checkHash = crypto.createHmac('sha256', secretKey)
+    const checkHash = createHmac('sha256', secretKey)
       .update(body)
       .digest('hex')
     return checkHash === token

@@ -204,7 +204,7 @@ describe('PaymentService', () => {
 // ─────────────────────────────────────────────────────────────
 describe('Telegram auth hash validation', () => {
   it('generates valid hash string', () => {
-    const { createHmac, createHash } = require('crypto')
+    import { createHmac, createHash } from 'crypto'
     const botToken = 'test_bot_token_123'
 
     const params = { id: 123, auth_date: Math.floor(Date.now() / 1000), first_name: 'Test' }
