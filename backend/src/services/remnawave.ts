@@ -39,6 +39,7 @@ export interface CreateUserPayload {
   telegramId?:        string | null
   description?:       string | null
   activeUserInbounds?: Array<{ uuid: string }>
+  tagIds?:            string[]   // теги тарифа для Remnawave
 }
 
 export interface UpdateUserPayload {
