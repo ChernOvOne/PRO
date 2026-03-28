@@ -124,25 +124,8 @@ export async function adminRoutes(app: FastifyInstance) {
   // ─────────────────────────────────────────────────────────
   //  INSTRUCTIONS
   // ─────────────────────────────────────────────────────────
-  app.get('/instructions', admin, async () =>
-    prisma.instruction.findMany({ orderBy: { sortOrder: 'asc' } }),
-  )
+  // Instructions are handled in /api/admin/instructions/* routes
 
-  app.post('/instructions', admin, async (req, reply) => {
-    const data = InstructionSchema.parse(req.body)
-    const ins  = await prisma.instruction.create({ data })
-    return reply.status(201).send(ins)
-  })
-
-  app.put('/instructions/:id', admin, async (req) => {
-    const { id } = req.params as { id: string }
-    const data   = InstructionSchema.partial().parse(req.body)
-    return prisma.instruction.update({ where: { id }, data })
-  })
-
-  app.delete('/instructions/:id', admin, async (req, reply) => {
-    const { id } = req.params as { id: string }
-    await prisma.instruction.delete({ where: { id } })
     return reply.status(204).send()
   })
 

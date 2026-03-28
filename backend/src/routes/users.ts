@@ -111,14 +111,19 @@ export async function userRoutes(app: FastifyInstance) {
     }
   })
 
-  // ── Get instructions ───────────────────────────────────────
+  // ── Get instructions (platforms) ────────────────────────────
+  // Теперь инструкции хранятся в instruction_platforms/apps/steps
+  // Публичный маршрут: GET /api/instructions/platforms
   app.get('/instructions', auth, async () => {
-    return prisma.instruction.findMany({
+    return prisma.instructionPlatform.findMany({
       where:   { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { deviceType: 'asc' }],
-      select:  {
-        id: true, title: true, deviceType: true,
-        content: true, sortOrder: true,
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        apps: {
+          where:   { isActive: true },
+          orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }],
+          include: { steps: { orderBy: { order: 'asc' } } },
+        },
       },
     })
   })
