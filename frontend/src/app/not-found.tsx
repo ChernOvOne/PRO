@@ -3,20 +3,21 @@ import { Shield } from 'lucide-react'
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center
-                    justify-center px-6 text-center">
-      <div className="space-y-6 animate-fade-in">
+    <div className="min-h-screen flex flex-col items-center
+                    justify-center px-6 text-center" style={{ background: 'var(--surface-1)' }}>
+      <div className="aurora-bg" />
+      <div className="space-y-6 animate-fade-in relative z-10">
         {/* Logo */}
-        <div className="w-14 h-14 rounded-2xl bg-brand-600/20 border border-brand-500/20
-                        flex items-center justify-center mx-auto">
-          <Shield className="w-7 h-7 text-brand-400" />
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto gradient-border"
+             style={{ background: 'rgba(6,182,212,0.08)' }}>
+          <Shield className="w-7 h-7" style={{ color: '#22d3ee' }} />
         </div>
 
         {/* 404 */}
         <div>
-          <p className="text-8xl font-black text-gray-800 select-none">404</p>
-          <h1 className="text-2xl font-bold mt-2">Страница не найдена</h1>
-          <p className="text-gray-400 mt-2 max-w-sm">
+          <p className="text-8xl font-black select-none text-gradient">404</p>
+          <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--text-primary)' }}>Страница не найдена</h1>
+          <p className="mt-2 max-w-sm" style={{ color: 'var(--text-secondary)' }}>
             Такой страницы не существует или она была перемещена
           </p>
         </div>

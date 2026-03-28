@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Outfit } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import { TMAProvider } from '@/providers/TMAProvider'
 import Script from 'next/script'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin', 'cyrillic'] })
+const outfit = Outfit({ subsets: ['latin'], weight: ['300', '400', '500', '600', '700'] })
 
 export const metadata: Metadata = {
   title: {
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor:    '#0f172a',
+  themeColor:    '#0a0a12',
   width:         'device-width',
   initialScale:  1,
   maximumScale:  1,
@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           strategy="beforeInteractive"
         />
       </head>
-      <body className={`${inter.className} bg-gray-950 text-white antialiased`}>
+      <body className={`${outfit.className} antialiased`} style={{ background: '#0a0a12', color: '#f0f0f5' }}>
         <TMAProvider>
           {children}
         </TMAProvider>
@@ -50,14 +50,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           toastOptions={{
             duration: 3500,
             style: {
-              background: '#1e293b',
-              color:      '#f1f5f9',
-              border:     '1px solid #334155',
-              borderRadius: '12px',
+              background: 'rgba(26, 26, 46, 0.9)',
+              backdropFilter: 'blur(20px)',
+              color:      '#f0f0f5',
+              border:     '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
               fontSize:   '14px',
+              fontFamily: 'Outfit, system-ui, sans-serif',
             },
-            success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
-            error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+            success: { iconTheme: { primary: '#34d399', secondary: '#fff' } },
+            error:   { iconTheme: { primary: '#f87171', secondary: '#fff' } },
           }}
         />
       </body>
