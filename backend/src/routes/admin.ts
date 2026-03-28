@@ -115,19 +115,12 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ok: true }
   })
 
-  app.delete('/tariffs/:id', admin, async (req, reply) => {
-    const { id } = req.params as { id: string }
-    await prisma.tariff.update({ where: { id }, data: { isActive: false } })
-    return reply.status(204).send()
-  })
+
 
   // ─────────────────────────────────────────────────────────
   //  INSTRUCTIONS
   // ─────────────────────────────────────────────────────────
   // Instructions are handled in /api/admin/instructions/* routes
-
-    return reply.status(204).send()
-  })
 
   // ─────────────────────────────────────────────────────────
   //  USERS
