@@ -100,13 +100,14 @@ export async function userRoutes(app: FastifyInstance) {
       qrCode:             qrBase64,
       expireAt:           rmData?.expireAt          ?? user.subExpireAt,
       status:             rmData?.status             ?? user.subStatus,
-      // Расширенные данные из REMNAWAVE
       usedTrafficBytes:   rmData?.usedTrafficBytes   ?? 0,
       trafficLimitBytes:  rmData?.trafficLimitBytes  ?? null,
       daysLeft:           rmData?.daysLeft           ?? null,
       trafficUsedPercent: rmData?.trafficUsedPercent ?? null,
       onlineAt:           rmData?.onlineAt           ?? null,
       subLastOpenedAt:    rmData?.subLastOpenedAt    ?? null,
+      subLastUserAgent:   rmData?.subLastUserAgent   ?? null,
+      activeSquads:       rmData?.activeSquads       ?? [],
     }
   })
 
@@ -212,6 +213,36 @@ export async function userRoutes(app: FastifyInstance) {
       },
     })
     return { ok: true, synced: true }
+  })
+
+  // ── HWID Devices ──────────────────────────────────────────
+  // GET /api/user/devices — список подключённых устройств
+  app.get('/devices', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const user   = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user?.remnawaveUuid) return reply.status(404).send({ error: 'No subscription' })
+
+    try {
+      const result = await remnawave.getDevices(user.remnawaveUuid)
+      return result
+    } catch (e: any) {
+      return reply.status(502).send({ error: 'Failed to load devices' })
+    }
+  })
+
+  // DELETE /api/user/devices — удалить устройство по hwid
+  app.delete('/devices/:hwid', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const { hwid } = req.params as { hwid: string }
+    const user   = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user?.remnawaveUuid) return reply.status(404).send({ error: 'No subscription' })
+
+    try {
+      await remnawave.deleteDevice(user.remnawaveUuid, hwid)
+      return { ok: true }
+    } catch (e: any) {
+      return reply.status(502).send({ error: 'Failed to delete device' })
+    }
   })
 
   // ── Apply referral code ────────────────────────────────────

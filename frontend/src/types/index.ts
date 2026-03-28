@@ -99,18 +99,43 @@ export interface RMStats {
 }
 
 // ── Subscription ──────────────────────────────────────────────
+// ── HWID Devices ─────────────────────────────────────────────
+export interface HwidDevice {
+  hwid:        string
+  userUuid:    string
+  platform:    string
+  osVersion:   string
+  deviceModel: string
+  userAgent:   string
+  createdAt:   string
+  updatedAt:   string
+}
+
+export interface DevicesData {
+  devices: HwidDevice[]
+  total:   number
+}
+
+export interface InternalSquad {
+  uuid:         string
+  viewPosition: number
+  name:         string
+  info: { membersCount: number; inboundsCount: number }
+}
+
 export interface SubscriptionData {
-  subUrl:             string
-  qrCode:             string
-  expireAt:           string | null
-  status:             SubStatus
-  // Расширенные данные из REMNAWAVE
-  usedTrafficBytes?:  number
-  trafficLimitBytes?: number | null
-  daysLeft?:          number | null
+  subUrl:              string
+  qrCode:              string
+  expireAt:            string | null
+  status:              SubStatus
+  usedTrafficBytes?:   number
+  trafficLimitBytes?:  number | null
+  daysLeft?:           number | null
   trafficUsedPercent?: number | null
-  onlineAt?:          string | null
-  subLastOpenedAt?:   string | null
+  onlineAt?:           string | null
+  subLastOpenedAt?:    string | null
+  subLastUserAgent?:   string | null
+  activeSquads?:       Array<{ uuid: string; name: string }>
 }
 
 // ── Admin ─────────────────────────────────────────────────────

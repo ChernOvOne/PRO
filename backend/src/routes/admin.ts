@@ -301,4 +301,16 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
     return { total, matched, pending, unmatched: total - matched }
   })
+
+  // ── Internal Squads (от Remnawave) ─────────────────────────
+  app.get('/squads', { preHandler: [app.adminOnly] }, async (_, reply) => {
+    try {
+      const result = await remnawave.getInternalSquads()
+      return result
+    } catch {
+      return reply.status(502).send({ error: 'Failed to load squads from Remnawave' })
+    }
+  })
+
+
 }

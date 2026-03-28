@@ -2,6 +2,7 @@ import type {
   User, DashboardData, SubscriptionData, Tariff,
   ReferralInfo, Instruction, CreatePaymentResponse,
   AdminStats, AdminUser, AdminPayment, Payment,
+  DevicesData, InternalSquad,
 } from '@/types'
 
 // ── Base fetch wrapper ────────────────────────────────────────
@@ -47,6 +48,8 @@ export const userApi = {
   payments:     () => apiFetch<Payment[]>('/user/payments'),
   referral:     () => apiFetch<ReferralInfo>('/user/referral'),
   sync:         () => apiFetch<{ ok: boolean; linked?: boolean }>('/user/sync', { method: 'POST', body: '{}' }),
+  devices:      () => apiFetch<DevicesData>('/user/devices'),
+  deleteDevice: (hwid: string) => apiFetch<{ ok: boolean }>(`/user/devices/${hwid}`, { method: 'DELETE' }),
 }
 
 // ── Public ────────────────────────────────────────────────────
@@ -120,4 +123,5 @@ export const adminApi = {
 
   // Import
   importStatus: () => apiFetch<{ total: number; matched: number; pending: number; unmatched: number }>('/admin/import'),
+  squads: () => apiFetch<{ squads: InternalSquad[]; total: number }>('/admin/squads'),
 }
