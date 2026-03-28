@@ -1,189 +1,336 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, X, Loader2, Monitor,
-         Apple, Smartphone, Router, HelpCircle } from 'lucide-react'
+import {
+  Plus, Trash2, ChevronDown, ChevronUp, GripVertical,
+  Star, Save, X, Image, Link as LinkIcon, ExternalLink,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 
-const DEVICES = ['WINDOWS','MACOS','LINUX','IOS','ANDROID','ROUTER','OTHER']
-const DEVICE_LABELS: Record<string,string> = {
-  WINDOWS:'Windows',MACOS:'macOS',LINUX:'Linux',
-  IOS:'iOS',ANDROID:'Android',ROUTER:'Роутер',OTHER:'Другое',
+const BASE = '/api/admin/instructions'
+
+// ── Types ─────────────────────────────────────────────────────
+interface Step     { id: string; order: number; text: string; imageUrl?: string }
+interface App      { id: string; name: string; icon: string; isFeatured: boolean; storeUrl?: string; deeplink?: string; sortOrder: number; steps: Step[] }
+interface Platform { id: string; slug: string; name: string; icon: string; sortOrder: number; isActive: boolean; apps: App[] }
+
+// ── Helpers ───────────────────────────────────────────────────
+async function api(method: string, path: string, body?: any) {
+  const r = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
 }
-const DEVICE_ICONS: Record<string,any> = {
-  WINDOWS:Monitor,MACOS:Apple,LINUX:Monitor,
-  IOS:Smartphone,ANDROID:Smartphone,ROUTER:Router,OTHER:HelpCircle,
-}
 
-interface Instruction {
-  id:string; title:string; deviceType:string; content:string
-  sortOrder:number; isActive:boolean
-}
-
-const EMPTY = { title:'', deviceType:'IOS', content:'', sortOrder:0, isActive:true }
-
-export default function AdminInstructions() {
-  const [items, setItems]     = useState<Instruction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [modal, setModal]     = useState<'create'|'edit'|null>(null)
-  const [editing, setEditing] = useState<Partial<Instruction>>(EMPTY)
-  const [saving, setSaving]   = useState(false)
-  const [filterDev, setFilterDev] = useState('')
-
-  const load = () =>
-    fetch('/api/admin/instructions', { credentials:'include' })
-      .then(r=>r.json()).then(d=>{setItems(d);setLoading(false)})
-
-  useEffect(()=>{load()},[])
-
-  const openCreate = () => { setEditing(EMPTY); setModal('create') }
-  const openEdit   = (i: Instruction) => { setEditing(i); setModal('edit') }
-  const close      = () => { setModal(null); setEditing(EMPTY) }
-  const F = (k: string, v: any) => setEditing(e=>({...e,[k]:v}))
+// ── Step editor ───────────────────────────────────────────────
+function StepEditor({ step, onUpdate, onDelete }: {
+  step: Step;
+  onUpdate: (s: Step) => void;
+  onDelete: () => void;
+}) {
+  const [text,     setText]     = useState(step.text)
+  const [imageUrl, setImageUrl] = useState(step.imageUrl ?? '')
+  const [saving,   setSaving]   = useState(false)
 
   const save = async () => {
     setSaving(true)
     try {
-      const url    = modal==='edit' ? `/api/admin/instructions/${editing.id}` : '/api/admin/instructions'
-      const method = modal==='edit' ? 'PUT' : 'POST'
-      const res    = await fetch(url,{
-        method, credentials:'include',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(editing),
-      })
-      if(!res.ok) throw new Error()
-      toast.success('Сохранено')
-      close(); load()
-    } catch { toast.error('Ошибка сохранения') }
+      await api('PATCH', `/steps/${step.id}`, { text, imageUrl: imageUrl || null })
+      onUpdate({ ...step, text, imageUrl: imageUrl || undefined })
+      toast.success('Шаг сохранён')
+    } catch { toast.error('Ошибка') }
     finally { setSaving(false) }
   }
 
-  const del = async (id: string) => {
-    if(!confirm('Удалить инструкцию?')) return
-    await fetch(`/api/admin/instructions/${id}`,{method:'DELETE',credentials:'include'})
-    toast.success('Удалено'); load()
+  return (
+    <div className="bg-black/20 rounded-2xl p-4 space-y-3 border border-white/8">
+      <div className="flex items-center gap-2">
+        <div className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-400 text-xs
+                        font-bold flex items-center justify-center shrink-0">
+          {step.order}
+        </div>
+        <span className="text-xs text-zinc-500 font-medium">Шаг</span>
+        <div className="ml-auto flex gap-1.5">
+          <button onClick={save} disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs
+                       bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 transition-all">
+            <Save className="w-3 h-3" />
+            {saving ? '...' : 'Сохранить'}
+          </button>
+          <button onClick={onDelete}
+            className="p-1 rounded-lg text-zinc-700 hover:text-red-400
+                       hover:bg-red-500/10 transition-all">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={3}
+        placeholder="Текст шага... (поддерживает markdown)"
+        className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2
+                   text-sm text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none
+                   focus:border-violet-500/40 transition-all"
+      />
+
+      <div className="flex items-center gap-2">
+        <Image className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)}
+          placeholder="URL изображения (необязательно)"
+          className="flex-1 bg-white/4 border border-white/10 rounded-xl px-3 py-1.5
+                     text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none
+                     focus:border-violet-500/40 transition-all" />
+        {imageUrl && (
+          <a href={imageUrl} target="_blank" rel="noreferrer"
+            className="text-zinc-600 hover:text-zinc-300 transition-colors">
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        )}
+      </div>
+
+      {imageUrl && (
+        <img src={imageUrl} alt="preview"
+          className="rounded-xl border border-white/10 max-h-40 w-auto" />
+      )}
+    </div>
+  )
+}
+
+// ── App editor ────────────────────────────────────────────────
+function AppEditor({ app, onUpdate, onDelete }: {
+  app: App;
+  onUpdate: (a: App) => void;
+  onDelete: () => void;
+}) {
+  const [open,      setOpen]      = useState(false)
+  const [name,      setName]      = useState(app.name)
+  const [icon,      setIcon]      = useState(app.icon)
+  const [featured,  setFeatured]  = useState(app.isFeatured)
+  const [storeUrl,  setStoreUrl]  = useState(app.storeUrl ?? '')
+  const [deeplink,  setDeeplink]  = useState(app.deeplink ?? '')
+  const [steps,     setSteps]     = useState<Step[]>(app.steps)
+  const [saving,    setSaving]    = useState(false)
+
+  const saveApp = async () => {
+    setSaving(true)
+    try {
+      const updated = await api('PATCH', `/apps/${app.id}`, {
+        name, icon, isFeatured: featured,
+        storeUrl: storeUrl || null,
+        deeplink: deeplink || null,
+      })
+      onUpdate({ ...app, ...updated, steps })
+      toast.success('Приложение сохранено')
+    } catch { toast.error('Ошибка') }
+    finally { setSaving(false) }
   }
 
-  const filtered = filterDev ? items.filter(i=>i.deviceType===filterDev) : items
+  const addStep = async () => {
+    try {
+      const step = await api('POST', '/steps', {
+        appId: app.id, order: steps.length + 1, text: 'Новый шаг',
+      })
+      setSteps(s => [...s, step])
+    } catch { toast.error('Ошибка') }
+  }
+
+  const deleteStep = async (stepId: string) => {
+    try {
+      await api('DELETE', `/steps/${stepId}`)
+      setSteps(s => s.filter(x => x.id !== stepId))
+    } catch { toast.error('Ошибка') }
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Инструкции</h1>
-          <p className="text-gray-400 text-sm mt-0.5">{items.length} инструкций</p>
-        </div>
-        <button onClick={openCreate} className="btn-primary">
-          <Plus className="w-4 h-4" /> Добавить
+    <div className="rounded-2xl bg-white/3 border border-white/8 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/3 transition-all">
+        <GripVertical className="w-4 h-4 text-zinc-700 shrink-0" />
+        <span className="text-xl">{icon}</span>
+        <span className="font-medium text-sm flex-1">{name}</span>
+        {featured && <Star className="w-3.5 h-3.5 text-amber-400" fill="currentColor" />}
+        <button onClick={() => setOpen(v => !v)}
+          className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors">
+          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        <button onClick={onDelete}
+          className="p-1 text-zinc-700 hover:text-red-400 transition-colors">
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Device filter */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={()=>setFilterDev('')}
-                className={`px-3 py-1.5 rounded-xl text-sm border transition-all
-                            ${!filterDev ? 'bg-brand-600/20 border-brand-500/40 text-brand-300' : 'border-gray-700 text-gray-400 hover:border-gray-600'}`}>
-          Все
-        </button>
-        {DEVICES.map(d => {
-          const Icon = DEVICE_ICONS[d]
-          return (
-            <button key={d} onClick={()=>setFilterDev(d)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm border transition-all
-                                ${filterDev===d ? 'bg-brand-600/20 border-brand-500/40 text-brand-300' : 'border-gray-700 text-gray-400 hover:border-gray-600'}`}>
-              <Icon className="w-3.5 h-3.5" />{DEVICE_LABELS[d]}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* List */}
-      <div className="space-y-3">
-        {loading ? [...Array(4)].map((_,i)=><div key={i} className="h-16 skeleton rounded-2xl" />) :
-          filtered.map(ins => {
-            const Icon = DEVICE_ICONS[ins.deviceType] || HelpCircle
-            return (
-              <div key={ins.id} className={`card flex items-center gap-4 ${!ins.isActive?'opacity-50':''}`}>
-                <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-5 h-5 text-gray-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">{ins.title}</p>
-                  <p className="text-xs text-gray-500">{DEVICE_LABELS[ins.deviceType]} · порядок #{ins.sortOrder}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={()=>openEdit(ins)}
-                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-colors">
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button onClick={()=>del(ins.id)}
-                          className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )
-          })
-        }
-      </div>
-
-      {/* Modal */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={close} />
-          <div className="relative w-full max-w-2xl card space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-lg">
-                {modal==='edit' ? 'Редактировать' : 'Новая инструкция'}
-              </h2>
-              <button onClick={close} className="text-gray-500 hover:text-white"><X className="w-5 h-5"/></button>
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-white/8 pt-4">
+          {/* App settings */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-zinc-600">Название</label>
+              <input value={name} onChange={e => setName(e.target.value)}
+                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2
+                           text-sm focus:outline-none focus:border-violet-500/40 transition-all" />
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2 space-y-1">
-                <label className="text-sm text-gray-400">Заголовок</label>
-                <input className="input" value={editing.title||''} onChange={e=>F('title',e.target.value)}
-                       placeholder="Подключение на iPhone" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm text-gray-400">Устройство</label>
-                <select className="input" value={editing.deviceType||'IOS'}
-                        onChange={e=>F('deviceType',e.target.value)}>
-                  {DEVICES.map(d=><option key={d} value={d}>{DEVICE_LABELS[d]}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm text-gray-400">Порядок отображения</label>
-                <input type="number" className="input" value={editing.sortOrder||0}
-                       onChange={e=>F('sortOrder',+e.target.value)} />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <label className="text-sm text-gray-400">
-                  Содержимое <span className="text-gray-600">(Markdown)</span>
-                </label>
-                <textarea
-                  className="input min-h-[260px] font-mono text-sm"
-                  value={editing.content||''}
-                  onChange={e=>F('content',e.target.value)}
-                  placeholder="## Шаг 1&#10;Скачай приложение Streisand...&#10;&#10;## Шаг 2&#10;Вставь ссылку-подписку..."
-                />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer col-span-2">
-                <input type="checkbox" className="w-4 h-4 accent-brand-500"
-                       checked={!!editing.isActive} onChange={e=>F('isActive',e.target.checked)} />
-                <span className="text-sm text-gray-300">Активна (видна пользователям)</span>
-              </label>
+            <div className="space-y-1">
+              <label className="text-xs text-zinc-600">Иконка (emoji)</label>
+              <input value={icon} onChange={e => setIcon(e.target.value)}
+                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2
+                           text-sm focus:outline-none focus:border-violet-500/40 transition-all" />
             </div>
+          </div>
 
-            <div className="flex gap-3">
-              <button onClick={close} className="btn-secondary flex-1 justify-center">Отмена</button>
-              <button onClick={save} disabled={saving} className="btn-primary flex-1 justify-center">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Сохранить'}
+          <div className="space-y-1">
+            <label className="text-xs text-zinc-600">Ссылка на магазин (App Store / Google Play)</label>
+            <input value={storeUrl} onChange={e => setStoreUrl(e.target.value)}
+              placeholder="https://apps.apple.com/..."
+              className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2
+                         text-sm focus:outline-none focus:border-violet-500/40 transition-all" />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-zinc-600">Deeplink шаблон <span className="text-zinc-700">(используй {'{url}'} для ссылки подписки)</span></label>
+            <input value={deeplink} onChange={e => setDeeplink(e.target.value)}
+              placeholder="happ://add/{url}"
+              className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2
+                         text-sm font-mono focus:outline-none focus:border-violet-500/40 transition-all" />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={featured} onChange={e => setFeatured(e.target.checked)}
+                className="w-4 h-4 rounded accent-violet-500" />
+              <span className="text-sm text-zinc-400">Рекомендованное</span>
+            </label>
+            <div className="ml-auto">
+              <button onClick={saveApp} disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm
+                           bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 transition-all">
+                <Save className="w-3.5 h-3.5" />
+                {saving ? 'Сохранение...' : 'Сохранить'}
               </button>
             </div>
           </div>
+
+          {/* Steps */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-zinc-500">Шаги инструкции</span>
+              <button onClick={addStep}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg
+                           bg-white/6 hover:bg-white/10 text-zinc-400 transition-all">
+                <Plus className="w-3 h-3" />
+                Добавить шаг
+              </button>
+            </div>
+            {steps.map(s => (
+              <StepEditor key={s.id} step={s}
+                onUpdate={updated => setSteps(ss => ss.map(x => x.id === s.id ? updated : x))}
+                onDelete={() => deleteStep(s.id)} />
+            ))}
+          </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Platform editor ───────────────────────────────────────────
+function PlatformEditor({ platform, onUpdate, onDelete }: {
+  platform: Platform;
+  onUpdate: (p: Platform) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false)
+  const [apps, setApps] = useState<App[]>(platform.apps)
+
+  const addApp = async () => {
+    try {
+      const app = await api('POST', '/apps', {
+        platformId: platform.id, name: 'Новое приложение', icon: '📱',
+      })
+      setApps(a => [...a, app])
+    } catch { toast.error('Ошибка') }
+  }
+
+  const deleteApp = async (appId: string) => {
+    try {
+      await api('DELETE', `/apps/${appId}`)
+      setApps(a => a.filter(x => x.id !== appId))
+    } catch { toast.error('Ошибка') }
+  }
+
+  return (
+    <div className="rounded-3xl bg-white/4 border border-white/8 overflow-hidden">
+      <button onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-3 px-5 py-4 hover:bg-white/3 transition-all">
+        <span className="text-2xl">{platform.icon}</span>
+        <span className="font-semibold flex-1 text-left">{platform.name}</span>
+        <span className="text-xs text-zinc-600">{apps.length} прил.</span>
+        {open ? <ChevronUp className="w-4 h-4 text-zinc-600" /> : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-3 border-t border-white/8 pt-4">
+          {apps.map(app => (
+            <AppEditor key={app.id} app={app}
+              onUpdate={updated => setApps(aa => aa.map(x => x.id === app.id ? updated : x))}
+              onDelete={() => deleteApp(app.id)} />
+          ))}
+          <button onClick={addApp}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm
+                       border border-dashed border-white/15 text-zinc-600
+                       hover:border-white/25 hover:text-zinc-400 transition-all">
+            <Plus className="w-4 h-4" />
+            Добавить приложение
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────
+export default function AdminInstructionsPage() {
+  const [platforms, setPlatforms] = useState<Platform[]>([])
+  const [loading,   setLoading]   = useState(true)
+
+  useEffect(() => {
+    api('GET', '/platforms').then(setPlatforms).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return (
+    <div className="space-y-3 animate-pulse">
+      {[1,2,3].map(i => <div key={i} className="h-16 rounded-3xl bg-white/4" />)}
+    </div>
+  )
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Инструкции по подключению</h1>
+          <p className="text-sm text-zinc-500 mt-1">
+            Настрой приложения и шаги для каждой платформы
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-3xl bg-blue-500/6 border border-blue-500/20 px-5 py-3">
+        <p className="text-sm text-blue-300">
+          💡 Deeplink пример: <code className="font-mono text-xs bg-white/8 px-1.5 py-0.5 rounded">happ://add/{'{url}'}</code> — {'{url}'} заменится ссылкой подписки пользователя
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {platforms.map(p => (
+          <PlatformEditor key={p.id} platform={p}
+            onUpdate={updated => setPlatforms(ps => ps.map(x => x.id === p.id ? updated : x))}
+            onDelete={() => setPlatforms(ps => ps.filter(x => x.id !== p.id))} />
+        ))}
+      </div>
     </div>
   )
 }

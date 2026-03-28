@@ -5,17 +5,22 @@ import { remnawave } from '../services/remnawave'
 import { logger }   from '../utils/logger'
 
 const TariffSchema = z.object({
-  name:           z.string().min(1),
-  description:    z.string().optional(),
-  durationDays:   z.number().int().positive(),
-  priceRub:       z.number().positive(),
-  priceUsdt:      z.number().positive().optional(),
-  deviceLimit:    z.number().int().positive().default(3),
-  trafficGb:      z.number().int().positive().optional(),
-  isFeatured:     z.boolean().default(false),
-  sortOrder:      z.number().int().default(0),
-  remnawaveTagIds: z.array(z.string()).default([]),
-  isActive:       z.boolean().default(true),
+  name:             z.string(),
+  description:      z.string().optional().nullable(),
+  type:             z.enum(['SUBSCRIPTION', 'TRAFFIC_ADDON']).default('SUBSCRIPTION'),
+  durationDays:     z.coerce.number().default(0),
+  priceRub:         z.coerce.number(),
+  priceUsdt:        z.coerce.number().optional().nullable(),
+  deviceLimit:      z.coerce.number().default(3),
+  trafficGb:        z.coerce.number().optional().nullable(),
+  trafficAddonGb:   z.coerce.number().optional().nullable(),
+  trafficStrategy:  z.string().default('MONTH'),
+  isActive:         z.boolean().default(true),
+  isFeatured:       z.boolean().default(false),
+  sortOrder:        z.coerce.number().default(0),
+  remnawaveSquads:  z.array(z.string()).default([]),
+  remnawaveTag:     z.string().optional().nullable(),
+  remnawaveTagIds:  z.array(z.string()).default([]),
 })
 
 const InstructionSchema = z.object({
@@ -95,6 +100,19 @@ export async function adminRoutes(app: FastifyInstance) {
     const data   = TariffSchema.partial().parse(req.body)
     const tariff = await prisma.tariff.update({ where: { id }, data })
     return tariff
+  })
+
+  app.patch('/tariffs/:id', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const data   = TariffSchema.partial().parse(req.body)
+    const tariff = await prisma.tariff.update({ where: { id }, data })
+    return tariff
+  })
+
+  app.delete('/tariffs/:id', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    await prisma.tariff.delete({ where: { id } })
+    return { ok: true }
   })
 
   app.delete('/tariffs/:id', admin, async (req, reply) => {

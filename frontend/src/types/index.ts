@@ -123,6 +123,18 @@ export interface InternalSquad {
   info: { membersCount: number; inboundsCount: number }
 }
 
+// ── Tariff types ─────────────────────────────────────────────
+export type TariffType = 'SUBSCRIPTION' | 'TRAFFIC_ADDON'
+
+export interface TrafficAddon {
+  id:           string
+  name:         string
+  type:         'TRAFFIC_ADDON'
+  trafficAddonGb: number
+  priceRub:     number
+  priceUsdt?:   number
+}
+
 export interface SubscriptionData {
   subUrl:              string
   qrCode:              string

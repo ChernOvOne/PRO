@@ -19,17 +19,14 @@ model User {
   telegramName  String?   @map("telegram_name")
   passwordHash  String?   @map("password_hash")
 
-  // REMNAWAVE mapping
   remnawaveUuid String?   @unique @map("remnawave_uuid")
-  // Subscription synced from REMNAWAVE
   subExpireAt   DateTime? @map("sub_expire_at")
   subStatus     SubStatus @default(INACTIVE) @map("sub_status")
-  subLink       String?   @map("sub_link") // REMNAWAVE subscription URL
+  subLink       String?   @map("sub_link")
 
   role          Role      @default(USER)
   isActive      Boolean   @default(true) @map("is_active")
 
-  // Referral
   referralCode  String    @unique @default(cuid()) @map("referral_code")
   referredById  String?   @map("referred_by_id")
   referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
@@ -39,7 +36,6 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
   lastLoginAt   DateTime? @map("last_login_at")
 
-  // Relations
   payments      Payment[]
   bonusHistory  ReferralBonus[]
   sessions      Session[]
@@ -64,23 +60,36 @@ model Session {
 
 // ── Tariffs ──────────────────────────────────────────────────
 model Tariff {
-  id              String   @id @default(uuid())
+  id              String      @id @default(uuid())
   name            String
   description     String?
-  durationDays    Int      @map("duration_days")
-  priceRub        Float    @map("price_rub")       // Price in RUB
-  priceUsdt       Float?   @map("price_usdt")      // Price in USDT
-  deviceLimit     Int      @default(3) @map("device_limit")
-  trafficGb       Int?     @map("traffic_gb")      // null = unlimited
-  isActive        Boolean  @default(true) @map("is_active")
-  isFeatured      Boolean  @default(false) @map("is_featured") // Show as recommended
-  sortOrder       Int      @default(0) @map("sort_order")
+  type            TariffType  @default(SUBSCRIPTION) @map("type")
 
-  // REMNAWAVE config
-  remnawaveTagIds String[] @map("remnawave_tag_ids") // Tags applied to user
+  // SUBSCRIPTION fields
+  durationDays    Int         @default(0) @map("duration_days")
+  deviceLimit     Int         @default(3) @map("device_limit")
+  trafficGb       Int?        @map("traffic_gb")           // null = unlimited
+  trafficStrategy String      @default("MONTH") @map("traffic_strategy")  // MONTH | NO_RESET | WEEK
 
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  // TRAFFIC_ADDON fields
+  trafficAddonGb  Int?        @map("traffic_addon_gb")     // GB to add
+
+  // Pricing
+  priceRub        Float       @map("price_rub")
+  priceUsdt       Float?      @map("price_usdt")
+
+  // Status
+  isActive        Boolean     @default(true) @map("is_active")
+  isFeatured      Boolean     @default(false) @map("is_featured")
+  sortOrder       Int         @default(0) @map("sort_order")
+
+  // REMNAWAVE config (for SUBSCRIPTION type)
+  remnawaveSquads String[]    @default([]) @map("remnawave_squads")   // Internal squad UUIDs
+  remnawaveTag    String?     @map("remnawave_tag")
+  remnawaveTagIds String[]    @default([]) @map("remnawave_tag_ids")  // legacy
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   payments        Payment[]
 
@@ -96,16 +105,14 @@ model Payment {
   tariff          Tariff        @relation(fields: [tariffId], references: [id])
 
   provider        PaymentProvider
-  providerOrderId String?       @map("provider_order_id") // External payment ID
+  providerOrderId String?       @map("provider_order_id")
   amount          Float
   currency        String        @default("RUB")
   status          PaymentStatus @default(PENDING)
 
-  // ЮKassa specific
   yukassaPaymentId String?      @map("yukassa_payment_id")
   yukassaStatus   String?       @map("yukassa_status")
 
-  // CryptoPay specific
   cryptoInvoiceId  Int?         @map("crypto_invoice_id")
   cryptoCurrency   String?      @map("crypto_currency")
   cryptoAmount     String?      @map("crypto_amount")
@@ -121,32 +128,70 @@ model Payment {
 
 // ── Referral bonuses ─────────────────────────────────────────
 model ReferralBonus {
-  id              String   @id @default(uuid())
-  referrerId      String   @map("referrer_id")
-  referrer        User     @relation(fields: [referrerId], references: [id])
-  triggeredByPaymentId String @unique @map("triggered_by_payment_id")
-  triggeredByPayment Payment @relation(fields: [triggeredByPaymentId], references: [id])
-  bonusDays       Int      @map("bonus_days")
-  appliedAt       DateTime @default(now()) @map("applied_at")
+  id                   String   @id @default(uuid())
+  referrerId           String   @map("referrer_id")
+  referrer             User     @relation(fields: [referrerId], references: [id])
+  triggeredByPaymentId String   @unique @map("triggered_by_payment_id")
+  triggeredByPayment   Payment  @relation(fields: [triggeredByPaymentId], references: [id])
+  bonusDays            Int      @map("bonus_days")
+  appliedAt            DateTime @default(now()) @map("applied_at")
 
   @@map("referral_bonuses")
 }
 
-// ── Connection instructions ───────────────────────────────────
-model Instruction {
-  id          String   @id @default(uuid())
-  title       String
-  deviceType  DeviceType @map("device_type")
-  content     String   // Markdown content
-  sortOrder   Int      @default(0) @map("sort_order")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+// ── Instruction Platforms ─────────────────────────────────────
+model InstructionPlatform {
+  id        String             @id @default(uuid())
+  slug      String             @unique  // ios | android | windows | macos | linux | tv | router
+  name      String                      // "iOS", "Android", ...
+  icon      String             @default("📱")  // emoji or SVG name
+  sortOrder Int                @default(0) @map("sort_order")
+  isActive  Boolean            @default(true) @map("is_active")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
 
-  @@map("instructions")
+  apps      InstructionApp[]
+
+  @@map("instruction_platforms")
 }
 
-// ── Settings (admin configurable) ────────────────────────────
+// ── Instruction Apps ─────────────────────────────────────────
+model InstructionApp {
+  id          String               @id @default(uuid())
+  platformId  String               @map("platform_id")
+  platform    InstructionPlatform  @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  name        String               // "Happ"
+  icon        String               @default("🔵")  // emoji or image URL
+  isFeatured  Boolean              @default(false) @map("is_featured")  // рекомендованное
+  storeUrl    String?              @map("store_url")   // App Store / Play Market URL
+  deeplink    String?              @map("deeplink")    // happ://add/{url}
+  sortOrder   Int                  @default(0) @map("sort_order")
+  isActive    Boolean              @default(true) @map("is_active")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  steps       InstructionStep[]
+
+  @@map("instruction_apps")
+}
+
+// ── Instruction Steps ─────────────────────────────────────────
+model InstructionStep {
+  id        String          @id @default(uuid())
+  appId     String          @map("app_id")
+  app       InstructionApp  @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  order     Int
+  text      String          // Markdown text
+  imageUrl  String?         @map("image_url")  // uploaded image URL
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  @@map("instruction_steps")
+}
+
+// ── Settings ─────────────────────────────────────────────────
 model Setting {
   key       String   @id
   value     String
@@ -157,15 +202,15 @@ model Setting {
 
 // ── Import tracking ───────────────────────────────────────────
 model ImportRecord {
-  id              String   @id @default(uuid())
-  userId          String?  @unique @map("user_id")
-  user            User?    @relation(fields: [userId], references: [id])
-  sourceEmail     String?  @map("source_email")
-  sourceTelegramId String? @map("source_telegram_id")
-  remnawaveUuid   String?  @map("remnawave_uuid")
-  matchedBy       String?  @map("matched_by") // "email" | "telegram_id"
-  importedAt      DateTime @default(now()) @map("imported_at")
-  status          String   @default("pending")
+  id               String   @id @default(uuid())
+  userId           String?  @unique @map("user_id")
+  user             User?    @relation(fields: [userId], references: [id])
+  sourceEmail      String?  @map("source_email")
+  sourceTelegramId String?  @map("source_telegram_id")
+  remnawaveUuid    String?  @map("remnawave_uuid")
+  matchedBy        String?  @map("matched_by")
+  importedAt       DateTime @default(now()) @map("imported_at")
+  status           String   @default("pending")
 
   @@map("import_records")
 }
@@ -195,6 +240,11 @@ enum PaymentProvider {
   YUKASSA
   CRYPTOPAY
   MANUAL
+}
+
+enum TariffType {
+  SUBSCRIPTION
+  TRAFFIC_ADDON
 }
 
 enum DeviceType {
