@@ -226,6 +226,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 Input.displayName = 'Input'
 
 // ── Legacy compat: Empty ──────────────────────────────────────
-export function Empty({ icon, title, description }: { icon?: ReactNode; title: string; description?: string }) {
-  return <EmptyState icon={icon || <span style={{ color: 'var(--text-tertiary)', fontSize: 24 }}>∅</span>} title={title} description={description} />
+export function Empty({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: string; action?: ReactNode }) {
+  return <EmptyState icon={icon || <span style={{ color: 'var(--text-tertiary)', fontSize: 24 }}>∅</span>} title={title} description={description} action={action} />
 }
