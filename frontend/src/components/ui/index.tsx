@@ -153,17 +153,18 @@ export function Select({ value, onChange, options, placeholder }: SelectProps) {
 }
 
 // ── Toggle ────────────────────────────────────────────────────
-interface ToggleProps { enabled: boolean; onChange: (v: boolean) => void; label?: string }
-export function Toggle({ enabled, onChange, label }: ToggleProps) {
+interface ToggleProps { enabled?: boolean; checked?: boolean; onChange: (v: boolean) => void; label?: string }
+export function Toggle({ enabled, checked, onChange, label }: ToggleProps) {
+  const on = enabled ?? checked ?? false
   return (
     <label className="flex items-center gap-2.5 cursor-pointer select-none">
-      <button onClick={() => onChange(!enabled)}
+      <button onClick={() => onChange(!on)}
               className="relative w-11 h-6 rounded-full transition-all duration-300"
               style={{
-                background: enabled ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.08)',
+                background: on ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.08)',
               }}>
         <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
-              style={{ transform: enabled ? 'translateX(20px)' : 'translateX(0)' }} />
+              style={{ transform: on ? 'translateX(20px)' : 'translateX(0)' }} />
       </button>
       {label && <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</span>}
     </label>
@@ -196,10 +197,10 @@ export function SkeletonText({ width = 'w-32' }: { width?: string }) {
 }
 
 // ── Legacy compat: Card ───────────────────────────────────────
-interface CardProps { children: ReactNode; className?: string; [k: string]: any }
-export function Card({ children, className = '', ...props }: CardProps) {
+interface CardProps { children: ReactNode; className?: string; padding?: boolean; [k: string]: any }
+export function Card({ children, className = '', padding = true, ...props }: CardProps) {
   return (
-    <div className={`glass-card ${className}`} {...props}>
+    <div className={`glass-card ${padding ? '' : '!p-0'} ${className}`} {...props}>
       {children}
     </div>
   )
