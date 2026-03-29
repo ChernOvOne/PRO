@@ -194,3 +194,37 @@ export function SkeletonCard({ height = 'h-32' }: { height?: string }) {
 export function SkeletonText({ width = 'w-32' }: { width?: string }) {
   return <div className={`h-4 ${width} skeleton rounded`} />
 }
+
+// ── Legacy compat: Card ───────────────────────────────────────
+interface CardProps { children: ReactNode; className?: string; [k: string]: any }
+export function Card({ children, className = '', ...props }: CardProps) {
+  return (
+    <div className={`glass-card ${className}`} {...props}>
+      {children}
+    </div>
+  )
+}
+
+// ── Legacy compat: Skeleton ───────────────────────────────────
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`skeleton ${className}`} />
+}
+
+// ── Legacy compat: Input ──────────────────────────────────────
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string
+}
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, className = '', ...props }, ref) => (
+    <div>
+      {label && <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-tertiary)' }}>{label}</label>}
+      <input ref={ref} className={`glass-input ${className}`} {...props} />
+    </div>
+  )
+)
+Input.displayName = 'Input'
+
+// ── Legacy compat: Empty ──────────────────────────────────────
+export function Empty({ icon, title, description }: { icon?: ReactNode; title: string; description?: string }) {
+  return <EmptyState icon={icon || <span style={{ color: 'var(--text-tertiary)', fontSize: 24 }}>∅</span>} title={title} description={description} />
+}
