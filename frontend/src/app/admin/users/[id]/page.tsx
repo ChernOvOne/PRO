@@ -4,72 +4,100 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Shield, ShieldOff, Plus, CreditCard,
-  Calendar, Wifi, Users, Mail, MessageCircle,
-  CheckCircle2, XCircle, Clock, ExternalLink,
+  Wifi, Users, Mail, MessageCircle, Copy,
+  CheckCircle2, XCircle, Clock, Trash2, Bell,
+  RefreshCw, Ban, UserX, Calendar, Smartphone,
+  Globe, FileText, DollarSign, ChevronRight, ChevronDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
-import type { AdminUser } from '@/types'
-import { Card, Badge, Button, Modal, Input, Skeleton } from '@/components/ui'
+import type { AdminNote } from '@/types'
 
 export default function AdminUserDetail() {
   const { id }   = useParams<{ id: string }>()
   const router   = useRouter()
-  const [user,    setUser]    = useState<any>(null)
+  const [user, setUser]       = useState<any>(null)
+  const [notes, setNotes]     = useState<AdminNote[]>([])
+  const [devices, setDevices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [extendModal, setExtendModal] = useState(false)
-  const [extendDays,  setExtendDays]  = useState(30)
-  const [extendNote,  setExtendNote]  = useState('')
-  const [acting, setActing] = useState(false)
+  const [acting, setActing]   = useState(false)
+  const [copied, setCopied]   = useState<string | null>(null)
+
+  // Modals
+  const [showExtend, setShowExtend]     = useState(false)
+  const [showNotify, setShowNotify]     = useState(false)
+  const [showNote, setShowNote]         = useState(false)
+  const [showBalance, setShowBalance]   = useState(false)
+  const [showDelete, setShowDelete]     = useState(false)
+  const [devicesOpen, setDevicesOpen]   = useState(false)
+
+  // Form state
+  const [extendDays, setExtendDays]     = useState(30)
+  const [extendNote, setExtendNote]     = useState('')
+  const [notifyTitle, setNotifyTitle]   = useState('')
+  const [notifyMsg, setNotifyMsg]       = useState('')
+  const [noteText, setNoteText]         = useState('')
+  const [balanceAmount, setBalanceAmount] = useState(0)
+  const [balanceDesc, setBalanceDesc]   = useState('')
 
   const load = async () => {
     try {
-      const u = await adminApi.userById(id)
+      const [u, n] = await Promise.all([
+        adminApi.userById(id),
+        adminApi.userNotes(id).catch(() => []),
+      ])
       setUser(u)
+      setNotes(n)
+
+      // Load devices for THIS user via admin endpoint
+      if (u.remnawaveUuid) {
+        adminApi.userDevices(id)
+          .then(d => setDevices(d.devices || []))
+          .catch(() => {})
+      }
     } finally {
       setLoading(false)
     }
   }
+
   useEffect(() => { load() }, [id])
 
-  const toggleActive = async () => {
-    setActing(true)
-    try {
-      const res = await adminApi.toggleUser(id)
-      toast.success(res.isActive ? 'Пользователь разблокирован' : 'Заблокирован')
-      await load()
-    } catch { toast.error('Ошибка') }
-    finally { setActing(false) }
+  const copyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+    toast.success('Скопировано')
   }
 
-  const doExtend = async () => {
+  const action = async (fn: () => Promise<any>, successMsg: string) => {
     setActing(true)
     try {
-      const res = await adminApi.extendUser(id, extendDays, extendNote)
-      toast.success(`+${extendDays} дней добавлено`)
-      setExtendModal(false)
-      setExtendNote('')
+      await fn()
+      toast.success(successMsg)
       await load()
-    } catch { toast.error('Ошибка продления') }
-    finally { setActing(false) }
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка')
+    } finally {
+      setActing(false)
+    }
   }
 
   if (loading) return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <Skeleton className="h-8 w-32" />
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="h-8 skeleton w-32" />
       <div className="grid md:grid-cols-3 gap-6">
-        <Skeleton className="h-64 rounded-2xl" />
+        <div className="h-80 skeleton rounded-2xl" />
         <div className="md:col-span-2 space-y-4">
-          <Skeleton className="h-40 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
+          <div className="h-48 skeleton rounded-2xl" />
+          <div className="h-48 skeleton rounded-2xl" />
         </div>
       </div>
     </div>
   )
 
   if (!user) return (
-    <div className="max-w-4xl mx-auto">
-      <p className="text-gray-400">Пользователь не найден</p>
+    <div className="max-w-5xl mx-auto">
+      <p style={{ color: 'var(--text-tertiary)' }}>Пользователь не найден</p>
     </div>
   )
 
@@ -77,257 +105,459 @@ export default function AdminUserDetail() {
     ? Math.max(0, Math.ceil((new Date(user.subExpireAt).getTime() - Date.now()) / 86400_000))
     : null
 
-  const STATUS_COLOR: Record<string, 'green'|'red'|'gray'|'yellow'|'blue'> = {
-    ACTIVE:   'green',
-    INACTIVE: 'gray',
-    EXPIRED:  'red',
-    TRIAL:    'blue',
+  const statusColor: Record<string, string> = {
+    ACTIVE: '#34d399', INACTIVE: 'var(--text-tertiary)', EXPIRED: '#f87171', TRIAL: '#22d3ee',
   }
 
+  const CopyField = ({ label, value }: { label: string; value: string }) => (
+    <div className="copy-field" onClick={() => copyText(value, label)}>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+        <p className="text-sm font-mono truncate" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      </div>
+      {copied === label
+        ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+        : <Copy className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} />}
+    </div>
+  )
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Back */}
       <button onClick={() => router.back()}
-              className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
-        <ArrowLeft className="w-4 h-4" /> Назад к пользователям
+              className="flex items-center gap-2 text-sm transition-opacity hover:opacity-80"
+              style={{ color: 'var(--text-secondary)' }}>
+        <ArrowLeft className="w-4 h-4" /> Назад
       </button>
 
+      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold">
             {user.telegramName || user.email?.split('@')[0] || 'Пользователь'}
           </h1>
-          <p className="text-gray-400 text-sm mt-0.5">{user.id}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setExtendModal(true)}>
-            <Plus className="w-4 h-4" /> Добавить дни
-          </Button>
-          <Button
-            variant={user.isActive ? 'danger' : 'secondary'}
-            size="sm"
-            loading={acting}
-            onClick={toggleActive}>
-            {user.isActive
-              ? <><ShieldOff className="w-4 h-4" /> Заблокировать</>
-              : <><Shield className="w-4 h-4" /> Разблокировать</>}
-          </Button>
+          <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-tertiary)' }}>{user.id}</p>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Profile card */}
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setShowExtend(true)} className="btn-primary text-xs py-2 px-3">
+          <Plus className="w-3.5 h-3.5" /> Добавить дни
+        </button>
+        <button onClick={() => action(() => adminApi.revokeUser(id), 'Ссылка подписки обновлена')}
+                className="btn-secondary text-xs py-2 px-3" disabled={acting}>
+          <RefreshCw className="w-3.5 h-3.5" /> Обновить ссылку
+        </button>
+        <button onClick={() => action(() => adminApi.resetTraffic(id), 'Трафик сброшен')}
+                className="btn-secondary text-xs py-2 px-3" disabled={acting}>
+          <RefreshCw className="w-3.5 h-3.5" /> Сброс трафика
+        </button>
+        <button onClick={() => setShowNotify(true)} className="btn-secondary text-xs py-2 px-3">
+          <Bell className="w-3.5 h-3.5" /> Уведомление
+        </button>
+        <button onClick={() => setShowNote(true)} className="btn-secondary text-xs py-2 px-3">
+          <FileText className="w-3.5 h-3.5" /> Заметка
+        </button>
+        <button onClick={() => setShowBalance(true)} className="btn-secondary text-xs py-2 px-3">
+          <DollarSign className="w-3.5 h-3.5" /> Баланс
+        </button>
+        <button onClick={() => action(
+          () => user.isActive ? adminApi.disableUser(id) : adminApi.enableUser(id),
+          user.isActive ? 'Пользователь заблокирован' : 'Пользователь разблокирован'
+        )} className="btn-danger text-xs py-2 px-3" disabled={acting}>
+          {user.isActive ? <Ban className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+          {user.isActive ? 'Заблокировать' : 'Разблокировать'}
+        </button>
+        <button onClick={() => setShowDelete(true)} className="btn-danger text-xs py-2 px-3">
+          <Trash2 className="w-3.5 h-3.5" /> Удалить
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-5">
+        {/* Left column — profile */}
         <div className="space-y-4">
-          <Card className="space-y-4">
-            {/* Avatar */}
-            <div className="flex flex-col items-center text-center pt-2">
-              <div className="w-16 h-16 rounded-2xl bg-brand-600/20 border border-brand-500/30
-                              flex items-center justify-center text-2xl font-bold text-brand-300 mb-3">
+          <div className="glass-card space-y-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold gradient-border mb-3"
+                   style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
                 {(user.telegramName || user.email || 'U')[0].toUpperCase()}
               </div>
               <p className="font-semibold">
                 {user.telegramName || user.email?.split('@')[0] || 'Без имени'}
               </p>
-              <div className="flex items-center gap-2 mt-2">
-                <Badge color={STATUS_COLOR[user.subStatus] || 'gray'}>
-                  {user.subStatus}
-                </Badge>
-                {!user.isActive && <Badge color="red">БЛОК</Badge>}
-                {user.role === 'ADMIN' && <Badge color="purple">ADMIN</Badge>}
+              <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
+                <span className="badge" style={{
+                  background: `${statusColor[user.subStatus]}15`,
+                  color: statusColor[user.subStatus],
+                }}>{user.subStatus}</span>
+                {!user.isActive && <span className="badge-red">БЛОК</span>}
+                {user.role === 'ADMIN' && <span className="badge-violet">ADMIN</span>}
               </div>
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-gray-800">
-              {user.email && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-300 truncate">{user.email}</span>
-                </div>
-              )}
-              {user.telegramId && (
-                <div className="flex items-center gap-2 text-sm">
-                  <MessageCircle className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-300">@{user.telegramName || user.telegramId}</span>
-                </div>
-              )}
-              {user.remnawaveUuid && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Wifi className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  <span className="text-gray-500 font-mono text-xs truncate">
-                    {user.remnawaveUuid.slice(0, 16)}…
-                  </span>
-                </div>
-              )}
+            <div className="space-y-2 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+              {user.rmData?.username && <CopyField label="RW Username" value={user.rmData.username} />}
+              {user.email && <CopyField label="Email" value={user.email} />}
+              {user.telegramId && <CopyField label="Telegram ID" value={user.telegramId} />}
+              {user.telegramName && <CopyField label="TG Username" value={`@${user.telegramName}`} />}
+              {user.remnawaveUuid && <CopyField label="RW UUID" value={user.remnawaveUuid} />}
+              <CopyField label="ID" value={user.id} />
+              {user.referralCode && <CopyField label="Реферальный код" value={user.referralCode} />}
+              {user.rmData?.subscriptionUrl && <CopyField label="Ссылка подписки" value={user.rmData.subscriptionUrl} />}
             </div>
 
-            <div className="space-y-1 pt-2 border-t border-gray-800 text-xs text-gray-500">
-              <p>Регистрация: {new Date(user.createdAt).toLocaleDateString('ru')}</p>
-              {user.lastLoginAt && (
-                <p>Последний вход: {new Date(user.lastLoginAt).toLocaleDateString('ru')}</p>
-              )}
-              <p>Рефералов: {user._count?.referrals || 0}</p>
-              <p>Платежей: {user._count?.payments || 0}</p>
+            <div className="space-y-1.5 pt-3 text-xs" style={{ borderTop: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
+              <p>Регистрация: {new Date(user.createdAt).toLocaleString('ru')}</p>
+              {user.lastLoginAt && <p>Последний вход ЛК: {new Date(user.lastLoginAt).toLocaleString('ru')}</p>}
+              {user.rmData?.firstConnectedAt && <p>Первое подключение: {new Date(user.rmData.firstConnectedAt).toLocaleString('ru')}</p>}
+              {user.rmData?.onlineAt && <p>Онлайн: {new Date(user.rmData.onlineAt).toLocaleString('ru')}</p>}
+              {user.rmData?.subLastOpenedAt && <p>Последнее открытие подписки: {new Date(user.rmData.subLastOpenedAt).toLocaleString('ru')}</p>}
+              {user.rmData?.subLastUserAgent && <p>Приложение: {user.rmData.subLastUserAgent}</p>}
+              <p>Рефералов: {user._count?.referrals || user.referrals?.length || 0}</p>
+              <p>Платежей: {user._count?.payments || user.payments?.length || 0}</p>
+              <p>Баланс: {Number(user.balance || 0).toFixed(2)} ₽</p>
             </div>
-          </Card>
 
-          {/* Referral */}
-          <Card className="space-y-2">
-            <p className="text-sm font-medium text-gray-400">Реферальный код</p>
-            <code className="block text-xs bg-gray-800 px-3 py-2 rounded-lg
-                             text-brand-300 font-mono">
-              {user.referralCode}
-            </code>
-            {user.referredBy && (
-              <p className="text-xs text-gray-500">
-                Привёл: {user.referredBy?.telegramName || user.referredBy?.email || '—'}
-              </p>
+            {/* IP & Geo info */}
+            {(user.lastIp || user.geoInfo) && (
+              <div className="pt-3 space-y-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                  Последний IP
+                </p>
+                {user.lastIp && <CopyField label="IP адрес" value={user.lastIp} />}
+                {user.geoInfo && (
+                  <div className="space-y-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    {user.geoInfo.country && (
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>{user.geoInfo.country}{user.geoInfo.city ? `, ${user.geoInfo.city}` : ''}</span>
+                      </div>
+                    )}
+                    {user.geoInfo.region && user.geoInfo.region !== user.geoInfo.city && (
+                      <div className="flex items-center gap-2">
+                        <span className="w-3.5" />
+                        <span>{user.geoInfo.region}</span>
+                      </div>
+                    )}
+                    {user.geoInfo.isp && (
+                      <div className="flex items-center gap-2">
+                        <Wifi className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>{user.geoInfo.isp}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-          </Card>
+          </div>
+
+          {/* Referrals */}
+          {user.referrals?.length > 0 && (
+            <div className="glass-card space-y-2">
+              <h3 className="font-medium text-sm flex items-center gap-2">
+                <Users className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+                Рефералы ({user.referrals.length})
+              </h3>
+              {user.referrals.map((ref: any) => (
+                <button key={ref.id}
+                        onClick={() => router.push(`/admin/users/${ref.id}`)}
+                        className="w-full flex items-center gap-2 p-2 rounded-lg text-left text-sm hover:bg-white/[0.03] transition-all">
+                  <span style={{ color: 'var(--text-primary)' }}>
+                    {ref.telegramName || ref.email?.split('@')[0] || ref.id.slice(0, 8)}
+                  </span>
+                  <ChevronRight className="w-3 h-3 ml-auto" style={{ color: 'var(--text-tertiary)' }} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Main content */}
+        {/* Right column — details */}
         <div className="md:col-span-2 space-y-4">
-          {/* Subscription */}
-          <Card className="space-y-4">
+          {/* Subscription details */}
+          <div className="glass-card space-y-4">
             <h2 className="font-semibold flex items-center gap-2">
-              <Wifi className="w-4 h-4 text-brand-400" />
+              <Wifi className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
               Подписка
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                {
-                  label: 'Статус',
-                  value: <Badge color={STATUS_COLOR[user.subStatus] || 'gray'}>{user.subStatus}</Badge>,
-                },
-                {
-                  label: 'Осталось',
-                  value: daysLeft !== null ? `${daysLeft} дней` : '—',
-                },
-                {
-                  label: 'Истекает',
-                  value: user.subExpireAt
-                    ? new Date(user.subExpireAt).toLocaleDateString('ru', {
-                        day: 'numeric', month: 'long', year: 'numeric',
-                      })
-                    : '—',
-                },
-                {
-                  label: 'REMNAWAVE UUID',
-                  value: user.remnawaveUuid
-                    ? <code className="text-xs text-brand-300 font-mono">
-                        {user.remnawaveUuid.slice(0, 18)}…
-                      </code>
-                    : <span className="text-gray-500">не привязан</span>,
-                },
-              ].map(({ label, value }) => (
-                <div key={label} className="p-3 bg-gray-800 rounded-xl">
-                  <p className="text-xs text-gray-500 mb-1">{label}</p>
-                  <div className="text-sm font-medium">{value}</div>
+                { label: 'Статус', value: user.rmData?.status || user.subStatus, color: statusColor[user.rmData?.status || user.subStatus] },
+                { label: 'Осталось', value: daysLeft !== null ? `${daysLeft} дней` : '—' },
+                { label: 'Истекает', value: user.subExpireAt ? new Date(user.subExpireAt).toLocaleDateString('ru') : '—' },
+                { label: 'Трафик', value: user.rmData ? formatTraffic(user.rmData.usedTrafficBytes, user.rmData.trafficLimitBytes) : '—' },
+                { label: 'Устройств лимит', value: user.rmData?.hwidDeviceLimit === 0 ? 'Безлимит' : String(user.rmData?.hwidDeviceLimit ?? '—') },
+                { label: 'Тег', value: user.rmData?.tag || '—' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                  <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                  <p className="text-sm font-semibold" style={{ color: color || 'var(--text-primary)' }}>{value}</p>
                 </div>
               ))}
             </div>
-          </Card>
 
-          {/* Payment history */}
-          <Card className="space-y-4">
+            {/* Traffic bar */}
+            {user.rmData && user.rmData.trafficLimitBytes > 0 && (
+              <div>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                  <div className="h-full rounded-full transition-all" style={{
+                    width: `${Math.min(100, Math.round(user.rmData.usedTrafficBytes / user.rmData.trafficLimitBytes * 100))}%`,
+                    background: 'var(--accent-gradient)',
+                  }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Devices (collapsible) */}
+          <div className="glass-card">
+            <button onClick={() => setDevicesOpen(!devicesOpen)}
+                    className="w-full flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2">
+                <Smartphone className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+                Устройства ({devices.length})
+              </h2>
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${devicesOpen ? 'rotate-180' : ''}`}
+                           style={{ color: 'var(--text-tertiary)' }} />
+            </button>
+            {devicesOpen && (
+            <div className="space-y-3 mt-3">
+            {devices.length === 0 ? (
+              <p className="text-sm py-2" style={{ color: 'var(--text-tertiary)' }}>Нет подключённых устройств</p>
+            ) : (
+              devices.map((d: any) => (
+                <div key={d.hwid} className="flex items-center gap-3 p-3 rounded-xl"
+                     style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                  {/* Platform icon */}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                       style={{ background: 'rgba(6,182,212,0.08)' }}>
+                    {d.platform === 'iOS' ? <Smartphone className="w-5 h-5" style={{ color: 'var(--accent-1)' }} /> :
+                     d.platform === 'Android' ? <Smartphone className="w-5 h-5" style={{ color: '#34d399' }} /> :
+                     <Globe className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    {/* Device model + platform */}
+                    <p className="text-sm font-semibold">
+                      {d.deviceModel || d.platform || 'Неизвестное устройство'}
+                    </p>
+                    {/* OS + app version */}
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                      {[d.platform, d.osVersion ? `v${d.osVersion}` : null].filter(Boolean).join(' ')}
+                      {d.userAgent && (() => {
+                        const parts = d.userAgent.split('/')
+                        const appName = parts[0] || ''
+                        const appVersion = parts[1] || ''
+                        return <span style={{ color: 'var(--text-tertiary)' }}> · {appName} {appVersion}</span>
+                      })()}
+                    </p>
+                    {/* HWID */}
+                    <p className="text-[10px] font-mono mt-0.5 truncate" style={{ color: 'var(--text-tertiary)' }}>
+                      HWID: {d.hwid}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                    <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {new Date(d.createdAt).toLocaleDateString('ru')}
+                    </span>
+                    <button
+                      onClick={() => action(
+                        () => adminApi.deleteUserDevice(id, d.hwid),
+                        'Устройство удалено'
+                      )}
+                      className="p-2 rounded-lg hover:bg-red-500/10 transition-all"
+                      title="Удалить устройство">
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+            </div>
+            )}
+          </div>
+
+          {/* Payments */}
+          <div className="glass-card space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-brand-400" />
-              История платежей
+              <CreditCard className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+              Платежи
             </h2>
-            {user.payments?.length === 0 ? (
-              <p className="text-gray-500 text-sm py-4 text-center">Нет платежей</p>
+            {!user.payments?.length ? (
+              <p className="text-sm py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>Нет платежей</p>
             ) : (
               <div className="space-y-2">
-                {user.payments?.map((p: any) => (
-                  <div key={p.id}
-                       className="flex items-center justify-between py-2.5
-                                  border-b border-gray-800 last:border-0">
+                {user.payments.map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between py-2.5"
+                       style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <div className="flex items-center gap-3">
                       {p.status === 'PAID'
-                        ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         : p.status === 'PENDING'
-                        ? <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                        : <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />}
+                        ? <Clock className="w-4 h-4 text-yellow-400" />
+                        : <XCircle className="w-4 h-4 text-red-400" />}
                       <div>
                         <p className="text-sm font-medium">{p.provider}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(p.createdAt).toLocaleDateString('ru')}
+                        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                          {new Date(p.createdAt).toLocaleString('ru')}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold">
-                        {p.currency === 'RUB'
-                          ? `${p.amount.toLocaleString('ru')} ₽`
-                          : `${p.amount} ${p.currency}`}
+                        {p.currency === 'RUB' ? `${p.amount.toLocaleString('ru')} ₽` : `${p.amount} ${p.currency}`}
                       </p>
-                      <Badge color={p.status === 'PAID' ? 'green' : p.status === 'PENDING' ? 'yellow' : 'red'}>
+                      <span className={`badge-${p.status === 'PAID' ? 'green' : p.status === 'PENDING' ? 'yellow' : 'red'}`}>
                         {p.status}
-                      </Badge>
+                      </span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </Card>
+          </div>
 
-          {/* Bonus history */}
-          {user.bonusHistory?.length > 0 && (
-            <Card className="space-y-3">
-              <h2 className="font-semibold">Бонусные дни</h2>
-              {user.bonusHistory.map((b: any) => (
-                <div key={b.id} className="flex justify-between items-center
-                                            border-b border-gray-800 last:border-0 py-2 text-sm">
-                  <span className="text-gray-400">
-                    {new Date(b.appliedAt).toLocaleDateString('ru')}
-                  </span>
-                  <span className="text-emerald-400 font-medium">+{b.bonusDays} дн.</span>
-                </div>
-              ))}
-            </Card>
-          )}
+          {/* Admin Notes */}
+          <div className="glass-card space-y-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <FileText className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+              Заметки администратора
+            </h2>
+            {notes.length === 0 ? (
+              <p className="text-sm py-2" style={{ color: 'var(--text-tertiary)' }}>Нет заметок</p>
+            ) : (
+              <div className="space-y-2">
+                {notes.map(note => (
+                  <div key={note.id} className="p-3 rounded-xl flex items-start justify-between"
+                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <div>
+                      <p className="text-sm">{note.text}</p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                        {note.admin?.telegramName || note.admin?.email || 'Admin'} · {new Date(note.createdAt).toLocaleString('ru')}
+                      </p>
+                    </div>
+                    <button onClick={() => action(
+                      () => adminApi.deleteUserNote(id, note.id),
+                      'Заметка удалена'
+                    )} className="p-1 rounded hover:bg-red-500/10 flex-shrink-0">
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Extend modal */}
-      <Modal open={extendModal} onClose={() => setExtendModal(false)} title="Добавить дни подписки">
-        <p className="text-sm text-gray-400">
-          Пользователь:{' '}
-          <span className="text-white font-medium">
-            {user.telegramName || user.email || id.slice(0, 8)}
-          </span>
-        </p>
-        <div className="space-y-1">
-          <label className="text-sm text-gray-400">Количество дней</label>
-          <Input
-            type="number"
-            min={1}
-            max={3650}
-            value={extendDays}
-            onChange={e => setExtendDays(+e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm text-gray-400">Причина (необязательно)</label>
-          <Input
-            value={extendNote}
-            onChange={e => setExtendNote(e.target.value)}
-            placeholder="Компенсация, ручное продление..."
-          />
-        </div>
-        <div className="flex gap-3 pt-1">
-          <Button variant="secondary" className="flex-1 justify-center"
-                  onClick={() => setExtendModal(false)}>
-            Отмена
-          </Button>
-          <Button className="flex-1 justify-center" loading={acting} onClick={doExtend}>
+      {/* ── Modals ── */}
+
+      {/* Extend */}
+      {showExtend && (
+        <ModalOverlay onClose={() => setShowExtend(false)} title="Добавить дни">
+          <input type="number" className="glass-input" placeholder="Количество дней"
+                 value={extendDays} onChange={e => setExtendDays(+e.target.value)} min={1} />
+          <input className="glass-input" placeholder="Причина (необязательно)"
+                 value={extendNote} onChange={e => setExtendNote(e.target.value)} />
+          <button onClick={() => {
+            action(() => adminApi.addDays(id, extendDays, extendNote), `+${extendDays} дней`)
+            setShowExtend(false)
+          }} className="btn-primary w-full justify-center" disabled={acting}>
             +{extendDays} дней
-          </Button>
-        </div>
-      </Modal>
+          </button>
+        </ModalOverlay>
+      )}
+
+      {/* Notify */}
+      {showNotify && (
+        <ModalOverlay onClose={() => setShowNotify(false)} title="Отправить уведомление">
+          <input className="glass-input" placeholder="Заголовок"
+                 value={notifyTitle} onChange={e => setNotifyTitle(e.target.value)} />
+          <textarea className="glass-input min-h-[80px] resize-y" placeholder="Сообщение"
+                    value={notifyMsg} onChange={e => setNotifyMsg(e.target.value)} />
+          <button onClick={() => {
+            action(() => adminApi.notifyUser(id, notifyTitle, notifyMsg), 'Уведомление отправлено')
+            setShowNotify(false); setNotifyTitle(''); setNotifyMsg('')
+          }} className="btn-primary w-full justify-center" disabled={acting || !notifyTitle || !notifyMsg}>
+            Отправить
+          </button>
+        </ModalOverlay>
+      )}
+
+      {/* Note */}
+      {showNote && (
+        <ModalOverlay onClose={() => setShowNote(false)} title="Добавить заметку">
+          <textarea className="glass-input min-h-[80px] resize-y" placeholder="Текст заметки"
+                    value={noteText} onChange={e => setNoteText(e.target.value)} />
+          <button onClick={() => {
+            action(() => adminApi.addUserNote(id, noteText), 'Заметка добавлена')
+            setShowNote(false); setNoteText('')
+          }} className="btn-primary w-full justify-center" disabled={acting || !noteText}>
+            Сохранить
+          </button>
+        </ModalOverlay>
+      )}
+
+      {/* Balance */}
+      {showBalance && (
+        <ModalOverlay onClose={() => setShowBalance(false)} title="Изменить баланс">
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Текущий баланс: <strong>{Number(user.balance || 0).toFixed(2)} ₽</strong>
+          </p>
+          <input type="number" className="glass-input" placeholder="Сумма (+ пополнение, - списание)"
+                 value={balanceAmount} onChange={e => setBalanceAmount(+e.target.value)} />
+          <input className="glass-input" placeholder="Описание"
+                 value={balanceDesc} onChange={e => setBalanceDesc(e.target.value)} />
+          <button onClick={() => {
+            action(() => adminApi.adjustBalance(id, balanceAmount, balanceDesc), 'Баланс обновлён')
+            setShowBalance(false); setBalanceAmount(0); setBalanceDesc('')
+          }} className="btn-primary w-full justify-center" disabled={acting || balanceAmount === 0}>
+            {balanceAmount >= 0 ? `+${balanceAmount} ₽` : `${balanceAmount} ₽`}
+          </button>
+        </ModalOverlay>
+      )}
+
+      {/* Delete confirmation */}
+      {showDelete && (
+        <ModalOverlay onClose={() => setShowDelete(false)} title="Удалить пользователя">
+          <p className="text-sm" style={{ color: 'var(--danger)' }}>
+            Это действие необратимо. Пользователь будет удалён из системы и из REMNAWAVE.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setShowDelete(false)} className="btn-secondary flex-1">Отмена</button>
+            <button onClick={() => {
+              action(() => adminApi.deleteUser(id), 'Пользователь удалён').then(() => router.push('/admin/users'))
+              setShowDelete(false)
+            }} className="btn-danger flex-1" disabled={acting}>
+              Удалить навсегда
+            </button>
+          </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+function formatTraffic(used: number, limit: number): string {
+  const usedGb = (used / (1024 * 1024 * 1024)).toFixed(1)
+  if (!limit || limit === 0) return `${usedGb} ГБ / Безлимит`
+  const limitGb = (limit / (1024 * 1024 * 1024)).toFixed(0)
+  return `${usedGb} / ${limitGb} ГБ`
+}
+
+function ModalOverlay({ children, onClose, title }: {
+  children: React.ReactNode; onClose: () => void; title: string
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative glass-card w-full max-w-md space-y-4 animate-scale-in"
+           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <h3 className="font-semibold text-lg">{title}</h3>
+        {children}
+      </div>
     </div>
   )
 }

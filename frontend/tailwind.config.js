@@ -24,13 +24,14 @@ module.exports = {
           600: '#7c3aed',
         },
         surface: {
-          1: '#0a0a12',
-          2: '#12121e',
-          3: '#1a1a2e',
+          0: 'var(--surface-0)',
+          1: 'var(--surface-1)',
+          2: 'var(--surface-2)',
+          3: 'var(--surface-3)',
         },
       },
       fontFamily: {
-        sans: ['Outfit', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       animation: {
@@ -40,6 +41,7 @@ module.exports = {
         'pulse-slow': 'pulse 3s ease-in-out infinite',
         'shimmer':    'shimmer 1.5s infinite linear',
         'glow':       'glowPulse 2s ease-in-out infinite',
+        'float':      'float 6s ease-in-out infinite',
       },
       keyframes: {
         fadeIn:    { from: { opacity: 0 }, to: { opacity: 1 } },
@@ -47,9 +49,13 @@ module.exports = {
         scaleIn:   { from: { opacity: 0, transform: 'scale(0.95)' }, to: { opacity: 1, transform: 'scale(1)' } },
         shimmer:   { from: { backgroundPosition: '-200% 0' }, to: { backgroundPosition: '200% 0' } },
         glowPulse: { '0%,100%': { opacity: 0.4 }, '50%': { opacity: 1 } },
+        float:     { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-10px)' } },
       },
       backdropBlur: {
         '3xl': '64px',
+      },
+      screens: {
+        'xs': '475px',
       },
     },
   },

@@ -5,6 +5,7 @@ import { logger }    from '../utils/logger'
 import { prisma }    from '../db'
 import { remnawave } from './remnawave'
 import { notifications } from './notifications'
+import { balanceService }    from './balance'
 import type { Tariff, User } from '@prisma/client'
 
 // ── ЮKassa ───────────────────────────────────────────────────
@@ -136,6 +137,7 @@ export class PaymentService {
     tariff:   Tariff
     provider: 'YUKASSA' | 'CRYPTOPAY'
     currency?: string
+    purpose?: 'SUBSCRIPTION' | 'TOPUP' | 'GIFT'
   }) {
     const { user, tariff, provider } = params
     const orderId = randomUUID()
@@ -150,6 +152,7 @@ export class PaymentService {
         amount:   provider === 'YUKASSA' ? tariff.priceRub : (tariff.priceUsdt ?? 0),
         currency: provider === 'YUKASSA' ? 'RUB' : (params.currency ?? 'USDT'),
         status:   'PENDING',
+        purpose:  params.purpose || 'SUBSCRIPTION',
       },
     })
 
@@ -229,18 +232,69 @@ export class PaymentService {
       data:  { status: 'PAID', confirmedAt: new Date() },
     })
 
-    // Activate / extend REMNAWAVE subscription
     const { user, tariff } = payment
+
+    // Handle balance top-up
+    if (payment.purpose === 'TOPUP') {
+      await balanceService.credit({
+        userId:      user.id,
+        amount:      payment.amount,
+        type:        'TOPUP',
+        description: `Пополнение баланса`,
+        paymentId:   payment.id,
+      })
+      logger.info(`Balance top-up confirmed: ${orderId}, +${payment.amount} ${payment.currency}`)
+      return
+    }
+
+    // Handle gift payment — create gift after payment confirmed
+    if (payment.purpose === 'GIFT') {
+      try {
+        const { giftService } = await import('./gift')
+        // Parse gift metadata from yukassaStatus field (temp storage)
+        let recipientEmail: string | undefined
+        let message: string | undefined
+        try {
+          const meta = JSON.parse(payment.yukassaStatus || '{}')
+          if (meta._giftMeta) {
+            recipientEmail = meta.recipientEmail || undefined
+            message = meta.message || undefined
+          }
+        } catch {}
+
+        await giftService.createGift({
+          fromUserId:     user.id,
+          tariffId:       payment.tariffId,
+          paymentId:      payment.id,
+          recipientEmail,
+          message,
+        })
+        logger.info(`Gift created from payment: ${orderId}`)
+      } catch (err) {
+        logger.error(`Failed to create gift from payment ${orderId}:`, err)
+      }
+      return
+    }
+
+    // Activate / extend REMNAWAVE subscription
     let remnawaveUuid = user.remnawaveUuid
+
+    // Convert tariff trafficGb to bytes (null = unlimited = 0)
+    const trafficLimitBytes = tariff.trafficGb ? tariff.trafficGb * 1024 * 1024 * 1024 : 0
+    const newExpireDate = new Date(Date.now() + tariff.durationDays * 86400_000)
 
     if (!remnawaveUuid) {
       // Create user in REMNAWAVE on first purchase
       const rmUser = await remnawave.createUser({
-        username:   user.email || `tg_${user.telegramId}`,
-        email:      user.email ?? undefined,
-        telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
-        expireAt:   new Date(Date.now() + tariff.durationDays * 86400_000).toISOString(),
-        tagIds:     tariff.remnawaveTagIds,
+        username:             user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        email:                user.email ?? undefined,
+        telegramId:           user.telegramId ? parseInt(user.telegramId, 10) : null,
+        expireAt:             newExpireDate.toISOString(),
+        trafficLimitBytes,
+        trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+        hwidDeviceLimit:      tariff.deviceLimit ?? 3,
+        tag:                  tariff.remnawaveTag ?? undefined,
+        activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
       })
       remnawaveUuid = rmUser.uuid
 
@@ -252,12 +306,26 @@ export class PaymentService {
         },
       })
     } else {
-      // Extend existing subscription
+      // Extend existing subscription + apply tariff settings
       const rmUser = await remnawave.getUserByUuid(remnawaveUuid)
-      await remnawave.extendSubscription(
-        remnawaveUuid,
-        tariff.durationDays,
-        rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+      const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
+      const base = currentExpire > new Date() ? currentExpire : new Date()
+      base.setDate(base.getDate() + tariff.durationDays)
+
+      await remnawave.updateUser({
+        uuid:                 remnawaveUuid,
+        status:               'ACTIVE',
+        expireAt:             base.toISOString(),
+        trafficLimitBytes,
+        trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+        hwidDeviceLimit:      tariff.deviceLimit ?? 3,
+        tag:                  tariff.remnawaveTag ?? undefined,
+        activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
+      })
+
+      // Reset traffic after payment
+      await remnawave.resetTrafficAction(remnawaveUuid).catch(err =>
+        logger.warn(`Failed to reset traffic for ${remnawaveUuid}:`, err)
       )
     }
 
@@ -291,7 +359,7 @@ export class PaymentService {
   private async applyReferralBonus(referrerId: string, paymentId: string) {
     try {
       const referrer = await prisma.user.findUnique({ where: { id: referrerId } })
-      if (!referrer?.remnawaveUuid) return
+      if (!referrer) return
 
       // Check if bonus already applied for this payment
       const existing = await prisma.referralBonus.findUnique({
@@ -299,28 +367,67 @@ export class PaymentService {
       })
       if (existing) return
 
-      await prisma.referralBonus.create({
-        data: {
-          referrerId,
-          triggeredByPaymentId: paymentId,
-          bonusDays: config.referral.bonusDays,
-        },
-      })
+      const rewardType = config.referral.rewardType // 'days' | 'balance' | 'both'
 
-      // Extend referrer subscription
-      const rmUser = await remnawave.getUserByUuid(referrer.remnawaveUuid)
-      await remnawave.extendSubscription(
-        referrer.remnawaveUuid,
-        config.referral.bonusDays,
-        rmUser.expireAt ? new Date(rmUser.expireAt) : null,
-      )
+      // Apply days bonus
+      const applyDays = rewardType === 'days' || rewardType === 'both'
+      if (applyDays && referrer.remnawaveUuid) {
+        await prisma.referralBonus.create({
+          data: {
+            referrerId,
+            triggeredByPaymentId: paymentId,
+            bonusType:  'DAYS',
+            bonusDays:  config.referral.bonusDays,
+          },
+        })
 
-      // Notify referrer about bonus
-      await notifications.referralBonus(referrerId, config.referral.bonusDays).catch(err =>
-        logger.warn('Referral bonus notification failed:', err)
-      )
+        const rmUser = await remnawave.getUserByUuid(referrer.remnawaveUuid)
+        await remnawave.extendSubscription(
+          referrer.remnawaveUuid,
+          config.referral.bonusDays,
+          rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+        )
 
-      logger.info(`Referral bonus applied: +${config.referral.bonusDays} days to ${referrerId}`)
+        await notifications.referralBonus(referrerId, config.referral.bonusDays).catch(err =>
+          logger.warn('Referral bonus notification failed:', err)
+        )
+
+        logger.info(`Referral bonus applied: +${config.referral.bonusDays} days to ${referrerId}`)
+      }
+
+      // Apply money bonus
+      const applyMoney = rewardType === 'balance' || rewardType === 'both'
+      if (applyMoney) {
+        const amount = config.referral.rewardAmount
+
+        if (!applyDays) {
+          // If only money, create the bonus record with MONEY type
+          await prisma.referralBonus.create({
+            data: {
+              referrerId,
+              triggeredByPaymentId: paymentId,
+              bonusType:    'MONEY',
+              bonusDays:    0,
+              bonusAmount:  amount,
+              bonusCurrency: 'RUB',
+            },
+          })
+        }
+
+        await balanceService.credit({
+          userId:      referrerId,
+          amount,
+          type:        'REFERRAL_REWARD',
+          description: `Реферальный бонус ${amount} ₽`,
+          paymentId,
+        })
+
+        await notifications.referralBonusMoney(referrerId, amount).catch(err =>
+          logger.warn('Referral money bonus notification failed:', err)
+        )
+
+        logger.info(`Referral money bonus applied: +${amount} RUB to ${referrerId}`)
+      }
     } catch (err) {
       logger.error('Failed to apply referral bonus:', err)
     }

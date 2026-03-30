@@ -64,30 +64,61 @@ export async function paymentRoutes(app: FastifyInstance) {
   })
 
   // ── Verify payment (polling fallback) ──────────────────────
-  // For cases where webhook was missed
+  // For cases where webhook was missed or delayed
   app.post('/verify/:orderId', auth, async (req, reply) => {
     const userId  = (req.user as any).sub
     const { orderId } = req.params as { orderId: string }
 
+    // First check if payment was already confirmed (webhook may have arrived)
     const payment = await prisma.payment.findFirst({
-      where: { id: orderId, userId, status: 'PENDING' },
+      where: { id: orderId, userId },
     })
-    if (!payment) return reply.status(404).send({ error: 'Pending payment not found' })
+    if (!payment) return reply.status(404).send({ error: 'Payment not found' })
 
-    // Check with provider
+    // Already confirmed
+    if (payment.status === 'PAID') {
+      return { confirmed: true, status: 'PAID' }
+    }
+
+    // Already failed/expired
+    if (payment.status === 'FAILED' || payment.status === 'EXPIRED') {
+      return { confirmed: false, status: payment.status }
+    }
+
+    // Still pending — check with payment provider
     if (payment.provider === 'YUKASSA' && payment.yukassaPaymentId) {
-      const yp = await paymentService.yukassa.getPayment(payment.yukassaPaymentId)
-      if (yp.paid || yp.status === 'succeeded') {
-        await paymentService.confirmPayment(orderId)
-        return { confirmed: true }
+      try {
+        const yp = await paymentService.yukassa.getPayment(payment.yukassaPaymentId)
+        if (yp.paid || yp.status === 'succeeded') {
+          await paymentService.confirmPayment(orderId)
+          return { confirmed: true, status: 'PAID' }
+        }
+        if (yp.status === 'canceled') {
+          await prisma.payment.update({ where: { id: orderId }, data: { status: 'FAILED' } })
+          return { confirmed: false, status: 'FAILED' }
+        }
+        // waiting_for_capture, pending — still processing
+        return { confirmed: false, status: 'PENDING', providerStatus: yp.status }
+      } catch {
+        // Provider unreachable, just return pending
+        return { confirmed: false, status: 'PENDING' }
       }
     }
 
     if (payment.provider === 'CRYPTOPAY' && payment.cryptoInvoiceId) {
-      const inv = await paymentService.cryptopay.getInvoice(payment.cryptoInvoiceId)
-      if (inv?.status === 'paid') {
-        await paymentService.confirmPayment(orderId)
-        return { confirmed: true }
+      try {
+        const inv = await paymentService.cryptopay.getInvoice(payment.cryptoInvoiceId)
+        if (inv?.status === 'paid') {
+          await paymentService.confirmPayment(orderId)
+          return { confirmed: true, status: 'PAID' }
+        }
+        if (inv?.status === 'expired') {
+          await prisma.payment.update({ where: { id: orderId }, data: { status: 'EXPIRED' } })
+          return { confirmed: false, status: 'EXPIRED' }
+        }
+        return { confirmed: false, status: 'PENDING' }
+      } catch {
+        return { confirmed: false, status: 'PENDING' }
       }
     }
 

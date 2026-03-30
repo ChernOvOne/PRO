@@ -5,15 +5,14 @@ import { CreditCard, Bitcoin, CheckCircle2,
          Clock, XCircle, RefreshCw } from 'lucide-react'
 import { userApi } from '@/lib/api'
 import type { Payment } from '@/types'
-import { Card, Badge, Skeleton, Empty } from '@/components/ui'
 import Link from 'next/link'
 
-const STATUS_CONFIG: Record<string, { label: string; color: 'green'|'yellow'|'red'|'gray'; icon: any }> = {
-  PAID:     { label: 'Оплачен',   color: 'green',  icon: CheckCircle2 },
-  PENDING:  { label: 'Ожидание', color: 'yellow', icon: Clock },
-  FAILED:   { label: 'Ошибка',   color: 'red',    icon: XCircle },
-  REFUNDED: { label: 'Возврат',  color: 'gray',   icon: RefreshCw },
-  EXPIRED:  { label: 'Истёк',    color: 'red',    icon: XCircle },
+const STATUS_CONFIG: Record<string, { label: string; badgeClass: string; icon: any }> = {
+  PAID:     { label: 'Оплачен',   badgeClass: 'badge-green',  icon: CheckCircle2 },
+  PENDING:  { label: 'Ожидание',  badgeClass: 'badge-yellow', icon: Clock },
+  FAILED:   { label: 'Ошибка',    badgeClass: 'badge-red',    icon: XCircle },
+  REFUNDED: { label: 'Возврат',   badgeClass: 'badge-gray',   icon: RefreshCw },
+  EXPIRED:  { label: 'Истёк',     badgeClass: 'badge-red',    icon: XCircle },
 }
 
 const PROVIDER_ICON: Record<string, any> = {
@@ -47,7 +46,7 @@ export default function PaymentHistoryPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">История платежей</h1>
-          <p className="text-gray-400 text-sm mt-0.5">
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
             {payments.length} транзакций
             {totalSpent > 0 && ` · ${totalSpent.toLocaleString('ru')} ₽ итого`}
           </p>
@@ -56,21 +55,21 @@ export default function PaymentHistoryPage() {
 
       {loading ? (
         <div className="space-y-3">
-          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
+          {[...Array(5)].map((_, i) => <div key={i} className="h-20 skeleton rounded-2xl" />)}
         </div>
       ) : payments.length === 0 ? (
-        <Card>
-          <Empty
-            icon={<CreditCard className="w-7 h-7" />}
-            title="Нет платежей"
-            description="Здесь появятся твои покупки подписок"
-            action={
-              <Link href="/dashboard/plans" className="btn-primary">
-                Выбрать тариф
-              </Link>
-            }
-          />
-        </Card>
+        <div className="glass-card">
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <CreditCard className="w-7 h-7 mb-3" style={{ color: 'var(--text-tertiary)' }} />
+            <p className="font-medium">Нет платежей</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Здесь появятся твои покупки подписок
+            </p>
+            <Link href="/dashboard/plans" className="btn-primary mt-4">
+              Выбрать тариф
+            </Link>
+          </div>
+        </div>
       ) : (
         <div className="space-y-3">
           {payments.map(p => {
@@ -79,24 +78,24 @@ export default function PaymentHistoryPage() {
             const ProviderIcon = PROVIDER_ICON[p.provider] || CreditCard
 
             return (
-              <Card key={p.id} padding={false}>
+              <div key={p.id} className="glass-card">
                 <div className="flex items-center gap-4 p-5">
                   {/* Provider icon */}
-                  <div className="w-11 h-11 rounded-xl bg-gray-800 border border-gray-700
-                                  flex items-center justify-center flex-shrink-0">
-                    <ProviderIcon className="w-5 h-5 text-gray-400" />
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                       style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                    <ProviderIcon className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                   </div>
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-medium">{p.tariff?.name || 'Подписка'}</p>
-                      <Badge color={st.color}>
+                      <span className={st.badgeClass}>
                         <StatusIcon className="w-3 h-3 mr-1 inline" />
                         {st.label}
-                      </Badge>
+                      </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                       {PROVIDER_LABEL[p.provider]} ·{' '}
                       {new Date(p.createdAt).toLocaleDateString('ru', {
                         day: 'numeric', month: 'long', year: 'numeric',
@@ -111,19 +110,19 @@ export default function PaymentHistoryPage() {
 
                   {/* Amount */}
                   <div className="text-right flex-shrink-0">
-                    <p className={`font-semibold ${p.status === 'PAID' ? 'text-white' : 'text-gray-500'}`}>
+                    <p className="font-semibold" style={{ color: p.status === 'PAID' ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
                       {p.currency === 'RUB'
                         ? `${p.amount.toLocaleString('ru')} ₽`
                         : `${p.amount} ${p.currency}`}
                     </p>
                     {p.tariff?.durationDays && (
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                         {p.tariff.durationDays} дней
                       </p>
                     )}
                   </div>
                 </div>
-              </Card>
+              </div>
             )
           })}
         </div>
@@ -131,10 +130,10 @@ export default function PaymentHistoryPage() {
 
       {/* Summary */}
       {payments.length > 0 && totalSpent > 0 && (
-        <Card className="flex items-center justify-between py-4">
-          <p className="text-gray-400 text-sm">Итого потрачено</p>
+        <div className="glass-card flex items-center justify-between py-4">
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Итого потрачено</p>
           <p className="font-bold text-lg">{totalSpent.toLocaleString('ru')} ₽</p>
-        </Card>
+        </div>
       )}
     </div>
   )

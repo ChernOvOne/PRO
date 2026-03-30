@@ -15,6 +15,7 @@ datasource db {
 model User {
   id            String    @id @default(uuid())
   email         String?   @unique
+  emailVerified Boolean   @default(false) @map("email_verified")
   telegramId    String?   @unique @map("telegram_id")
   telegramName  String?   @map("telegram_name")
   passwordHash  String?   @map("password_hash")
@@ -27,19 +28,31 @@ model User {
   role          Role      @default(USER)
   isActive      Boolean   @default(true) @map("is_active")
 
+  balance       Decimal   @default(0) @map("balance") @db.Decimal(10, 2)
+
   referralCode  String    @unique @default(cuid()) @map("referral_code")
   referredById  String?   @map("referred_by_id")
   referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
   referrals     User[]    @relation("Referrals")
 
+  lastIp        String?   @map("last_ip")
+
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   lastLoginAt   DateTime? @map("last_login_at")
 
-  payments      Payment[]
-  bonusHistory  ReferralBonus[]
-  sessions      Session[]
-  importRecord  ImportRecord?
+  payments           Payment[]
+  bonusHistory       ReferralBonus[]
+  sessions           Session[]
+  importRecord       ImportRecord?
+  notifications      Notification[]
+  notificationReads  NotificationRead[]
+  adminNotesOnUser   AdminNote[]          @relation("AdminNotesOnUser")
+  adminNotesBy       AdminNote[]          @relation("AdminNotesBy")
+  giftsSent          GiftSubscription[]   @relation("GiftsSent")
+  giftsReceived      GiftSubscription[]   @relation("GiftsReceived")
+  balanceTransactions BalanceTransaction[]
+  emailVerifications EmailVerification[]
 
   @@map("users")
 }
@@ -91,7 +104,8 @@ model Tariff {
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
-  payments        Payment[]
+  payments          Payment[]
+  giftSubscriptions GiftSubscription[]
 
   @@map("tariffs")
 }
@@ -109,6 +123,7 @@ model Payment {
   amount          Float
   currency        String        @default("RUB")
   status          PaymentStatus @default(PENDING)
+  purpose         PaymentPurpose @default(SUBSCRIPTION)
 
   yukassaPaymentId String?      @map("yukassa_payment_id")
   yukassaStatus   String?       @map("yukassa_status")
@@ -121,22 +136,195 @@ model Payment {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  referralBonus   ReferralBonus?
+  referralBonus      ReferralBonus?
+  giftSubscription   GiftSubscription?
+  balanceTransactions BalanceTransaction[]
 
   @@map("payments")
 }
 
 // ── Referral bonuses ─────────────────────────────────────────
 model ReferralBonus {
-  id                   String   @id @default(uuid())
-  referrerId           String   @map("referrer_id")
-  referrer             User     @relation(fields: [referrerId], references: [id])
-  triggeredByPaymentId String   @unique @map("triggered_by_payment_id")
-  triggeredByPayment   Payment  @relation(fields: [triggeredByPaymentId], references: [id])
-  bonusDays            Int      @map("bonus_days")
-  appliedAt            DateTime @default(now()) @map("applied_at")
+  id                   String            @id @default(uuid())
+  referrerId           String            @map("referrer_id")
+  referrer             User              @relation(fields: [referrerId], references: [id])
+  triggeredByPaymentId String            @unique @map("triggered_by_payment_id")
+  triggeredByPayment   Payment           @relation(fields: [triggeredByPaymentId], references: [id])
+  bonusType            ReferralBonusType @default(DAYS) @map("bonus_type")
+  bonusDays            Int               @default(0) @map("bonus_days")
+  bonusAmount          Decimal?          @db.Decimal(10, 2) @map("bonus_amount")
+  bonusCurrency        String?           @default("RUB") @map("bonus_currency")
+  appliedAt            DateTime          @default(now()) @map("applied_at")
 
   @@map("referral_bonuses")
+}
+
+// ── News & Promotions ────────────────────────────────────────
+model News {
+  id           String    @id @default(uuid())
+  type         NewsType  @default(NEWS)
+  title        String
+  content      String    // markdown
+  imageUrl     String?   @map("image_url")
+  buttons      Json?     // [{label, url, style}]
+
+  // Promotion-specific
+  discountCode String?   @unique @map("discount_code")
+  discountPct  Float?    @map("discount_pct")
+  discountAbs  Float?    @map("discount_abs")
+  tariffIds    String[]  @default([]) @map("tariff_ids")
+  maxUses      Int?      @map("max_uses")
+  usedCount    Int       @default(0) @map("used_count")
+
+  isActive     Boolean   @default(true) @map("is_active")
+  isPinned     Boolean   @default(false) @map("is_pinned")
+  publishedAt  DateTime  @default(now()) @map("published_at")
+  expiresAt    DateTime? @map("expires_at")
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive, publishedAt])
+  @@index([type])
+  @@map("news")
+}
+
+// ── Notifications ────────────────────────────────────────────
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String?          @map("user_id")
+  user      User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      NotificationType @default(INFO)
+  title     String
+  message   String
+  linkUrl   String?          @map("link_url")
+
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  reads     NotificationRead[]
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+// ── Notification Read tracking (for broadcasts) ──────────────
+model NotificationRead {
+  id             String       @id @default(uuid())
+  notificationId String       @map("notification_id")
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now()) @map("read_at")
+
+  @@unique([notificationId, userId])
+  @@map("notification_reads")
+}
+
+// ── Free Telegram Proxies ────────────────────────────────────
+model TelegramProxy {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  tgLink      String?  @map("tg_link")
+  httpsLink   String?  @map("https_link")
+  tag         String?
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("telegram_proxies")
+}
+
+// ── Admin Notes ──────────────────────────────────────────────
+model AdminNote {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation("AdminNotesOnUser", fields: [userId], references: [id], onDelete: Cascade)
+  adminId   String   @map("admin_id")
+  admin     User     @relation("AdminNotesBy", fields: [adminId], references: [id], onDelete: Cascade)
+  text      String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("admin_notes")
+}
+
+// ── Gift Subscriptions ───────────────────────────────────────
+model GiftSubscription {
+  id              String     @id @default(uuid())
+  giftCode        String     @unique @map("gift_code")
+  fromUserId      String     @map("from_user_id")
+  fromUser        User       @relation("GiftsSent", fields: [fromUserId], references: [id])
+  tariffId        String     @map("tariff_id")
+  tariff          Tariff     @relation(fields: [tariffId], references: [id])
+  paymentId       String     @unique @map("payment_id")
+  payment         Payment    @relation(fields: [paymentId], references: [id])
+
+  recipientUserId String?    @map("recipient_user_id")
+  recipientUser   User?      @relation("GiftsReceived", fields: [recipientUserId], references: [id])
+  recipientEmail  String?    @map("recipient_email")
+  message         String?
+
+  status          GiftStatus @default(PENDING)
+  claimedAt       DateTime?  @map("claimed_at")
+  expiresAt       DateTime   @map("expires_at")
+
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  @@index([giftCode])
+  @@index([fromUserId])
+  @@index([recipientUserId])
+  @@index([status])
+  @@map("gift_subscriptions")
+}
+
+// ── Balance Transactions ─────────────────────────────────────
+model BalanceTransaction {
+  id          String                 @id @default(uuid())
+  userId      String                 @map("user_id")
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount      Decimal                @db.Decimal(10, 2)
+  type        BalanceTransactionType
+  description String?
+
+  paymentId   String?                @map("payment_id")
+  payment     Payment?               @relation(fields: [paymentId], references: [id])
+
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([type])
+  @@map("balance_transactions")
+}
+
+// ── Email Verification ───────────────────────────────────────
+model EmailVerification {
+  id         String                @id @default(uuid())
+  userId     String?               @map("user_id")
+  user       User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  code       String
+  type       EmailVerificationType
+  expiresAt  DateTime              @map("expires_at")
+  verifiedAt DateTime?             @map("verified_at")
+
+  createdAt  DateTime              @default(now()) @map("created_at")
+
+  @@index([email, code])
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("email_verifications")
 }
 
 // ── Instruction Platforms ─────────────────────────────────────
@@ -239,7 +427,14 @@ enum PaymentStatus {
 enum PaymentProvider {
   YUKASSA
   CRYPTOPAY
+  BALANCE
   MANUAL
+}
+
+enum PaymentPurpose {
+  SUBSCRIPTION
+  TOPUP
+  GIFT
 }
 
 enum TariffType {
@@ -255,4 +450,42 @@ enum DeviceType {
   ANDROID
   ROUTER
   OTHER
+}
+
+enum NewsType {
+  NEWS
+  PROMOTION
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  PROMO
+}
+
+enum GiftStatus {
+  PENDING
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+enum BalanceTransactionType {
+  TOPUP
+  REFERRAL_REWARD
+  PURCHASE
+  GIFT
+  REFUND
+}
+
+enum ReferralBonusType {
+  DAYS
+  MONEY
+}
+
+enum EmailVerificationType {
+  REGISTRATION
+  EMAIL_CHANGE
+  PASSWORD_RESET
 }

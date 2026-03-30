@@ -17,44 +17,60 @@ function PaymentSuccessContent() {
 
     const check = async () => {
       try {
-        // Try to verify the payment with provider
         const res = await fetch(`/api/payments/verify/${orderId}`, {
           method: 'POST', credentials: 'include',
         })
         const data = await res.json()
 
-        if (data.confirmed) {
+        if (data.confirmed || data.status === 'PAID') {
           setStatus('success')
-        } else if (retries < 6) {
-          // Poll every 3 seconds, max 6 times (18s total)
+        } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
+          setStatus('error')
+        } else if (retries < 20) {
+          // Poll every 3 seconds, max 20 times (60s total)
           setTimeout(() => setRetries(r => r + 1), 3000)
         } else {
           setStatus('pending')
         }
       } catch {
-        setStatus('pending')
+        if (retries < 20) {
+          setTimeout(() => setRetries(r => r + 1), 3000)
+        } else {
+          setStatus('pending')
+        }
       }
     }
     check()
   }, [orderId, retries])
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[300px]
-                        bg-brand-600/15 rounded-full blur-[100px]" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--surface-0)' }}>
+      <div className="aurora-bg" aria-hidden />
 
       <div className="relative w-full max-w-md animate-fade-in">
-        <div className="card text-center space-y-6 p-10">
+        <div className="glass-card text-center space-y-6 p-10">
           {status === 'loading' && (
             <>
-              <div className="w-16 h-16 rounded-2xl bg-gray-800 flex items-center justify-center mx-auto">
-                <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto"
+                   style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)' }}>
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-1)' }} />
               </div>
               <div>
                 <h1 className="text-xl font-bold">Проверяем платёж</h1>
-                <p className="text-gray-400 mt-2 text-sm">Подождите несколько секунд...</p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Подождите, проверяем оплату...
+                </p>
+                {/* Progress indicator */}
+                <div className="mt-4 w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                  <div className="h-full rounded-full transition-all duration-1000"
+                       style={{
+                         width: `${Math.min(95, (retries / 20) * 100)}%`,
+                         background: 'var(--accent-gradient)',
+                       }} />
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                  Попытка {retries + 1} из 20
+                </p>
               </div>
             </>
           )}
@@ -67,7 +83,7 @@ function PaymentSuccessContent() {
               </div>
               <div>
                 <h1 className="text-xl font-bold">Оплата прошла!</h1>
-                <p className="text-gray-400 mt-2 text-sm">
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                   Подписка активирована. QR-код и ссылка доступны в личном кабинете.
                 </p>
               </div>
@@ -90,8 +106,8 @@ function PaymentSuccessContent() {
               </div>
               <div>
                 <h1 className="text-xl font-bold">Платёж обрабатывается</h1>
-                <p className="text-gray-400 mt-2 text-sm">
-                  Платёж получен и обрабатывается. Подписка активируется в течение нескольких минут.
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Платёж получен и обрабатывается. Подписка активируется автоматически.
                   Вы получите уведомление в Telegram.
                 </p>
               </div>
@@ -108,16 +124,16 @@ function PaymentSuccessContent() {
                 <XCircle className="w-8 h-8 text-red-400" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">Что-то пошло не так</h1>
-                <p className="text-gray-400 mt-2 text-sm">
-                  Не удалось найти заказ. Если вы оплатили — обратитесь в поддержку.
+                <h1 className="text-xl font-bold">Платёж не прошёл</h1>
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Оплата была отменена или отклонена. Попробуйте снова или обратитесь в поддержку.
                 </p>
               </div>
               <div className="space-y-3">
                 <Link href="/dashboard/plans" className="btn-primary w-full justify-center">
                   Попробовать снова
                 </Link>
-                <a href="https://t.me/hideyouvpn_support" target="_blank" rel="noopener"
+                <a href="https://t.me/hideyou_support" target="_blank" rel="noopener"
                    className="btn-secondary w-full justify-center">
                   Написать в поддержку
                 </a>

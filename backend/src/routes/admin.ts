@@ -1,8 +1,40 @@
 import type { FastifyInstance } from 'fastify'
 import { z }        from 'zod'
+import axios        from 'axios'
 import { prisma }   from '../db'
 import { remnawave } from '../services/remnawave'
+import { balanceService } from '../services/balance'
+import { inAppNotifications } from '../services/notification-service'
+import { notifications } from '../services/notifications'
 import { logger }   from '../utils/logger'
+
+// GeoIP cache (in-memory, TTL 1 hour)
+const geoCache = new Map<string, { data: any; ts: number }>()
+
+async function getGeoInfo(ip: string | null): Promise<any> {
+  if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('172.') || ip.startsWith('192.168.')) {
+    return null
+  }
+
+  const cached = geoCache.get(ip)
+  if (cached && Date.now() - cached.ts < 3600_000) return cached.data
+
+  try {
+    const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,regionName,isp,query`, { timeout: 3000 })
+    if (res.data?.status === 'success') {
+      const geo = {
+        ip:      res.data.query,
+        country: res.data.country,
+        city:    res.data.city,
+        region:  res.data.regionName,
+        isp:     res.data.isp,
+      }
+      geoCache.set(ip, { data: geo, ts: Date.now() })
+      return geo
+    }
+  } catch {}
+  return null
+}
 
 const TariffSchema = z.object({
   name:             z.string(),
@@ -172,7 +204,39 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!user) return reply.status(404).send({ error: 'User not found' })
 
     const { passwordHash, ...safe } = user as any
-    return safe
+
+    // Fetch REMNAWAVE data if linked
+    let rmData: any = null
+    if (user.remnawaveUuid) {
+      try {
+        const rm = await remnawave.getUserByUuid(user.remnawaveUuid)
+        rmData = {
+          username:           rm.username,
+          status:             rm.status,
+          expireAt:           rm.expireAt,
+          trafficLimitBytes:  rm.trafficLimitBytes,
+          trafficLimitStrategy: rm.trafficLimitStrategy,
+          hwidDeviceLimit:    rm.hwidDeviceLimit,
+          tag:                rm.tag,
+          subscriptionUrl:    rm.subscriptionUrl,
+          subLastUserAgent:   rm.subLastUserAgent,
+          subLastOpenedAt:    rm.subLastOpenedAt,
+          usedTrafficBytes:   rm.userTraffic?.usedTrafficBytes ?? 0,
+          lifetimeUsedTrafficBytes: rm.userTraffic?.lifetimeUsedTrafficBytes ?? 0,
+          onlineAt:           rm.userTraffic?.onlineAt,
+          firstConnectedAt:   rm.userTraffic?.firstConnectedAt,
+          lastConnectedNodeUuid: rm.userTraffic?.lastConnectedNodeUuid,
+          activeInternalSquads: rm.activeInternalSquads,
+        }
+      } catch {
+        // REMNAWAVE unavailable, continue without
+      }
+    }
+
+    // GeoIP lookup for last IP
+    const geoInfo = await getGeoInfo(user.lastIp).catch(() => null)
+
+    return { ...safe, rmData, geoInfo }
   })
 
   // Extend user subscription manually
@@ -237,13 +301,29 @@ export async function adminRoutes(app: FastifyInstance) {
   //  PAYMENTS
   // ─────────────────────────────────────────────────────────
   app.get('/payments', admin, async (req) => {
-    const { page = '1', limit = '50', status = '', provider = '' } =
+    const { page = '1', limit = '50', status = '', provider = '', search = '', userId = '', dateFrom = '', dateTo = '' } =
       req.query as Record<string, string>
 
     const skip  = (Number(page) - 1) * Number(limit)
     const where: any = {}
     if (status)   where.status   = status
     if (provider) where.provider = provider
+    if (userId)   where.userId   = userId
+
+    if (dateFrom || dateTo) {
+      where.createdAt = {}
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom)
+      if (dateTo)   where.createdAt.lte = new Date(dateTo)
+    }
+
+    if (search) {
+      where.OR = [
+        { id: { contains: search } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { user: { telegramName: { contains: search, mode: 'insensitive' } } },
+        { user: { telegramId: { contains: search } } },
+      ]
+    }
 
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
@@ -252,7 +332,7 @@ export async function adminRoutes(app: FastifyInstance) {
         take:    Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          user:   { select: { email: true, telegramName: true, telegramId: true } },
+          user:   { select: { id: true, email: true, telegramName: true, telegramId: true } },
           tariff: { select: { name: true } },
         },
       }),
@@ -297,7 +377,7 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Internal Squads (от Remnawave) ─────────────────────────
-  app.get('/squads', { preHandler: [app.adminOnly] }, async (_, reply) => {
+  app.get('/squads', admin, async (_, reply) => {
     try {
       const result = await remnawave.getInternalSquads()
       return result
@@ -306,5 +386,249 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   })
 
+  // ─────────────────────────────────────────────────────────
+  //  USER ACTIONS
+  // ─────────────────────────────────────────────────────────
 
+  // Revoke subscription (reset shortUuid in REMNAWAVE)
+  app.post('/users/:id/revoke', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'No REMNAWAVE subscription' })
+
+    const rmUser = await remnawave.revokeSubscription(user.remnawaveUuid)
+    await prisma.user.update({
+      where: { id },
+      data:  { subLink: remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl) },
+    })
+
+    logger.info(`Admin revoked subscription for user ${id}`)
+    return { ok: true }
+  })
+
+  // Disable user
+  app.post('/users/:id/disable', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    await prisma.user.update({ where: { id }, data: { isActive: false } })
+    if (user.remnawaveUuid) {
+      await remnawave.disableUserAction(user.remnawaveUuid)
+    }
+
+    logger.info(`Admin disabled user ${id}`)
+    return { ok: true, isActive: false }
+  })
+
+  // Enable user
+  app.post('/users/:id/enable', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    await prisma.user.update({ where: { id }, data: { isActive: true } })
+    if (user.remnawaveUuid) {
+      await remnawave.enableUser(user.remnawaveUuid)
+    }
+
+    logger.info(`Admin enabled user ${id}`)
+    return { ok: true, isActive: true }
+  })
+
+  // Reset traffic
+  app.post('/users/:id/reset-traffic', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'No REMNAWAVE subscription' })
+
+    await remnawave.resetTrafficAction(user.remnawaveUuid)
+    logger.info(`Admin reset traffic for user ${id}`)
+    return { ok: true }
+  })
+
+  // Delete user completely
+  app.delete('/users/:id', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Delete from REMNAWAVE if linked
+    if (user.remnawaveUuid) {
+      await remnawave.deleteUser(user.remnawaveUuid).catch(err =>
+        logger.warn(`Failed to delete REMNAWAVE user: ${err.message}`)
+      )
+    }
+
+    // Delete from local DB (cascade)
+    await prisma.user.delete({ where: { id } })
+
+    logger.info(`Admin deleted user ${id}`)
+    return { ok: true }
+  })
+
+  // Send notification to user
+  app.post('/users/:id/notify', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { title, message, type } = z.object({
+      title:   z.string().min(1),
+      message: z.string().min(1),
+      type:    z.enum(['INFO', 'WARNING', 'SUCCESS', 'PROMO']).optional(),
+    }).parse(req.body)
+
+    await inAppNotifications.sendToUser({ userId: id, title, message, type })
+    await notifications.sendCustom(id, title, message).catch(() => {})
+
+    return { ok: true }
+  })
+
+  // Add days to subscription
+  app.post('/users/:id/add-days', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { days, note } = z.object({
+      days: z.coerce.number().min(1),
+      note: z.string().optional(),
+    }).parse(req.body)
+
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'No REMNAWAVE subscription' })
+
+    const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+    const updated = await remnawave.extendSubscription(
+      user.remnawaveUuid, days,
+      rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+    )
+
+    await prisma.user.update({
+      where: { id },
+      data: {
+        subExpireAt: updated.expireAt ? new Date(updated.expireAt) : null,
+        subStatus:   'ACTIVE',
+      },
+    })
+
+    logger.info(`Admin added ${days} days to user ${id}. Note: ${note || 'none'}`)
+    return { ok: true, newExpireAt: updated.expireAt }
+  })
+
+  // Adjust user balance
+  app.post('/users/:id/adjust-balance', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { amount, description } = z.object({
+      amount:      z.coerce.number(),
+      description: z.string().optional(),
+    }).parse(req.body)
+
+    const result = await balanceService.adminAdjust({ userId: id, amount, description })
+    return { ok: true, newBalance: Number(result.newBalance) }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  ADMIN NOTES
+  // ─────────────────────────────────────────────────────────
+  app.get('/users/:id/notes', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    return prisma.adminNote.findMany({
+      where:   { userId: id },
+      orderBy: { createdAt: 'desc' },
+      include: { admin: { select: { email: true, telegramName: true } } },
+    })
+  })
+
+  app.post('/users/:id/notes', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const adminId = (req.user as any).sub
+    const { text } = z.object({ text: z.string().min(1) }).parse(req.body)
+
+    const note = await prisma.adminNote.create({
+      data: { userId: id, adminId, text },
+    })
+    return reply.status(201).send(note)
+  })
+
+  app.delete('/users/:id/notes/:noteId', admin, async (req) => {
+    const { noteId } = req.params as { noteId: string }
+    await prisma.adminNote.delete({ where: { id: noteId } })
+    return { ok: true }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  ANALYTICS
+  // ─────────────────────────────────────────────────────────
+  app.get('/analytics/health', admin, async () => {
+    const health = await remnawave.getSystemHealth()
+    return { remnawave: health }
+  })
+
+  app.get('/analytics/nodes', admin, async () => {
+    const metrics = await remnawave.getNodesMetrics()
+    return metrics || { nodes: [] }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  USER DEVICES (HWID)
+  // ─────────────────────────────────────────────────────────
+
+  // Get devices for a specific user by their DB id
+  app.get('/users/:id/devices', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id }, select: { remnawaveUuid: true } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'No REMNAWAVE subscription' })
+
+    try {
+      const result = await remnawave.getDevices(user.remnawaveUuid)
+      return result
+    } catch {
+      return reply.status(502).send({ error: 'Failed to load devices' })
+    }
+  })
+
+  // Delete device for a specific user
+  app.post('/users/:id/devices/delete', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { hwid } = req.body as { hwid: string }
+    if (!hwid) return reply.status(400).send({ error: 'hwid required' })
+
+    const user = await prisma.user.findUnique({ where: { id }, select: { remnawaveUuid: true } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'No REMNAWAVE subscription' })
+
+    try {
+      await remnawave.deleteDevice(user.remnawaveUuid, hwid)
+      logger.info(`Admin deleted device ${hwid} from user ${id}`)
+      return { ok: true }
+    } catch {
+      return reply.status(502).send({ error: 'Failed to delete device' })
+    }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  EXPORT USERS
+  // ─────────────────────────────────────────────────────────
+  app.get('/export/users', admin, async (req, reply) => {
+    const { format = 'json' } = req.query as { format?: string }
+
+    const users = await prisma.user.findMany({
+      select: {
+        id: true, email: true, telegramId: true, telegramName: true,
+        remnawaveUuid: true, subStatus: true, subExpireAt: true,
+        role: true, isActive: true, createdAt: true, lastLoginAt: true,
+        referralCode: true, balance: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (format === 'csv') {
+      const header = 'id,email,telegramId,telegramName,remnawaveUuid,subStatus,subExpireAt,role,isActive,createdAt,balance\n'
+      const rows = users.map(u =>
+        `${u.id},${u.email || ''},${u.telegramId || ''},${u.telegramName || ''},${u.remnawaveUuid || ''},${u.subStatus},${u.subExpireAt || ''},${u.role},${u.isActive},${u.createdAt},${u.balance}`
+      ).join('\n')
+
+      return reply
+        .header('Content-Type', 'text/csv')
+        .header('Content-Disposition', 'attachment; filename=users.csv')
+        .send(header + rows)
+    }
+
+    return { users, total: users.length }
+  })
 }
