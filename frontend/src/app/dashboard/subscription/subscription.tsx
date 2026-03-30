@@ -52,16 +52,17 @@ function QRModal({ url, onClose }: { url: string; onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
          onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="relative bg-[#111] border border-white/10 rounded-3xl p-6 w-full max-w-sm
+      <div className="relative rounded-3xl p-6 w-full max-w-sm
                       animate-slide-up shadow-2xl"
+           style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)' }}
            onClick={e => e.stopPropagation()}>
         <button onClick={onClose}
           className="absolute right-4 top-4 w-8 h-8 rounded-full bg-white/8
                      flex items-center justify-center hover:bg-white/15 transition-all">
           <X className="w-4 h-4" />
         </button>
-        <h3 className="font-semibold mb-1">Добавить на другое устройство</h3>
-        <p className="text-sm text-zinc-500 mb-5">
+        <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Добавить на другое устройство</h3>
+        <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
           Отсканируй QR-код в VPN-приложении на другом устройстве
         </p>
         <div className="flex justify-center mb-5">
@@ -71,7 +72,8 @@ function QRModal({ url, onClose }: { url: string; onClose: () => void }) {
         </div>
         <button onClick={() => { navigator.clipboard.writeText(url); toast.success('Скопировано!') }}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm
-                     bg-white/8 hover:bg-white/12 border border-white/10 transition-all">
+                     bg-white/8 hover:bg-white/12 transition-all"
+          style={{ borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)', color: 'var(--text-primary)' }}>
           <Copy className="w-4 h-4" />
           Скопировать ссылку
         </button>
@@ -90,8 +92,9 @@ function TrafficModal({ addons, onClose, onBuy }: {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
          onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="relative bg-[#111] border border-white/10 rounded-3xl p-6 w-full max-w-sm
+      <div className="relative rounded-3xl p-6 w-full max-w-sm
                       shadow-2xl animate-slide-up"
+           style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)' }}
            onClick={e => e.stopPropagation()}>
         <button onClick={onClose}
           className="absolute right-4 top-4 w-8 h-8 rounded-full bg-white/8
@@ -103,8 +106,8 @@ function TrafficModal({ addons, onClose, onBuy }: {
             <Zap className="w-5 h-5 text-orange-400" />
           </div>
           <div>
-            <h3 className="font-semibold">Докупить трафик</h3>
-            <p className="text-xs text-zinc-500">Добавляется к текущему лимиту</p>
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Докупить трафик</h3>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Добавляется к текущему лимиту</p>
           </div>
         </div>
         <div className="space-y-2">
@@ -119,13 +122,13 @@ function TrafficModal({ addons, onClose, onBuy }: {
                   <Wifi className="w-4 h-4 text-orange-400" />
                 </div>
                 <div className="text-left">
-                  <div className="font-medium text-sm">{a.name}</div>
-                  <div className="text-xs text-zinc-500">+{a.trafficAddonGb} ГБ</div>
+                  <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{a.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>+{a.trafficAddonGb} ГБ</div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="font-semibold text-sm">{a.priceRub}₽</div>
-                {a.priceUsdt && <div className="text-xs text-zinc-500">${a.priceUsdt}</div>}
+                <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{a.priceRub}₽</div>
+                {a.priceUsdt && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>${a.priceUsdt}</div>}
               </div>
             </button>
           ))}
@@ -145,7 +148,7 @@ export default function SubscriptionContent() {
   const [syncing,   setSyncing]   = useState(false)
   const [showQR,    setShowQR]    = useState(false)
   const [showBuy,   setShowBuy]   = useState(false)
-  const [showDevs,  setShowDevs]  = useState(true)
+  const [showDevs,  setShowDevs]  = useState(false)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -204,15 +207,15 @@ export default function SubscriptionContent() {
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 gap-5">
       <div className="w-24 h-24 rounded-3xl bg-white/4 border border-white/8
                       flex items-center justify-center">
-        <Shield className="w-10 h-10 text-zinc-700" />
+        <Shield className="w-10 h-10" style={{ color: 'var(--text-tertiary)' }} />
       </div>
       <div>
-        <h2 className="text-xl font-bold mb-2">Нет подписки</h2>
-        <p className="text-zinc-500 text-sm">Выбери тариф для подключения VPN</p>
+        <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Нет подписки</h2>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Выбери тариф для подключения VPN</p>
       </div>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <Link href="/dashboard/plans">
-          <button className="w-full py-3.5 rounded-2xl font-semibold text-sm
+          <button className="w-full py-3.5 rounded-2xl font-semibold text-sm text-white
                              bg-gradient-to-r from-violet-600 to-blue-600
                              hover:opacity-90 transition-all">
             Выбрать тариф
@@ -220,7 +223,8 @@ export default function SubscriptionContent() {
         </Link>
         <button onClick={sync} disabled={syncing}
           className="w-full py-3.5 rounded-2xl text-sm font-medium
-                     bg-white/5 hover:bg-white/8 border border-white/10 transition-all">
+                     bg-white/5 hover:bg-white/8 border border-white/10 transition-all"
+          style={{ color: 'var(--text-primary)' }}>
           {syncing ? 'Поиск...' : 'Найти существующую подписку'}
         </button>
       </div>
@@ -250,21 +254,22 @@ export default function SubscriptionContent() {
               <span className={`text-sm font-semibold ${st.color}`}>{st.label}</span>
             </div>
             <button onClick={sync} disabled={syncing}
-              className="text-zinc-600 hover:text-zinc-400 transition-colors p-1">
+              className="transition-colors p-1"
+              style={{ color: 'var(--text-tertiary)' }}>
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
             </button>
           </div>
 
           {/* Days */}
           <div className="flex items-end gap-2 mb-4">
-            <span className="text-5xl font-bold tabular-nums">
+            <span className="text-5xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
               {sub.daysLeft ?? '—'}
             </span>
-            <span className="text-zinc-500 text-sm pb-2">
+            <span className="text-sm pb-2" style={{ color: 'var(--text-tertiary)' }}>
               {sub.daysLeft === 1 ? 'день' : sub.daysLeft != null && sub.daysLeft < 5 ? 'дня' : 'дней'}
             </span>
             {sub.expireAt && (
-              <span className="text-zinc-600 text-xs pb-2 ml-auto">
+              <span className="text-xs pb-2 ml-auto" style={{ color: 'var(--text-tertiary)' }}>
                 до {formatDate(sub.expireAt, { day: 'numeric', month: 'long' })}
               </span>
             )}
@@ -273,12 +278,12 @@ export default function SubscriptionContent() {
           {/* Traffic */}
           {sub.usedTrafficBytes !== undefined && (
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-zinc-500">
+              <div className="flex justify-between text-xs" style={{ color: 'var(--text-tertiary)' }}>
                 <span className="flex items-center gap-1.5">
                   <Wifi className="w-3.5 h-3.5" />
                   Трафик
                 </span>
-                <span className="text-zinc-300 font-medium tabular-nums">
+                <span className="font-medium tabular-nums" style={{ color: 'var(--text-primary)' }}>
                   {formatBytes(sub.usedTrafficBytes ?? 0)}
                   {sub.trafficLimitBytes
                     ? ` / ${formatBytes(sub.trafficLimitBytes)}`
@@ -318,7 +323,7 @@ export default function SubscriptionContent() {
               <p className="text-sm font-medium text-amber-300">
                 Подписка истекает через {sub.daysLeft} {sub.daysLeft === 1 ? 'день' : 'дней'}
               </p>
-              <p className="text-xs text-zinc-600 mt-0.5">Продли чтобы не потерять доступ</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Продли чтобы не потерять доступ</p>
             </div>
             <Link href="/dashboard/plans">
               <button className="shrink-0 py-2 px-3.5 rounded-xl text-xs font-semibold
@@ -332,10 +337,10 @@ export default function SubscriptionContent() {
         {/* ── CONNECT ── */}
         <div className="rounded-3xl bg-white/4 border border-white/8 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">Подключение</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Подключение</span>
             <button onClick={() => setShowQR(true)}
-              className="flex items-center gap-1.5 text-xs text-zinc-500
-                         hover:text-zinc-300 transition-colors">
+              className="flex items-center gap-1.5 text-xs transition-colors"
+              style={{ color: 'var(--text-tertiary)' }}>
               <QrCode className="w-3.5 h-3.5" />
               QR-код
             </button>
@@ -343,10 +348,11 @@ export default function SubscriptionContent() {
 
           {/* URL */}
           <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-black/30 border border-white/8">
-            <Globe className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-            <code className="flex-1 text-xs text-zinc-500 truncate font-mono">{sub.subUrl}</code>
+            <Globe className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+            <code className="flex-1 text-xs truncate font-mono" style={{ color: 'var(--text-tertiary)' }}>{sub.subUrl}</code>
             <button onClick={() => { navigator.clipboard.writeText(sub.subUrl); toast.success('Скопировано!') }}
-              className="shrink-0 p-1 text-zinc-600 hover:text-zinc-300 transition-colors">
+              className="shrink-0 p-1 transition-colors"
+              style={{ color: 'var(--text-tertiary)' }}>
               <Copy className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -354,7 +360,7 @@ export default function SubscriptionContent() {
           {/* Copy button */}
           <button onClick={() => { navigator.clipboard.writeText(sub.subUrl); toast.success('Ссылка скопирована!') }}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl
-                       text-sm font-semibold bg-gradient-to-r from-violet-600 to-blue-600
+                       text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-blue-600
                        hover:opacity-90 transition-all">
             <Copy className="w-4 h-4" />
             Скопировать ссылку подписки
@@ -362,8 +368,9 @@ export default function SubscriptionContent() {
 
           <Link href="/dashboard/instructions">
             <button className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl
-                               text-sm text-zinc-400 hover:text-zinc-200 bg-white/4
-                               hover:bg-white/8 border border-white/8 transition-all">
+                               text-sm bg-white/4
+                               hover:bg-white/8 border border-white/8 transition-all"
+              style={{ color: 'var(--text-secondary)' }}>
               <Download className="w-4 h-4" />
               Инструкции по подключению
             </button>
@@ -374,32 +381,33 @@ export default function SubscriptionContent() {
         <div className="rounded-3xl bg-white/4 border border-white/8 overflow-hidden">
           <button onClick={() => setShowDevs(v => !v)}
             className="w-full flex items-center justify-between px-5 py-4
-                       hover:bg-white/3 transition-all">
-            <div className="flex items-center gap-2.5 text-sm font-semibold">
+                       hover:bg-white/[0.03] transition-all">
+            <div className="flex items-center gap-2.5 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
               <Smartphone className="w-4 h-4 text-blue-400" />
               Мои устройства
               {devices.length > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-white/8 text-zinc-500 font-normal">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-white/8 font-normal"
+                      style={{ color: 'var(--text-tertiary)' }}>
                   {devices.length}
                 </span>
               )}
             </div>
             {showDevs
-              ? <ChevronUp className="w-4 h-4 text-zinc-600" />
-              : <ChevronDown className="w-4 h-4 text-zinc-600" />}
+              ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+              : <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
           </button>
 
           {showDevs && (
             <div className="px-4 pb-4 space-y-2">
               {devices.length === 0 ? (
-                <div className="text-center py-6 text-zinc-600 text-sm">
+                <div className="text-center py-6 text-sm" style={{ color: 'var(--text-tertiary)' }}>
                   Нет подключённых устройств
                 </div>
               ) : devices.map(d => (
                 <DeviceRow key={d.hwid} device={d} onDelete={deleteDevice} />
               ))}
               {devices.length > 0 && (
-                <p className="text-xs text-zinc-700 pt-1 px-1">
+                <p className="text-xs pt-1 px-1" style={{ color: 'var(--text-tertiary)' }}>
                   Удали неиспользуемые устройства чтобы освободить слоты
                 </p>
               )}
@@ -413,25 +421,25 @@ export default function SubscriptionContent() {
             <div className="grid grid-cols-2 gap-4">
               {sub.onlineAt && (
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-600 mb-1">
+                  <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
                     <Signal className="w-3 h-3" />
                     Последний онлайн
                   </div>
-                  <div className="text-sm font-medium">{formatRelative(sub.onlineAt)}</div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{formatRelative(sub.onlineAt)}</div>
                 </div>
               )}
               {sub.subLastOpenedAt && (
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-600 mb-1">
+                  <div className="flex items-center gap-1.5 text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
                     <Clock className="w-3 h-3" />
                     Подписка открыта
                   </div>
-                  <div className="text-sm font-medium">{formatRelative(sub.subLastOpenedAt)}</div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{formatRelative(sub.subLastOpenedAt)}</div>
                 </div>
               )}
             </div>
             {sub.subLastUserAgent && (
-              <div className="mt-2 text-xs text-zinc-700 truncate">
+              <div className="mt-2 text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
                 {sub.subLastUserAgent.split('/').slice(0, 2).join(' ')}
               </div>
             )}
@@ -446,19 +454,28 @@ export default function SubscriptionContent() {
 // ── Device row ────────────────────────────────────────────────
 function DeviceRow({ device, onDelete }: { device: HwidDevice; onDelete: (h: string) => void }) {
   const [confirm, setConfirm] = useState(false)
+  const uaParts = device.userAgent ? device.userAgent.split('/') : []
+  const appName = uaParts[0] || null
+  const appVersion = uaParts[1] || null
   return (
     <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/6
                     hover:bg-white/5 transition-all group">
-      <div className="w-9 h-9 rounded-xl bg-white/6 flex items-center justify-center
-                      shrink-0 text-zinc-400">
-        <DeviceIcon platform={device.platform} />
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+           style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--accent-1)' }}>
+        <DeviceIcon platform={device.platform} className="w-5 h-5" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">
-          {device.deviceModel || device.platform}
+        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+          {device.deviceModel || device.platform || 'Устройство'}
         </div>
-        <div className="text-xs text-zinc-600">
-          {device.platform} · {formatRelative(device.updatedAt)}
+        <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+          {[
+            device.platform,
+            device.osVersion ? `v${device.osVersion}` : null,
+          ].filter(Boolean).join(' ')}
+          {appName && (
+            <span style={{ color: 'var(--text-tertiary)' }}> · {appName}{appVersion ? ` ${appVersion}` : ''}</span>
+          )}
         </div>
       </div>
       {confirm ? (
@@ -469,15 +486,17 @@ function DeviceRow({ device, onDelete }: { device: HwidDevice; onDelete: (h: str
             Удалить
           </button>
           <button onClick={() => setConfirm(false)}
-            className="text-xs px-2 py-1 rounded-lg bg-white/8 text-zinc-400
-                       hover:bg-white/12 transition-all">
+            className="text-xs px-2 py-1 rounded-lg bg-white/8
+                       hover:bg-white/12 transition-all"
+            style={{ color: 'var(--text-secondary)' }}>
             Отмена
           </button>
         </div>
       ) : (
         <button onClick={() => setConfirm(true)}
-          className="shrink-0 p-2 rounded-xl text-zinc-700 hover:text-red-400
-                     hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100">
+          className="shrink-0 p-2 rounded-xl hover:text-red-400
+                     hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
+          style={{ color: 'var(--text-tertiary)' }}>
           <Trash2 className="w-4 h-4" />
         </button>
       )}

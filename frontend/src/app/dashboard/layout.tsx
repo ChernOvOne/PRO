@@ -1,31 +1,50 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   Shield, LayoutDashboard, CreditCard, BookOpen,
-  Users, LogOut, Menu, X, ChevronRight, Zap,
+  Users, LogOut, Menu, X, Zap, Bell, Gift,
+  Wifi, Newspaper, Settings, Wallet, CheckCheck,
 } from 'lucide-react'
 
 interface User {
   id: string; email?: string; telegramName?: string
-  subStatus: string; subExpireAt?: string; role: string
+  subStatus: string; subExpireAt?: string; role: string; balance?: number
+}
+
+interface Notification {
+  id: string; title: string; message: string; type: string
+  isRead: boolean; createdAt: string
 }
 
 const NAV = [
-  { href: '/dashboard',              icon: LayoutDashboard, label: 'Обзор' },
-  { href: '/dashboard/subscription', icon: Shield,          label: 'Подписка' },
+  { href: '/dashboard',              icon: LayoutDashboard, label: 'Личный кабинет' },
   { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключение' },
-  { href: '/dashboard/referral',     icon: Users,           label: 'Рефералы' },
+  { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
+  { href: '/dashboard/gift',         icon: Gift,            label: 'Подарки' },
+  { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
+]
+
+const MOBILE_NAV = [
+  { href: '/dashboard',              icon: LayoutDashboard, label: 'Главная' },
+  { href: '/dashboard/instructions', icon: BookOpen,        label: 'Настройка' },
+  { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
+  { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
-  const [user, setUser]         = useState<User | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [sideOpen, setSideOpen] = useState(false)
+  const [user, setUser]           = useState<User | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [sideOpen, setSideOpen]   = useState(false)
+  const [unread, setUnread]       = useState(0)
+  const [bellOpen, setBellOpen]   = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notiLoading, setNotiLoading] = useState(false)
+  const bellRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
@@ -33,7 +52,47 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .then(setUser)
       .catch(() => router.push('/login'))
       .finally(() => setLoading(false))
+
+    fetch('/api/notifications/unread-count', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { count: 0 })
+      .then(d => setUnread(d.count))
+      .catch(() => {})
   }, [router])
+
+  // Close bell dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setBellOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const openBell = async () => {
+    if (bellOpen) { setBellOpen(false); return }
+    setBellOpen(true)
+    setNotiLoading(true)
+    try {
+      const res = await fetch('/api/notifications?limit=3', { credentials: 'include' })
+      const data = await res.json()
+      setNotifications(data.notifications || [])
+    } catch {}
+    setNotiLoading(false)
+  }
+
+  const markAllRead = async () => {
+    await fetch('/api/notifications/read-all', { method: 'POST', credentials: 'include' }).catch(() => {})
+    setUnread(0)
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+  }
+
+  const markOneRead = async (id: string) => {
+    await fetch(`/api/notifications/${id}/read`, { method: 'POST', credentials: 'include' }).catch(() => {})
+    setUnread(prev => Math.max(0, prev - 1))
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
+  }
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -58,6 +117,102 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const daysLeft = user.subExpireAt
     ? Math.max(0, Math.ceil((new Date(user.subExpireAt).getTime() - Date.now()) / 86400_000))
     : null
+
+  // Bell button + notification panel
+  const bellButton = (
+    <button onClick={openBell}
+            className="p-2 rounded-xl relative transition-all hover:bg-white/[0.05]"
+            style={{ color: 'var(--text-secondary)' }}>
+      <Bell className="w-5 h-5" />
+      {unread > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1"
+              style={{ background: '#ef4444' }}>
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </button>
+  )
+
+  const bellPanel = bellOpen ? (
+    <div className="fixed inset-0 z-[100]" ref={bellRef}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setBellOpen(false)} />
+
+      {/* Panel */}
+      <div className="absolute right-3 top-14 md:right-8 md:top-14 w-[calc(100vw-24px)] max-w-sm rounded-2xl overflow-hidden animate-scale-in"
+           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3"
+             style={{ borderBottom: '1px solid var(--glass-border)' }}>
+          <p className="text-sm font-semibold">Уведомления</p>
+          <div className="flex items-center gap-2">
+            {unread > 0 && (
+              <button onClick={markAllRead}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all hover:bg-white/[0.05]"
+                      style={{ color: 'var(--accent-1)' }}>
+                <CheckCheck className="w-3.5 h-3.5" /> Все прочитаны
+              </button>
+            )}
+            <button onClick={() => setBellOpen(false)} className="p-1 rounded-lg hover:bg-white/[0.05]"
+                    style={{ color: 'var(--text-tertiary)' }}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* List — max 3 */}
+        <div className="overflow-y-auto">
+          {notiLoading ? (
+            <div className="p-6 text-center">
+              <div className="w-6 h-6 mx-auto rounded-full border-2 border-transparent"
+                   style={{ borderTopColor: 'var(--accent-1)', animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="p-8 text-center">
+              <Bell className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-tertiary)' }} />
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет уведомлений</p>
+            </div>
+          ) : (
+            notifications.slice(0, 3).map(n => (
+              <div key={n.id}
+                   onClick={() => { if (!n.isRead) markOneRead(n.id) }}
+                   className="flex gap-3 px-4 py-3 transition-all cursor-pointer hover:bg-white/[0.03]"
+                   style={{
+                     borderBottom: '1px solid var(--glass-border)',
+                     background: n.isRead ? 'transparent' : 'rgba(6,182,212,0.04)',
+                   }}>
+                <div className="mt-1.5 flex-shrink-0">
+                  {!n.isRead ? (
+                    <div className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-1)' }} />
+                  ) : (
+                    <div className="w-2 h-2 rounded-full" style={{ background: 'var(--glass-border)' }} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{n.title}</p>
+                  <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                    {n.message}
+                  </p>
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    {formatTimeAgo(n.createdAt)}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer — link to all */}
+        {notifications.length > 3 && (
+          <Link href="/dashboard/news" onClick={() => setBellOpen(false)}
+                className="block text-center text-xs py-2.5 transition-all hover:bg-white/[0.03]"
+                style={{ color: 'var(--accent-1)', borderTop: '1px solid var(--glass-border)' }}>
+            Все уведомления
+          </Link>
+        )}
+      </div>
+    </div>
+  ) : null
 
   const Sidebar = () => (
     <div className="flex flex-col h-full">
@@ -123,7 +278,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Upgrade CTA (if inactive) */}
       {!isActive && (
         <div className="mx-3 mb-3">
-          <Link href="/dashboard/subscription"
+          <Link href="/dashboard/plans"
                 className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium text-white transition-all hover:opacity-90"
                 style={{ background: 'var(--accent-gradient)' }}
                 onClick={() => setSideOpen(false)}>
@@ -160,11 +315,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
-      {/* Aurora background */}
       <div className="aurora-bg" />
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-[260px] flex-shrink-0 glass-sidebar fixed left-0 top-0 h-screen z-30">
+      <aside className="sidebar-desktop hidden md:flex flex-col w-[260px] flex-shrink-0 glass-sidebar fixed left-0 top-0 h-screen z-30">
         <Sidebar />
       </aside>
 
@@ -181,6 +335,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-[260px]">
+        {/* Desktop top bar (with bell) */}
+        <div className="hidden md:flex items-center justify-end px-8 py-3 gap-3">
+          {bellButton}
+        </div>
+
         {/* Mobile header */}
         <div className="md:hidden flex items-center justify-between px-4 py-3 glass-sidebar">
           <button onClick={() => setSideOpen(true)} className="p-2 rounded-lg"
@@ -194,14 +353,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <span className="font-semibold text-sm">HIDEYOU</span>
           </div>
-          <div className="w-9" /> {/* spacer */}
+          {bellButton}
         </div>
 
+        {/* Bell notification panel (portal-like, fixed overlay) */}
+        {bellPanel}
+
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10 animate-fade-in">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 md:pt-0 relative z-10 animate-fade-in pb-20 md:pb-8">
           {children}
         </main>
       </div>
+
+      {/* Mobile bottom nav */}
+      <div className="mobile-bottom-nav">
+        <div className="flex items-center justify-around py-2 px-2">
+          {MOBILE_NAV.map(({ href, icon: Icon, label }) => {
+            const active = pathname === href
+            return (
+              <Link key={href} href={href}
+                    className="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-all"
+                    style={{
+                      color: active ? 'var(--accent-1)' : 'var(--text-tertiary)',
+                      background: active ? 'rgba(6,182,212,0.08)' : 'transparent',
+                    }}>
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-medium">{label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
+}
+
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'только что'
+  if (mins < 60) return `${mins} мин назад`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} ч назад`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} дн назад`
+  return new Date(dateStr).toLocaleDateString('ru')
 }

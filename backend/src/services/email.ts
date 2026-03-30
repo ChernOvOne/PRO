@@ -94,6 +94,50 @@ class EmailService {
     })
   }
 
+  async sendVerificationCode(email: string, code: string, subject?: string) {
+    return this.send({
+      to:      email,
+      subject: subject || 'Код подтверждения — HIDEYOU VPN',
+      html:    this.wrap(`
+        <h2>Код подтверждения</h2>
+        <p>Ваш код:</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; padding: 20px; background: rgba(85,105,255,0.15); border-radius: 12px; color: #f1f5f9;">
+          ${code}
+        </div>
+        <p style="margin-top: 16px;">Код действителен 10 минут. Не сообщайте его никому.</p>
+      `),
+    })
+  }
+
+  async sendGiftNotification(email: string, giftCode: string, tariffName: string, senderName: string) {
+    return this.send({
+      to:      email,
+      subject: '🎁 Вам подарили VPN-подписку — HIDEYOU',
+      html:    this.wrap(`
+        <h2>Вам подарок!</h2>
+        <p><strong>${senderName}</strong> подарил вам подписку <strong>${tariffName}</strong>.</p>
+        <p>Перейдите по ссылке чтобы активировать подарок:</p>
+        <a href="${config.appUrl}/dashboard?gift=${giftCode}" class="btn">Активировать подарок</a>
+        <p style="margin-top: 16px; font-size: 13px; color: #64748b;">Код подарка: <strong>${giftCode}</strong></p>
+      `),
+    })
+  }
+
+  async sendPasswordReset(email: string, code: string) {
+    return this.send({
+      to:      email,
+      subject: 'Сброс пароля — HIDEYOU VPN',
+      html:    this.wrap(`
+        <h2>Сброс пароля</h2>
+        <p>Код для сброса пароля:</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; padding: 20px; background: rgba(85,105,255,0.15); border-radius: 12px; color: #f1f5f9;">
+          ${code}
+        </div>
+        <p style="margin-top: 16px;">Если вы не запрашивали сброс пароля, проигнорируйте это письмо.</p>
+      `),
+    })
+  }
+
   private wrap(content: string): string {
     return `<!DOCTYPE html>
 <html lang="ru">

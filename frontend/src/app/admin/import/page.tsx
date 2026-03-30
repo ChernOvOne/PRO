@@ -72,8 +72,8 @@ export default function AdminImport() {
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Импорт пользователей</h1>
-        <p className="text-gray-400 text-sm mt-0.5">
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Импорт пользователей</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
           Загрузка существующей базы email / Telegram ID
         </p>
       </div>
@@ -95,8 +95,8 @@ export default function AdminImport() {
                                                      'bg-red-500/15 text-red-400'}`}>
                 <Icon className="w-5 h-5" />
               </div>
-              <p className="text-2xl font-bold">{value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{value}</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
             </Card>
           ))}
         </div>
@@ -106,16 +106,16 @@ export default function AdminImport() {
       {stats && stats.total > 0 && (
         <Card className="space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Прогресс сопоставления</span>
-            <span className="font-medium">{matchPct}%</span>
+            <span style={{ color: 'var(--text-secondary)' }}>Прогресс сопоставления</span>
+            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{matchPct}%</span>
           </div>
-          <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+          <div className="h-3 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
             <div
-              className="h-full bg-gradient-to-r from-brand-600 to-emerald-500 rounded-full transition-all"
-              style={{ width: `${matchPct}%` }}
+              className="h-full rounded-full transition-all"
+              style={{ width: `${matchPct}%`, background: 'linear-gradient(90deg, rgba(6,182,212,0.8), #10b981)' }}
             />
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
             {stats.matched} из {stats.total} записей успешно привязаны к REMNAWAVE
           </p>
         </Card>
@@ -123,7 +123,7 @@ export default function AdminImport() {
 
       {/* How it works */}
       <Card className="space-y-5">
-        <h2 className="font-semibold text-lg">Как работает импорт</h2>
+        <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Как работает импорт</h2>
         <ol className="space-y-4">
           {[
             {
@@ -150,17 +150,17 @@ export default function AdminImport() {
             },
           ].map(({ step, title, desc, code }) => (
             <li key={step} className="flex gap-4">
-              <div className="w-7 h-7 rounded-full bg-brand-600/20 border border-brand-500/30
-                              flex items-center justify-center text-brand-400 text-sm font-bold
-                              flex-shrink-0 mt-0.5">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold
+                              flex-shrink-0 mt-0.5"
+                   style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)', color: 'var(--accent-1)' }}>
                 {step}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">{title}</p>
-                <p className="text-gray-500 text-sm mt-0.5">{desc}</p>
+                <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{title}</p>
+                <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{desc}</p>
                 {code && (
-                  <code className="block mt-2 text-xs bg-gray-800 border border-gray-700
-                                   px-3 py-2 rounded-lg text-brand-300 font-mono">
+                  <code className="block mt-2 text-xs px-3 py-2 rounded-lg font-mono"
+                        style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)', color: 'var(--accent-1)' }}>
                     {code}
                   </code>
                 )}
@@ -188,12 +188,12 @@ export default function AdminImport() {
 
       {/* File format reference */}
       <Card className="space-y-3">
-        <h2 className="font-semibold">Формат файла</h2>
+        <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Формат файла</h2>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">CSV</p>
-            <pre className="text-xs bg-gray-800 border border-gray-700 p-3 rounded-xl
-                            text-brand-300 font-mono overflow-auto">
+            <p className="text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>CSV</p>
+            <pre className="text-xs p-3 rounded-xl font-mono overflow-auto"
+                 style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)', color: 'var(--accent-1)' }}>
 {`email,telegram_id
 user@example.com,123456789
 another@mail.ru,
@@ -201,9 +201,9 @@ another@mail.ru,
             </pre>
           </div>
           <div>
-            <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">JSON</p>
-            <pre className="text-xs bg-gray-800 border border-gray-700 p-3 rounded-xl
-                            text-brand-300 font-mono overflow-auto">
+            <p className="text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>JSON</p>
+            <pre className="text-xs p-3 rounded-xl font-mono overflow-auto"
+                 style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)', color: 'var(--accent-1)' }}>
 {`[
   {"email":"u@mail.com",
    "telegram_id":"12345"},
@@ -212,7 +212,7 @@ another@mail.ru,
             </pre>
           </div>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
           Поля необязательны — достаточно одного из двух. Система последовательно
           ищет совпадение в REMNAWAVE: сначала по email, затем по Telegram ID.
         </p>

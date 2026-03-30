@@ -66,7 +66,7 @@ export default function PlansPage() {
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Выбери тариф</h1>
-        <p className="text-gray-400 mt-1">Подключение работает сразу после оплаты</p>
+        <p className="mt-1" style={{ color: 'var(--text-secondary)' }}>Подключение работает сразу после оплаты</p>
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
@@ -78,7 +78,8 @@ export default function PlansPage() {
                         transition-all duration-200 cursor-pointer
                         ${selected?.id === t.id
                           ? 'border-brand-500 ring-2 ring-brand-500/30'
-                          : 'hover:border-gray-700'}`}>
+                          : ''}`}
+            style={selected?.id !== t.id ? { borderColor: 'var(--glass-border)' } : undefined}>
             {t.isFeatured && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                 <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full
@@ -90,12 +91,12 @@ export default function PlansPage() {
 
             <div className="mb-4 mt-2">
               <p className="font-semibold text-lg">{t.name}</p>
-              {t.description && <p className="text-gray-400 text-sm mt-0.5">{t.description}</p>}
+              {t.description && <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.description}</p>}
             </div>
 
             <div className="mb-5">
               <p className="text-3xl font-bold">{t.priceRub.toLocaleString('ru')} ₽</p>
-              {t.priceUsdt && <p className="text-gray-500 text-sm">≈ ${t.priceUsdt} USDT</p>}
+              {t.priceUsdt && <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>≈ ${t.priceUsdt} USDT</p>}
             </div>
 
             <ul className="space-y-1.5 flex-1">
@@ -104,7 +105,7 @@ export default function PlansPage() {
                 t.trafficGb ? `${t.trafficGb} ГБ` : 'Безлимит',
                 'Все протоколы',
               ].map((f, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm text-gray-300">
+                <li key={i} className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                   {f}
                 </li>
@@ -112,7 +113,7 @@ export default function PlansPage() {
             </ul>
 
             {selected?.id === t.id && (
-              <div className="mt-4 flex items-center gap-1.5 text-brand-400 text-sm font-medium">
+              <div className="mt-4 flex items-center gap-1.5 text-sm font-medium" style={{ color: 'var(--accent-1)' }}>
                 <CheckCircle2 className="w-4 h-4" />
                 Выбран
               </div>
@@ -126,7 +127,7 @@ export default function PlansPage() {
         <div className="card space-y-6 animate-slide-up">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-lg">Способ оплаты</h2>
-            <button onClick={() => setSelected(null)} className="text-gray-500 hover:text-white">
+            <button onClick={() => setSelected(null)} className="hover:opacity-80 transition-opacity" style={{ color: 'var(--text-tertiary)' }}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -150,14 +151,14 @@ export default function PlansPage() {
           </div>
 
           {provider === 'YUKASSA' && (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               Оплата через ЮKassa — Visa, МИР, СБП, ЮMoney
             </p>
           )}
 
           {provider === 'CRYPTOPAY' && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-400">Выбери криптовалюту для оплаты</p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Выбери криптовалюту для оплаты</p>
               <div className="flex gap-2">
                 {(['USDT','TON','BTC'] as const).map(c => (
                   <button
@@ -166,13 +167,14 @@ export default function PlansPage() {
                     className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors
                                 ${currency === c
                                   ? 'bg-brand-600 text-white'
-                                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                                  : ''}`}
+                    style={currency !== c ? { background: 'var(--surface-2)', color: 'var(--text-secondary)' } : undefined}>
                     {c}
                   </button>
                 ))}
               </div>
               {selected.priceUsdt && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
                   К оплате: ~{selected.priceUsdt} {currency}
                 </p>
               )}
@@ -180,16 +182,16 @@ export default function PlansPage() {
           )}
 
           {/* Summary */}
-          <div className="p-4 bg-gray-800 rounded-xl space-y-2">
+          <div className="p-4 rounded-xl space-y-2" style={{ background: 'var(--surface-2)' }}>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Тариф</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Тариф</span>
               <span>{selected.name}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Период</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Период</span>
               <span>{selected.durationDays} дней</span>
             </div>
-            <div className="flex justify-between font-semibold border-t border-gray-700 pt-2 mt-2">
+            <div className="flex justify-between font-semibold pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <span>Итого</span>
               <span>
                 {provider === 'YUKASSA'
@@ -209,7 +211,7 @@ export default function PlansPage() {
             }
           </button>
 
-          <p className="text-xs text-gray-500 text-center">
+          <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
             Подписка активируется автоматически после подтверждения платежа
           </p>
         </div>
@@ -226,10 +228,11 @@ function ProviderTab({ label, icon, active, onClick }: {
     <button
       onClick={onClick}
       className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
-                  border transition-all duration-150
-                  ${active
-                    ? 'bg-brand-600/20 border-brand-500/50 text-brand-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}>
+                  transition-all duration-150`}
+      style={active
+        ? { background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)', color: 'var(--accent-1)' }
+        : { background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }
+      }>
       {icon}
       {label}
     </button>

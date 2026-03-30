@@ -190,6 +190,15 @@ export async function notifyReferralBonus(telegramId: string, bonusDays: number)
   }
 }
 
+// ── Generic message sender ────────────────────────────────────────
+export async function sendTelegramMessage(telegramId: string, text: string) {
+  try {
+    await bot.api.sendMessage(telegramId, text, { parse_mode: 'Markdown' })
+  } catch (err) {
+    logger.warn(`Cannot send message to ${telegramId}:`, err)
+  }
+}
+
 // ── Bot startup ─────────────────────────────────────────────────
 
 export async function startBot() {

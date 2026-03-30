@@ -2,6 +2,7 @@
 export interface User {
   id:           string
   email?:       string
+  emailVerified?: boolean
   telegramId?:  string
   telegramName?: string
   subStatus:    SubStatus
@@ -10,6 +11,7 @@ export interface User {
   role:         'USER' | 'ADMIN'
   isActive:     boolean
   referralCode: string
+  balance?:     number
   createdAt:    string
   lastLoginAt?: string
   remnawaveUuid?: string
@@ -19,17 +21,22 @@ export type SubStatus = 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'TRIAL'
 
 // ── Tariff ───────────────────────────────────────────────────
 export interface Tariff {
-  id:           string
-  name:         string
-  description?: string
-  durationDays: number
-  priceRub:     number
-  priceUsdt?:   number
-  deviceLimit:  number
-  trafficGb?:   number
-  isFeatured:   boolean
-  sortOrder:    number
-  isActive:     boolean
+  id:              string
+  name:            string
+  description?:    string
+  type?:           TariffType
+  durationDays:    number
+  priceRub:        number
+  priceUsdt?:      number
+  deviceLimit:     number
+  trafficGb?:      number
+  trafficStrategy?: string
+  trafficAddonGb?: number
+  isFeatured:      boolean
+  sortOrder:       number
+  isActive:        boolean
+  remnawaveSquads?: string[]
+  remnawaveTag?:   string
 }
 
 // ── Payment ──────────────────────────────────────────────────
@@ -39,13 +46,16 @@ export interface Payment {
   currency:    string
   status:      PaymentStatus
   provider:    PaymentProvider
+  purpose?:    PaymentPurpose
   createdAt:   string
   confirmedAt?: string
   tariff:      Pick<Tariff, 'name' | 'durationDays'>
+  user?:       Pick<User, 'id' | 'email' | 'telegramName' | 'telegramId'>
 }
 
 export type PaymentStatus    = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'EXPIRED'
-export type PaymentProvider  = 'YUKASSA' | 'CRYPTOPAY' | 'MANUAL'
+export type PaymentProvider  = 'YUKASSA' | 'CRYPTOPAY' | 'BALANCE' | 'MANUAL'
+export type PaymentPurpose   = 'SUBSCRIPTION' | 'TOPUP' | 'GIFT'
 
 // ── Instruction ───────────────────────────────────────────────
 export interface Instruction {
@@ -58,6 +68,78 @@ export interface Instruction {
 }
 
 export type DeviceType = 'WINDOWS' | 'MACOS' | 'LINUX' | 'IOS' | 'ANDROID' | 'ROUTER' | 'OTHER'
+
+// ── News & Promotions ────────────────────────────────────────
+export interface News {
+  id:           string
+  type:         'NEWS' | 'PROMOTION'
+  title:        string
+  content:      string
+  imageUrl?:    string
+  buttons?:     Array<{ label: string; url: string; style?: string }>
+  discountCode?: string
+  discountPct?:  number
+  discountAbs?:  number
+  isActive:     boolean
+  isPinned:     boolean
+  publishedAt:  string
+  expiresAt?:   string
+  createdAt:    string
+}
+
+// ── Notification ─────────────────────────────────────────────
+export interface Notification {
+  id:        string
+  title:     string
+  message:   string
+  type:      'INFO' | 'WARNING' | 'SUCCESS' | 'PROMO'
+  linkUrl?:  string
+  isRead:    boolean
+  createdAt: string
+}
+
+// ── Telegram Proxy ───────────────────────────────────────────
+export interface TelegramProxy {
+  id:          string
+  name:        string
+  description?: string
+  tgLink?:     string
+  httpsLink?:  string
+  tag?:        string
+  isActive?:   boolean
+  sortOrder?:  number
+}
+
+// ── Gift Subscription ────────────────────────────────────────
+export interface GiftSubscription {
+  id:              string
+  giftCode:        string
+  status:          'PENDING' | 'CLAIMED' | 'EXPIRED' | 'CANCELLED'
+  message?:        string
+  recipientEmail?: string
+  expiresAt:       string
+  claimedAt?:      string
+  createdAt:       string
+  tariff:          Pick<Tariff, 'name' | 'durationDays'>
+  recipientUser?:  Pick<User, 'email' | 'telegramName'>
+}
+
+// ── Balance ──────────────────────────────────────────────────
+export interface BalanceTransaction {
+  id:          string
+  amount:      number
+  type:        'TOPUP' | 'REFERRAL_REWARD' | 'PURCHASE' | 'GIFT' | 'REFUND'
+  description?: string
+  createdAt:   string
+}
+
+// ── Admin Note ───────────────────────────────────────────────
+export interface AdminNote {
+  id:        string
+  text:      string
+  createdAt: string
+  admin:     { email?: string; telegramName?: string }
+}
 
 // ── Referral ─────────────────────────────────────────────────
 export interface ReferralInfo {
@@ -99,7 +181,6 @@ export interface RMStats {
 }
 
 // ── Subscription ──────────────────────────────────────────────
-// ── HWID Devices ─────────────────────────────────────────────
 export interface HwidDevice {
   hwid:        string
   userUuid:    string
@@ -123,7 +204,6 @@ export interface InternalSquad {
   info: { membersCount: number; inboundsCount: number }
 }
 
-// ── Tariff types ─────────────────────────────────────────────
 export type TariffType = 'SUBSCRIPTION' | 'TRAFFIC_ADDON'
 
 export interface TrafficAddon {
@@ -166,8 +246,7 @@ export interface AdminUser extends User {
 }
 
 export interface AdminPayment extends Payment {
-  user:   Pick<User, 'email' | 'telegramName' | 'telegramId'>
-  tariff: Pick<Tariff, 'name' | 'durationDays'>
+  user:   Pick<User, 'id' | 'email' | 'telegramName' | 'telegramId'>
 }
 
 // ── API responses ─────────────────────────────────────────────

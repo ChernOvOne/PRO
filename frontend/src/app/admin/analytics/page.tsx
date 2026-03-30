@@ -53,8 +53,8 @@ export default function AdminAnalytics() {
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Аналитика</h1>
-        <p className="text-gray-400 text-sm mt-0.5">Последние 30 дней</p>
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Аналитика</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>Последние 30 дней</p>
       </div>
 
       {/* KPI row */}
@@ -96,8 +96,8 @@ export default function AdminAnalytics() {
       {/* Revenue chart */}
       <Card className="space-y-5">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Выручка по дням (₽)</h2>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Выручка по дням (₽)</h2>
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
             <Calendar className="w-3.5 h-3.5" />
             30 дней
           </div>
@@ -116,18 +116,19 @@ export default function AdminAnalytics() {
                     {/* Tooltip */}
                     <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2
                                     opacity-0 group-hover:opacity-100 transition-opacity z-10
-                                    bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5
-                                    pointer-events-none whitespace-nowrap text-center">
-                      <p className="text-xs text-white font-medium">
+                                    rounded-lg px-2 py-1.5
+                                    pointer-events-none whitespace-nowrap text-center"
+                         style={{ background: 'var(--surface-2)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--glass-border)' }}>
+                      <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
                         {Number(d.amount).toLocaleString('ru')} ₽
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                         {date.toLocaleDateString('ru', { day: 'numeric', month: 'short' })}
                       </p>
                     </div>
                     <div
                       className={`w-full rounded-t-sm transition-colors
-                                  ${isWeekend ? 'bg-brand-600/40 hover:bg-brand-500/60' : 'bg-brand-600/70 hover:bg-brand-500'}`}
+                                  ${isWeekend ? 'bg-cyan-600/40 hover:bg-cyan-500/60' : 'bg-cyan-600/70 hover:bg-cyan-500'}`}
                       style={{ height: `${Math.max(pct, 1)}%`, minHeight: pct > 0 ? 3 : 1 }}
                     />
                   </div>
@@ -140,7 +141,7 @@ export default function AdminAnalytics() {
               {data.revenueChart.map((d, i) => (
                 <div key={i} className="flex-1 text-center">
                   {i % 5 === 0 && (
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(d.date).toLocaleDateString('ru', { day: 'numeric', month: 'numeric' })}
                     </p>
                   )}
@@ -149,21 +150,21 @@ export default function AdminAnalytics() {
             </div>
           </div>
         ) : (
-          <div className="h-48 flex items-center justify-center text-gray-600 text-sm">
+          <div className="h-48 flex items-center justify-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
             Нет данных за период
           </div>
         )}
 
         {/* Summary row */}
-        <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-800">
+        <div className="grid grid-cols-3 gap-4 pt-4" style={{ borderTop: '1px solid var(--glass-border)' }}>
           {[
             { label: 'Итого за период', value: `${Math.round(totalRevChart).toLocaleString('ru')} ₽` },
             { label: 'Среднее в день',  value: `${Math.round(avgDaily).toLocaleString('ru')} ₽` },
             { label: 'Лучший день',     value: `${Math.round(maxRev).toLocaleString('ru')} ₽` },
           ].map(({ label, value }) => (
             <div key={label} className="text-center">
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className="font-semibold mt-0.5">{value}</p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+              <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
             </div>
           ))}
         </div>
@@ -173,7 +174,7 @@ export default function AdminAnalytics() {
       <div className="grid md:grid-cols-2 gap-6">
         {/* Conversion funnel */}
         <Card className="space-y-4">
-          <h2 className="font-semibold">Воронка конверсии</h2>
+          <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Воронка конверсии</h2>
           <div className="space-y-3">
             {[
               { label: 'Зарегистрировались', value: data.totalUsers,  pct: 100 },
@@ -186,16 +187,16 @@ export default function AdminAnalytics() {
             ].map(({ label, value, pct }) => (
               <div key={label} className="space-y-1">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">{label}</span>
-                  <span className="font-medium">{value}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{value}</span>
                 </div>
-                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                   <div
-                    className="h-full bg-gradient-to-r from-brand-600 to-brand-400 rounded-full transition-all"
-                    style={{ width: `${pct}%` }}
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${pct}%`, background: 'linear-gradient(90deg, rgba(6,182,212,0.8), rgba(6,182,212,0.5))' }}
                   />
                 </div>
-                <p className="text-xs text-gray-600">{pct}%</p>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{pct}%</p>
               </div>
             ))}
           </div>
@@ -203,7 +204,7 @@ export default function AdminAnalytics() {
 
         {/* REMNAWAVE node status */}
         <Card className="space-y-4">
-          <h2 className="font-semibold">Состояние REMNAWAVE</h2>
+          <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Состояние REMNAWAVE</h2>
           {data.remnawave ? (
             <>
               <div className="flex items-center gap-2 p-3 bg-emerald-500/10
@@ -213,12 +214,12 @@ export default function AdminAnalytics() {
               </div>
               <div className="space-y-2">
                 {Object.entries(data.remnawave).slice(0, 8).map(([k, v]) => (
-                  <div key={k} className="flex justify-between items-center py-1.5
-                                           border-b border-gray-800/60 last:border-0">
-                    <span className="text-gray-500 text-sm capitalize">
+                  <div key={k} className="flex justify-between items-center py-1.5 last:border-0"
+                       style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm capitalize" style={{ color: 'var(--text-tertiary)' }}>
                       {k.replace(/_/g, ' ')}
                     </span>
-                    <span className="text-gray-300 text-xs font-mono max-w-[180px] truncate text-right">
+                    <span className="text-xs font-mono max-w-[180px] truncate text-right" style={{ color: 'var(--text-primary)' }}>
                       {String(v)}
                     </span>
                   </div>
@@ -288,9 +289,9 @@ function KpiCard({ icon: Icon, label, value, sub, color, trend }: {
         )}
       </div>
       <div>
-        <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-2xl font-bold mt-0.5 tracking-tight">{value}</p>
-        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+        <p className="text-2xl font-bold mt-0.5 tracking-tight" style={{ color: 'var(--text-primary)' }}>{value}</p>
+        {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>}
       </div>
     </Card>
   )

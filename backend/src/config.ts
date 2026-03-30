@@ -36,6 +36,8 @@ const envSchema = z.object({
 
   REFERRAL_BONUS_DAYS:   z.coerce.number().default(30),
   REFERRAL_MIN_DAYS:     z.coerce.number().default(30),
+  REFERRAL_REWARD_TYPE:  z.enum(['days', 'balance', 'both']).default('days'),
+  REFERRAL_REWARD_AMOUNT: z.coerce.number().default(100),
 
   SMTP_HOST:             z.string().optional(),
   SMTP_PORT:             z.coerce.number().default(587),
@@ -49,6 +51,11 @@ const envSchema = z.object({
   FEATURE_TELEGRAM_AUTH:   z.coerce.boolean().default(true),
   FEATURE_TRIAL:           z.coerce.boolean().default(false),
   TRIAL_DAYS:              z.coerce.number().default(3),
+  FEATURE_GIFTS:           z.coerce.boolean().default(true),
+  FEATURE_BALANCE:         z.coerce.boolean().default(true),
+
+  GIFT_CODE_EXPIRY_DAYS:   z.coerce.number().default(30),
+  VERIFICATION_CODE_TTL:   z.coerce.number().default(600),
 
   LOG_LEVEL:             z.string().default('info'),
 })
@@ -126,9 +133,11 @@ export const config = {
   },
 
   referral: {
-    bonusDays: env.REFERRAL_BONUS_DAYS,
-    minDays:   env.REFERRAL_MIN_DAYS,
-    enabled:   env.FEATURE_REFERRAL,
+    bonusDays:    env.REFERRAL_BONUS_DAYS,
+    minDays:      env.REFERRAL_MIN_DAYS,
+    enabled:      env.FEATURE_REFERRAL,
+    rewardType:   env.REFERRAL_REWARD_TYPE,
+    rewardAmount: env.REFERRAL_REWARD_AMOUNT,
   },
 
   smtp: {
@@ -147,6 +156,16 @@ export const config = {
     telegramAuth:   env.FEATURE_TELEGRAM_AUTH,
     trial:          env.FEATURE_TRIAL,
     trialDays:      env.TRIAL_DAYS,
+    gifts:          env.FEATURE_GIFTS,
+    balance:        env.FEATURE_BALANCE,
+  },
+
+  gifts: {
+    codeExpiryDays: env.GIFT_CODE_EXPIRY_DAYS,
+  },
+
+  verification: {
+    codeTtl: env.VERIFICATION_CODE_TTL,
   },
 
   logLevel: env.LOG_LEVEL,

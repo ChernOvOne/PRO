@@ -222,17 +222,6 @@ class RemnawaveService {
     return this.updateUser({ uuid, status: 'DISABLED' })
   }
 
-  // ── Reset traffic ────────────────────────────────────────────
-  async resetTraffic(uuid: string): Promise<RemnawaveUser> {
-    const res = await this.client.post(`/api/users/${uuid}/reset-traffic`)
-    return this.unwrap(res.data)
-  }
-
-  async revokeSubscription(uuid: string): Promise<RemnawaveUser> {
-    const res = await this.client.post(`/api/users/${uuid}/revoke-subscription`)
-    return this.unwrap(res.data)
-  }
-
   // ── Extend subscription ──────────────────────────────────────
   async extendSubscription(uuid: string, days: number, current: Date | null = null): Promise<RemnawaveUser> {
     const base = current ? new Date(current) : new Date()
@@ -319,10 +308,60 @@ class RemnawaveService {
     } catch { return null }
   }
 
+  // ── Delete user ───────────────────────────────────────────────
+  async deleteUser(uuid: string): Promise<void> {
+    await this.client.delete(`/api/users/${uuid}`)
+    logger.info(`REMNAWAVE user deleted: ${uuid}`)
+  }
+
+  // ── Revoke subscription (reset shortUuid) ───────────────────
+  async revokeSubscription(uuid: string): Promise<RemnawaveUser> {
+    const res = await this.client.post(`/api/users/${uuid}/actions/revoke`, {
+      revokeOnlyPasswords: false,
+    })
+    return this.unwrap(res.data)
+  }
+
+  // ── Disable user ────────────────────────────────────────────
+  async disableUserAction(uuid: string): Promise<RemnawaveUser> {
+    const res = await this.client.post(`/api/users/${uuid}/actions/disable`)
+    return this.unwrap(res.data)
+  }
+
+  // ── Reset traffic ───────────────────────────────────────────
+  async resetTrafficAction(uuid: string): Promise<RemnawaveUser> {
+    const res = await this.client.post(`/api/users/${uuid}/actions/reset-traffic`)
+    return this.unwrap(res.data)
+  }
+
+  // ── Get by tag ──────────────────────────────────────────────
+  async getUsersByTag(tag: string): Promise<RemnawaveUser[]> {
+    if (!this.check()) return []
+    try {
+      const res  = await this.client.get(`/api/users/by-tag/${encodeURIComponent(tag)}`)
+      const data = this.unwrap(res.data)
+      return Array.isArray(data) ? data : []
+    } catch { return [] }
+  }
+
   // ── System ───────────────────────────────────────────────────
+  async getSystemHealth() {
+    try {
+      const r = await this.client.get('/api/system/health')
+      return this.unwrap(r.data)
+    } catch { return null }
+  }
+
   async getSystemStats() {
     try { const r = await this.client.get('/api/system/stats'); return this.unwrap(r.data) }
     catch { return null }
+  }
+
+  async getNodesMetrics() {
+    try {
+      const r = await this.client.get('/api/system/nodes/metrics')
+      return this.unwrap(r.data)
+    } catch { return null }
   }
 
   async getNodes() {

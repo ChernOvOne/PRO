@@ -134,18 +134,68 @@ export default function AdminDashboard() {
                 <span className="glow-dot text-emerald-400" />
                 <span className="text-xs font-medium text-emerald-400">Онлайн</span>
               </div>
-              <div className="space-y-2.5 mt-3">
-                {Object.entries(stats.remnawave).slice(0, 6).map(([k, v]) => (
-                  <div key={k} className="flex justify-between text-sm">
-                    <span className="capitalize" style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>
-                      {k.replace(/_/g, ' ')}
-                    </span>
-                    <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {String(v)}
-                    </span>
-                  </div>
-                ))}
+
+              {/* Server resources */}
+              <div className="space-y-2 mt-3">
+                {stats.remnawave.cpu && (
+                  <RmRow label="CPU" value={`${stats.remnawave.cpu.cores} ядер`} />
+                )}
+                {stats.remnawave.memory && (
+                  <>
+                    <RmRow label="RAM"
+                           value={`${formatMb(stats.remnawave.memory.used)} / ${formatMb(stats.remnawave.memory.total)} МБ`} />
+                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                      <div className="h-full rounded-full" style={{
+                        width: `${Math.round((stats.remnawave.memory.used / stats.remnawave.memory.total) * 100)}%`,
+                        background: 'var(--accent-gradient)',
+                      }} />
+                    </div>
+                  </>
+                )}
+                {stats.remnawave.uptime != null && (
+                  <RmRow label="Uptime" value={formatUptime(stats.remnawave.uptime)} />
+                )}
               </div>
+
+              {/* Users */}
+              {stats.remnawave.users && (
+                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                  <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                    Пользователи
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <RmStatBox label="Всего" value={stats.remnawave.users.totalUsers} />
+                    <RmStatBox label="Активных" value={stats.remnawave.users.statusCounts?.ACTIVE} color="#34d399" />
+                    <RmStatBox label="Истёкших" value={stats.remnawave.users.statusCounts?.EXPIRED} color="#f87171" />
+                    <RmStatBox label="Откл." value={stats.remnawave.users.statusCounts?.DISABLED} color="#fbbf24" />
+                  </div>
+                </div>
+              )}
+
+              {/* Online stats */}
+              {stats.remnawave.onlineStats && (
+                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                  <p className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                    Онлайн
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <RmStatBox label="Сейчас" value={stats.remnawave.onlineStats.onlineNow} color="#22d3ee" />
+                    <RmStatBox label="За день" value={stats.remnawave.onlineStats.lastDay} />
+                    <RmStatBox label="За неделю" value={stats.remnawave.onlineStats.lastWeek} />
+                    <RmStatBox label="Никогда" value={stats.remnawave.onlineStats.neverOnline} color="var(--text-tertiary)" />
+                  </div>
+                </div>
+              )}
+
+              {/* Nodes */}
+              {stats.remnawave.nodes && (
+                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <RmStatBox label="Ноды онлайн" value={stats.remnawave.nodes.totalOnline} color="#34d399" />
+                    <RmStatBox label="Трафик всего" value={formatTb(stats.remnawave.nodes.totalBytesLifetime)} />
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
@@ -183,6 +233,48 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
+}
+
+function RmRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+      <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-secondary)' }}>{value}</span>
+    </div>
+  )
+}
+
+function RmStatBox({ label, value, color }: { label: string; value: any; color?: string }) {
+  return (
+    <div className="px-3 py-2 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+      <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+      <p className="text-lg font-bold mt-0.5" style={{ color: color || 'var(--text-primary)' }}>
+        {value ?? '—'}
+      </p>
+    </div>
+  )
+}
+
+function formatMb(bytes: number): string {
+  return Math.round(bytes / 1024 / 1024).toLocaleString('ru')
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0) return `${d}д ${h}ч`
+  if (h > 0) return `${h}ч ${m}м`
+  return `${m}м`
+}
+
+function formatTb(bytes: string | number): string {
+  const num = typeof bytes === 'string' ? parseFloat(bytes) : bytes
+  if (!num || isNaN(num)) return '—'
+  const tb = num / (1024 * 1024 * 1024 * 1024)
+  if (tb >= 1) return `${tb.toFixed(1)} ТБ`
+  const gb = num / (1024 * 1024 * 1024)
+  return `${gb.toFixed(0)} ГБ`
 }
 
 function AdminStatCard({ icon, label, value, sub, gradient, borderColor, iconColor }: {

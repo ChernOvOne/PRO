@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
-import { Button, Card, Input, Toggle } from '@/components/ui'
 
 interface Settings {
   support_url:        string
@@ -75,6 +74,19 @@ const SECTIONS: SettingSection[] = [
   },
 ]
 
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button onClick={() => onChange(!checked)}
+            className="relative w-11 h-6 rounded-full transition-all duration-300"
+            style={{
+              background: checked ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.08)',
+            }}>
+      <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
+            style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }} />
+    </button>
+  )
+}
+
 export default function AdminSettings() {
   const [settings, setSettings] = useState<Settings>(DEFAULT)
   const [loading, setLoading]   = useState(true)
@@ -114,7 +126,7 @@ export default function AdminSettings() {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-40 bg-gray-800 rounded-2xl animate-pulse" />
+          <div key={i} className="h-40 rounded-2xl animate-pulse" style={{ background: 'var(--glass-bg)' }} />
         ))}
       </div>
     )
@@ -126,17 +138,18 @@ export default function AdminSettings() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Настройки</h1>
-          <p className="text-gray-400 text-sm mt-0.5">Параметры платформы</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>Параметры платформы</p>
         </div>
         <div className="flex gap-2">
           {dirty && (
-            <Button variant="ghost" size="sm" onClick={reset}>
+            <button className="btn-secondary inline-flex items-center gap-2 text-sm" onClick={reset}>
               <RefreshCw className="w-4 h-4" /> Сбросить
-            </Button>
+            </button>
           )}
-          <Button onClick={save} loading={saving} disabled={!dirty}>
+          <button className="btn-primary inline-flex items-center gap-2 text-sm" onClick={save} disabled={!dirty || saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             <Save className="w-4 h-4" /> Сохранить
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -144,10 +157,11 @@ export default function AdminSettings() {
       {SECTIONS.map(section => {
         const Icon = section.icon
         return (
-          <Card key={section.id} className="space-y-5">
-            <div className="flex items-center gap-3 pb-1 border-b border-gray-800">
-              <div className="w-8 h-8 rounded-lg bg-brand-600/15 flex items-center justify-center">
-                <Icon className="w-4 h-4 text-brand-400" />
+          <div key={section.id} className="glass-card space-y-5">
+            <div className="flex items-center gap-3 pb-1" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                   style={{ background: 'rgba(6,182,212,0.1)' }}>
+                <Icon className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
               </div>
               <h2 className="font-semibold">{section.title}</h2>
             </div>
@@ -158,55 +172,57 @@ export default function AdminSettings() {
                   {field.type === 'toggle' ? (
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-sm font-medium text-gray-300">{field.label}</p>
-                        {field.hint && <p className="text-xs text-gray-500 mt-0.5">{field.hint}</p>}
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{field.label}</p>
+                        {field.hint && <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{field.hint}</p>}
                       </div>
-                      <Toggle
+                      <ToggleSwitch
                         checked={settings[field.key] === 'true'}
                         onChange={v => update(field.key, String(v))}
                       />
                     </div>
                   ) : field.type === 'textarea' ? (
                     <div className="space-y-1.5">
-                      <label className="text-sm text-gray-400">{field.label}</label>
+                      <label className="text-sm" style={{ color: 'var(--text-secondary)' }}>{field.label}</label>
                       <textarea
-                        className="input min-h-[90px] text-sm"
+                        className="glass-input min-h-[90px] text-sm w-full"
                         value={settings[field.key] || ''}
                         onChange={e => update(field.key, e.target.value)}
                         placeholder={field.placeholder}
                       />
-                      {field.hint && <p className="text-xs text-gray-500">{field.hint}</p>}
+                      {field.hint && <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{field.hint}</p>}
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      <label className="text-sm text-gray-400">{field.label}</label>
-                      <Input
+                      <label className="text-sm" style={{ color: 'var(--text-secondary)' }}>{field.label}</label>
+                      <input
                         type={field.type}
+                        className="glass-input text-sm w-full"
                         value={settings[field.key] || ''}
                         onChange={e => update(field.key, e.target.value)}
                         placeholder={field.placeholder}
                       />
-                      {field.hint && <p className="text-xs text-gray-500">{field.hint}</p>}
+                      {field.hint && <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{field.hint}</p>}
                     </div>
                   )}
                 </div>
               ))}
             </div>
-          </Card>
+          </div>
         )
       })}
 
       {/* Env info (read-only) */}
-      <Card className="space-y-4">
-        <div className="flex items-center gap-3 pb-1 border-b border-gray-800">
-          <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center">
-            <CreditCard className="w-4 h-4 text-gray-400" />
+      <div className="glass-card space-y-4">
+        <div className="flex items-center gap-3 pb-1" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+               style={{ background: 'var(--surface-3)' }}>
+            <CreditCard className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
           </div>
           <h2 className="font-semibold">Платёжные системы</h2>
         </div>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
           Ключи платёжных систем задаются через файл{' '}
-          <code className="text-brand-300 bg-gray-800 px-1.5 py-0.5 rounded">.env</code>{' '}
+          <code className="px-1.5 py-0.5 rounded" style={{ color: 'var(--accent-1)', background: 'var(--glass-bg)' }}>.env</code>{' '}
           и пересборку контейнеров.
         </p>
         <div className="grid grid-cols-2 gap-3">
@@ -216,36 +232,38 @@ export default function AdminSettings() {
             { label: 'Telegram Bot', envKey: 'TELEGRAM_BOT_TOKEN' },
             { label: 'REMNAWAVE', envKey: 'REMNAWAVE_URL' },
           ].map(({ label, envKey }) => (
-            <div key={envKey} className="flex items-center gap-2 p-3 bg-gray-800 rounded-xl">
+            <div key={envKey} className="flex items-center gap-2 p-3 rounded-xl"
+                 style={{ background: 'var(--glass-bg)' }}>
               <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
               <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-300">{label}</p>
-                <p className="text-xs text-gray-600 font-mono truncate">{envKey}</p>
+                <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{label}</p>
+                <p className="text-xs font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>{envKey}</p>
               </div>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-600">
-          Для изменения: отредактируй <code className="text-gray-500">.env</code> →{' '}
-          <code className="text-gray-500">bash install.sh</code> → пункт 15 (rebuild)
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Для изменения: отредактируй <code style={{ color: 'var(--text-tertiary)' }}>.env</code> →{' '}
+          <code style={{ color: 'var(--text-tertiary)' }}>bash install.sh</code> → пункт 15 (rebuild)
         </p>
-      </Card>
+      </div>
 
       {/* Danger zone */}
-      <Card className="space-y-4 border-red-900/30">
+      <div className="glass-card space-y-4" style={{ borderColor: 'rgba(127,29,29,0.3)' }}>
         <h2 className="font-semibold text-red-400">Опасная зона</h2>
-        <div className="flex items-center justify-between p-4 bg-red-500/5
-                        border border-red-900/30 rounded-xl">
+        <div className="flex items-center justify-between p-4 rounded-xl"
+             style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(127,29,29,0.3)' }}>
           <div>
-            <p className="text-sm font-medium text-gray-300">Сброс базы данных</p>
-            <p className="text-xs text-gray-500">Необратимое удаление всех данных</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Сброс базы данных</p>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Необратимое удаление всех данных</p>
           </div>
-          <Button variant="danger" size="sm"
+          <button className="text-red-400 text-sm font-medium px-3 py-1.5 rounded-xl transition-colors hover:bg-red-500/10"
+                  style={{ border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.08)' }}
                   onClick={() => toast.error('Используй install.sh → Полный сброс')}>
             Только через install.sh
-          </Button>
+          </button>
         </div>
-      </Card>
+      </div>
     </div>
   )
 }

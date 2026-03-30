@@ -76,6 +76,80 @@ export class NotificationService {
       }
     }
   }
+
+  // ── Referral bonus (money) ──────────────────────────────────
+  async referralBonusMoney(userId: string, amount: number) {
+    const user = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: { telegramId: true, email: true },
+    })
+    if (!user) return
+
+    if (user.telegramId) {
+      try {
+        const { sendTelegramMessage } = await import('../bot')
+        await sendTelegramMessage(user.telegramId,
+          `🎉 Реферальный бонус!\n\nНа ваш баланс зачислено ${amount} ₽ за приглашённого друга.`)
+      } catch (err) {
+        logger.warn('TG referral money notify failed:', err)
+      }
+    }
+  }
+
+  // ── Gift claimed ────────────────────────────────────────────
+  async giftClaimed(senderId: string, recipientId: string, tariffName: string) {
+    const [sender, recipient] = await Promise.all([
+      prisma.user.findUnique({ where: { id: senderId }, select: { telegramId: true, email: true } }),
+      prisma.user.findUnique({ where: { id: recipientId }, select: { telegramName: true, email: true } }),
+    ])
+    if (!sender) return
+
+    const recipientName = recipient?.telegramName || recipient?.email || 'Пользователь'
+
+    if (sender.telegramId) {
+      try {
+        const { sendTelegramMessage } = await import('../bot')
+        await sendTelegramMessage(sender.telegramId,
+          `🎁 Ваш подарок активирован!\n\n${recipientName} активировал подарочную подписку "${tariffName}".`)
+      } catch (err) {
+        logger.warn('TG gift claim notify failed:', err)
+      }
+    }
+
+    if (sender.email) {
+      await emailService.send({
+        to:      sender.email,
+        subject: '🎁 Ваш подарок активирован — HIDEYOU VPN',
+        html:    `<p>${recipientName} активировал подарочную подписку "${tariffName}".</p>`,
+      })
+    }
+  }
+
+  // ── Custom notification (from admin) ────────────────────────
+  async sendCustom(userId: string, title: string, message: string) {
+    const user = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: { telegramId: true, email: true },
+    })
+    if (!user) return
+
+    if (user.telegramId) {
+      try {
+        const { sendTelegramMessage } = await import('../bot')
+        await sendTelegramMessage(user.telegramId, `${title}\n\n${message}`)
+      } catch (err) {
+        logger.warn('TG custom notify failed:', err)
+      }
+    }
+
+    if (user.email) {
+      await emailService.send({
+        to:      user.email,
+        subject: `${title} — HIDEYOU VPN`,
+        html:    `<h2>${title}</h2><p>${message}</p>`,
+      })
+    }
+  }
 }
 
 export const notifications = new NotificationService()

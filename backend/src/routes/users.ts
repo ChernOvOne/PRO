@@ -1,8 +1,18 @@
 import type { FastifyInstance } from 'fastify'
 import QRCode    from 'qrcode'
+import { z }     from 'zod'
 import { prisma }    from '../db'
 import { remnawave } from '../services/remnawave'
+import { balanceService }  from '../services/balance'
+import { paymentService }  from '../services/payment'
 import { config }    from '../config'
+
+function getClientIp(req: any): string | null {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    || req.headers['x-real-ip']
+    || req.ip
+    || null
+}
 
 export async function userRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] }
@@ -10,6 +20,9 @@ export async function userRoutes(app: FastifyInstance) {
   // ── Dashboard summary ──────────────────────────────────────
   app.get('/dashboard', auth, async (req, reply) => {
     const userId = (req.user as any).sub
+
+    // Update last IP on each dashboard visit
+    prisma.user.update({ where: { id: userId }, data: { lastIp: getClientIp(req) } }).catch(() => {})
 
     const user = await prisma.user.findUnique({
       where:   { id: userId },
@@ -298,5 +311,115 @@ export async function userRoutes(app: FastifyInstance) {
     })
     const { passwordHash, ...safe } = updated as any
     return safe
+  })
+
+  // ── Balance ───────────────────────────────────────────────
+  app.get('/balance', auth, async (req) => {
+    const userId = (req.user as any).sub
+    const result = await balanceService.getBalance(userId)
+    return {
+      balance: Number(result.balance),
+      history: result.history.map(t => ({
+        ...t,
+        amount: Number(t.amount),
+      })),
+    }
+  })
+
+  // Top up balance via payment provider
+  app.post('/balance/topup', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const schema = z.object({
+      amount:   z.coerce.number().min(50).max(100000),
+      provider: z.enum(['YUKASSA', 'CRYPTOPAY']),
+      currency: z.string().optional(),
+    })
+    const { amount, provider, currency } = schema.parse(req.body)
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Create a "virtual" tariff for the top-up amount
+    const tariff = {
+      id: 'topup',
+      name: `Пополнение баланса ${amount} ₽`,
+      priceRub: amount,
+      priceUsdt: amount / 90, // approximate
+      durationDays: 0,
+      remnawaveSquads: [],
+      remnawaveTag: null,
+      remnawaveTagIds: [],
+    } as any
+
+    const result = await paymentService.createOrder({
+      user,
+      tariff,
+      provider,
+      currency,
+      purpose: 'TOPUP',
+    })
+
+    return result
+  })
+
+  // Purchase with balance
+  app.post('/balance/purchase', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const { tariffId } = z.object({ tariffId: z.string() }).parse(req.body)
+
+    const [user, tariff] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.tariff.findUnique({ where: { id: tariffId } }),
+    ])
+
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    if (!tariff || !tariff.isActive) return reply.status(404).send({ error: 'Тариф не найден' })
+
+    // Debit balance
+    try {
+      await balanceService.debit({
+        userId,
+        amount:      tariff.priceRub,
+        type:        'PURCHASE',
+        description: `Оплата тарифа: ${tariff.name}`,
+      })
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message })
+    }
+
+    // Create payment record
+    const payment = await prisma.payment.create({
+      data: {
+        userId,
+        tariffId:    tariff.id,
+        provider:    'BALANCE',
+        amount:      tariff.priceRub,
+        currency:    'RUB',
+        status:      'PAID',
+        purpose:     'SUBSCRIPTION',
+        confirmedAt: new Date(),
+      },
+    })
+
+    // Activate subscription (reuse confirmPayment logic)
+    await paymentService.confirmPayment(payment.id)
+
+    return { ok: true }
+  })
+
+  // ── Revoke subscription link ──────────────────────────────
+  app.post('/revoke-subscription', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const user   = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user?.remnawaveUuid) return reply.status(400).send({ error: 'Нет подписки' })
+
+    const rmUser = await remnawave.revokeSubscription(user.remnawaveUuid)
+
+    await prisma.user.update({
+      where: { id: userId },
+      data:  { subLink: remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl) },
+    })
+
+    return { ok: true, newSubUrl: rmUser.subscriptionUrl }
   })
 }
