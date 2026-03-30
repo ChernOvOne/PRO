@@ -7,6 +7,7 @@ import {
   Users, Gift, MessageCircle, ExternalLink, Send,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import type { Tariff, TelegramProxy, News } from '@/types'
 
 export default function LandingPage() {
@@ -57,6 +58,7 @@ export default function LandingPage() {
         </div>
 
         <div className="hidden md:flex items-center gap-3">
+          <ThemeToggle compact />
           <Link href="/login" className="btn-ghost text-sm">Войти</Link>
           <Link href="/login" className="btn-primary text-sm py-2.5 px-5">Начать</Link>
         </div>

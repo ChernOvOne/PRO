@@ -5,9 +5,10 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   Shield, LayoutDashboard, CreditCard, BookOpen,
-  Users, LogOut, Menu, X, Zap, Bell, Gift,
+  Users, LogOut, Menu, X, Zap, Bell,
   Wifi, Newspaper, Settings, Wallet, CheckCheck,
 } from 'lucide-react'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface User {
   id: string; email?: string; telegramName?: string
@@ -21,15 +22,14 @@ interface Notification {
 
 const NAV = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Личный кабинет' },
-  { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключение' },
+  { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключить VPN' },
   { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
-  { href: '/dashboard/gift',         icon: Gift,            label: 'Подарки' },
   { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
 ]
 
 const MOBILE_NAV = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Главная' },
-  { href: '/dashboard/instructions', icon: BookOpen,        label: 'Настройка' },
+  { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключить' },
   { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
   { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
 ]
@@ -217,7 +217,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const Sidebar = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+      <Link href="/dashboard" className="flex items-center gap-3 px-6 py-5 transition-opacity hover:opacity-80"
+            style={{ borderBottom: '1px solid var(--glass-border)' }} onClick={() => setSideOpen(false)}>
         <div className="w-9 h-9 rounded-xl flex items-center justify-center"
              style={{ background: 'var(--accent-gradient)' }}>
           <Shield className="w-[18px] h-[18px] text-white" />
@@ -229,7 +230,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="text-[10px] font-medium ml-1.5 px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(6,182,212,0.12)', color: '#22d3ee' }}>VPN</span>
         </div>
-      </div>
+      </Link>
 
       {/* Status card */}
       <div className="mx-3 mt-4 mb-2 p-3 rounded-xl" style={{
@@ -335,8 +336,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-[260px]">
-        {/* Desktop top bar (with bell) */}
-        <div className="hidden md:flex items-center justify-end px-8 py-3 gap-3">
+        {/* Desktop top bar */}
+        <div className="hidden md:flex items-center justify-end px-8 py-3 gap-2">
+          <ThemeToggle compact />
           {bellButton}
         </div>
 
@@ -346,14 +348,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   style={{ color: 'var(--text-secondary)' }}>
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center"
                  style={{ background: 'var(--accent-gradient)' }}>
               <Shield className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-semibold text-sm">HIDEYOU</span>
+          </Link>
+          <div className="flex items-center gap-1">
+            <ThemeToggle compact />
+            {bellButton}
           </div>
-          {bellButton}
         </div>
 
         {/* Bell notification panel (portal-like, fixed overlay) */}

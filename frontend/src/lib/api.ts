@@ -201,6 +201,14 @@ export const adminApi = {
     apiFetch<{ ok: boolean; newBalance: number }>(`/admin/users/${id}/adjust-balance`, {
       method: 'POST', body: JSON.stringify({ amount, description }),
     }),
+  grantDays: (id: string, days: number, description?: string) =>
+    apiFetch<{ ok: boolean; newBonusDays: number }>(`/admin/users/${id}/grant-days`, {
+      method: 'POST', body: JSON.stringify({ days, description }),
+    }),
+  grantDaysAll: (days: number, description?: string) =>
+    apiFetch<{ ok: boolean; updatedCount: number }>('/admin/grant-days-all', {
+      method: 'POST', body: JSON.stringify({ days, description }),
+    }),
 
   // User devices (HWID)
   userDevices:    (id: string) => apiFetch<{ devices: any[]; total: number }>(`/admin/users/${id}/devices`),

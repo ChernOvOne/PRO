@@ -68,7 +68,7 @@ function LoginContent() {
   }, [resetCooldown])
 
   // ── redirect helper ──
-  const redirectAfterAuth = useCallback((user?: { role?: string }) => {
+  const redirectAfterAuth = useCallback(async (user?: { role?: string }) => {
     const ref = sessionStorage.getItem('ref_code')
     if (ref) {
       fetch('/api/user/apply-referral', {
@@ -78,10 +78,25 @@ function LoginContent() {
       }).catch(() => {})
       sessionStorage.removeItem('ref_code')
     }
+
+    // Auto-claim gift if redirected from a gift link
+    const giftCode = params.get('gift')
+    if (giftCode) {
+      try {
+        const res = await fetch(`/api/gifts/claim/${giftCode}`, { method: 'POST', credentials: 'include' })
+        const d = await res.json()
+        if (d?.ok) {
+          toast.success('Подарок активирован!')
+          window.location.href = '/dashboard'
+          return
+        }
+      } catch {}
+    }
+
     toast.success('Добро пожаловать!')
     const target = user?.role === 'ADMIN' ? '/admin' : '/dashboard'
     window.location.href = target
-  }, [])
+  }, [params])
 
   // ── Telegram widget ──
   useEffect(() => {

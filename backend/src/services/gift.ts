@@ -17,7 +17,7 @@ class GiftService {
     recipientEmail?: string
     message?:       string
   }) {
-    const giftCode = nanoid(12).toUpperCase()
+    const giftCode = 'present_' + nanoid(10)
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + config.gifts.codeExpiryDays)
 
@@ -148,6 +148,25 @@ class GiftService {
         data:  { subStatus: 'ACTIVE', subExpireAt: newExpireAt },
       })
     }
+
+    // Create payment record for recipient (gift)
+    await prisma.payment.create({
+      data: {
+        userId,
+        tariffId:    gift.tariffId,
+        provider:    'MANUAL',
+        amount:      0,
+        currency:    'RUB',
+        status:      'PAID',
+        purpose:     'GIFT',
+        confirmedAt: new Date(),
+        yukassaStatus: JSON.stringify({
+          _giftClaim: true,
+          giftCode:   code,
+          fromUserId: gift.fromUserId,
+        }),
+      },
+    })
 
     logger.info(`Gift ${code} claimed by user ${userId}`)
 

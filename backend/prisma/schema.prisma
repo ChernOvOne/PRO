@@ -29,6 +29,7 @@ model User {
   isActive      Boolean   @default(true) @map("is_active")
 
   balance       Decimal   @default(0) @map("balance") @db.Decimal(10, 2)
+  bonusDays     Int       @default(0) @map("bonus_days")
 
   referralCode  String    @unique @default(cuid()) @map("referral_code")
   referredById  String?   @map("referred_by_id")
@@ -280,6 +281,7 @@ model GiftSubscription {
   expiresAt       DateTime   @map("expires_at")
 
   createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at")
 
   @@index([giftCode])
   @@index([fromUserId])

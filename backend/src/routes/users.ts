@@ -62,6 +62,7 @@ export async function userRoutes(app: FastifyInstance) {
       referralUrl: `${config.appUrl}?ref=${user.referralCode}`,
       referralCount: user.referrals.length,
       bonusDaysEarned: user.bonusHistory.reduce((s, b) => s + b.bonusDays, 0),
+      bonusDays: user.bonusDays, // admin-granted bonus days
     }
   })
 
@@ -387,7 +388,7 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: err.message })
     }
 
-    // Create payment record
+    // Create payment record as PENDING, then confirmPayment will set PAID + activate
     const payment = await prisma.payment.create({
       data: {
         userId,
@@ -395,13 +396,12 @@ export async function userRoutes(app: FastifyInstance) {
         provider:    'BALANCE',
         amount:      tariff.priceRub,
         currency:    'RUB',
-        status:      'PAID',
+        status:      'PENDING',
         purpose:     'SUBSCRIPTION',
-        confirmedAt: new Date(),
       },
     })
 
-    // Activate subscription (reuse confirmPayment logic)
+    // confirmPayment sets PAID + activates REMNAWAVE subscription
     await paymentService.confirmPayment(payment.id)
 
     return { ok: true }
@@ -421,5 +421,178 @@ export async function userRoutes(app: FastifyInstance) {
     })
 
     return { ok: true, newSubUrl: rmUser.subscriptionUrl }
+  })
+
+  // ── Redeem referral days ──────────────────────────────────
+  app.post('/referral/redeem', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const { days } = z.object({ days: z.coerce.number().min(1) }).parse(req.body)
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Calculate available days: sum of all bonusDays (positive = earned, negative = redeemed)
+    const bonuses = await prisma.referralBonus.findMany({
+      where: { referrerId: userId },
+      select: { bonusDays: true },
+    })
+    const totalEarned = bonuses.reduce((sum, b) => sum + b.bonusDays, 0)
+
+    if (days > totalEarned) {
+      return reply.status(400).send({ error: `Недостаточно дней. Доступно: ${totalEarned}` })
+    }
+
+    // Get cheapest tariff for settings (traffic, devices, etc.)
+    const cheapestTariff = await prisma.tariff.findFirst({
+      where: { isActive: true, type: 'SUBSCRIPTION' },
+      orderBy: { priceRub: 'asc' },
+    })
+
+    if (!user.remnawaveUuid) {
+      if (!cheapestTariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
+
+      // Create REMNAWAVE user with cheapest tariff settings
+      const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+      const rmUser = await remnawave.createUser({
+        username:             user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        email:                user.email ?? undefined,
+        telegramId:           user.telegramId ? parseInt(user.telegramId, 10) : null,
+        expireAt:             new Date(Date.now() + days * 86400_000).toISOString(),
+        trafficLimitBytes,
+        trafficLimitStrategy: cheapestTariff.trafficStrategy || 'MONTH',
+        hwidDeviceLimit:      cheapestTariff.deviceLimit ?? 3,
+        tag:                  cheapestTariff.remnawaveTag ?? undefined,
+        activeInternalSquads: cheapestTariff.remnawaveSquads.length > 0 ? cheapestTariff.remnawaveSquads : undefined,
+      })
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          remnawaveUuid: rmUser.uuid,
+          subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
+          subStatus: 'ACTIVE',
+          subExpireAt: new Date(Date.now() + days * 86400_000),
+        },
+      })
+    } else {
+      // Extend existing subscription
+      const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+      const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
+      const isExpired = currentExpire <= new Date()
+      const base = isExpired ? new Date() : currentExpire
+      base.setDate(base.getDate() + days)
+
+      const updateData: any = {
+        uuid: user.remnawaveUuid,
+        status: 'ACTIVE',
+        expireAt: base.toISOString(),
+      }
+
+      // Only apply cheapest tariff settings if subscription is expired/new
+      // If active — just extend days, don't touch traffic/devices/etc
+      if (isExpired && cheapestTariff) {
+        updateData.trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+        updateData.trafficLimitStrategy = cheapestTariff.trafficStrategy || 'MONTH'
+        updateData.hwidDeviceLimit = cheapestTariff.deviceLimit ?? 3
+      }
+
+      await remnawave.updateUser(updateData)
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { subStatus: 'ACTIVE', subExpireAt: base },
+      })
+    }
+
+    // Record in payment history
+    const tariffId = cheapestTariff?.id || (await prisma.tariff.findFirst({ select: { id: true } }))!.id
+    const dummyPayment = await prisma.payment.create({
+      data: {
+        userId,
+        tariffId,
+        provider: 'MANUAL',
+        amount: 0,
+        currency: 'RUB',
+        status: 'PAID',
+        purpose: 'SUBSCRIPTION',
+        confirmedAt: new Date(),
+        yukassaStatus: JSON.stringify({ _type: 'referral_redeem', days }),
+      },
+    })
+
+    await prisma.referralBonus.create({
+      data: {
+        referrerId: userId,
+        triggeredByPaymentId: dummyPayment.id,
+        bonusType: 'DAYS',
+        bonusDays: -days,
+      },
+    })
+
+    return { ok: true, redeemedDays: days, remainingDays: totalEarned - days }
+  })
+
+  // ── Redeem admin-granted bonus days ──────────────────────
+  app.post('/bonus-days/redeem', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const { days } = z.object({ days: z.coerce.number().min(1) }).parse(req.body)
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    if (user.bonusDays < days) return reply.status(400).send({ error: `Недостаточно дней. Доступно: ${user.bonusDays}` })
+
+    // Get cheapest tariff for settings
+    const cheapestTariff = await prisma.tariff.findFirst({
+      where: { isActive: true, type: 'SUBSCRIPTION' },
+      orderBy: { priceRub: 'asc' },
+    })
+
+    if (!user.remnawaveUuid) {
+      if (!cheapestTariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
+      const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+      const rmUser = await remnawave.createUser({
+        username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        email: user.email ?? undefined,
+        telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
+        expireAt: new Date(Date.now() + days * 86400_000).toISOString(),
+        trafficLimitBytes,
+        trafficLimitStrategy: cheapestTariff.trafficStrategy || 'MONTH',
+        hwidDeviceLimit: cheapestTariff.deviceLimit ?? 3,
+      })
+      await prisma.user.update({
+        where: { id: userId },
+        data: { remnawaveUuid: rmUser.uuid, subLink: remnawave.getSubscriptionUrl(rmUser.uuid), subStatus: 'ACTIVE', subExpireAt: new Date(Date.now() + days * 86400_000), bonusDays: { decrement: days } },
+      })
+    } else {
+      const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+      const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
+      const isExpired = currentExpire <= new Date()
+      const base = isExpired ? new Date() : currentExpire
+      base.setDate(base.getDate() + days)
+      const updateData: any = { uuid: user.remnawaveUuid, status: 'ACTIVE', expireAt: base.toISOString() }
+      if (isExpired && cheapestTariff) {
+        updateData.trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+        updateData.trafficLimitStrategy = cheapestTariff.trafficStrategy || 'MONTH'
+        updateData.hwidDeviceLimit = cheapestTariff.deviceLimit ?? 3
+      }
+      await remnawave.updateUser(updateData)
+      await prisma.user.update({
+        where: { id: userId },
+        data: { subStatus: 'ACTIVE', subExpireAt: base, bonusDays: { decrement: days } },
+      })
+    }
+
+    // Record in payment history
+    const tariffId = cheapestTariff?.id || (await prisma.tariff.findFirst({ select: { id: true } }))!.id
+    await prisma.payment.create({
+      data: {
+        userId, tariffId,
+        provider: 'MANUAL', amount: 0, currency: 'RUB',
+        status: 'PAID', purpose: 'SUBSCRIPTION', confirmedAt: new Date(),
+        yukassaStatus: JSON.stringify({ _type: 'bonus_redeem', days }),
+      },
+    })
+
+    return { ok: true, redeemedDays: days, remainingDays: user.bonusDays - days }
   })
 }

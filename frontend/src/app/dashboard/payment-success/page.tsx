@@ -2,8 +2,9 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { CheckCircle2, Loader2, ArrowRight, Shield, XCircle } from 'lucide-react'
+import { CheckCircle2, Loader2, ArrowRight, Shield, XCircle, Gift, Copy } from 'lucide-react'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 
 function PaymentSuccessContent() {
   const params  = useSearchParams()
@@ -11,6 +12,8 @@ function PaymentSuccessContent() {
   const orderId = params.get('orderId')
   const [status, setStatus] = useState<'loading' | 'success' | 'pending' | 'error'>('loading')
   const [retries, setRetries] = useState(0)
+  const [giftUrl, setGiftUrl] = useState<string | null>(null)
+  const [giftCopied, setGiftCopied] = useState(false)
 
   useEffect(() => {
     if (!orderId) { setStatus('error'); return }
@@ -24,6 +27,17 @@ function PaymentSuccessContent() {
 
         if (data.confirmed || data.status === 'PAID') {
           setStatus('success')
+          // Check if this was a gift payment
+          try {
+            const giftsRes = await fetch('/api/gifts/my', { credentials: 'include' })
+            const gifts = await giftsRes.json()
+            if (Array.isArray(gifts) && gifts.length > 0) {
+              const latest = gifts[0] // sorted by createdAt desc
+              if (latest.status === 'PENDING') {
+                setGiftUrl(`${window.location.origin}/present/${latest.giftCode}`)
+              }
+            }
+          } catch {}
         } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
           setStatus('error')
         } else if (retries < 20) {
@@ -77,24 +91,57 @@ function PaymentSuccessContent() {
 
           {status === 'success' && (
             <>
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30
-                              flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Оплата прошла!</h1>
-                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Подписка активирована. QR-код и ссылка доступны в личном кабинете.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <Link href="/dashboard/subscription" className="btn-primary w-full justify-center">
-                  Перейти к подписке <ArrowRight className="w-4 h-4" />
-                </Link>
-                <Link href="/dashboard/instructions" className="btn-secondary w-full justify-center">
-                  Инструкции по подключению
-                </Link>
-              </div>
+              {giftUrl ? (
+                <>
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto"
+                       style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <Gift className="w-8 h-8" style={{ color: '#34d399' }} />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold">Подарок создан!</h1>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Отправьте эту ссылку другу — при переходе подписка активируется автоматически
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-xl"
+                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <p className="flex-1 text-xs font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>{giftUrl}</p>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(giftUrl)
+                      setGiftCopied(true)
+                      toast.success('Ссылка скопирована!')
+                      setTimeout(() => setGiftCopied(false), 2500)
+                    }} className="p-2 rounded-lg hover:bg-white/5 transition-colors">
+                      {giftCopied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
+                    </button>
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Отправьте эту ссылку другу</p>
+                  <Link href="/dashboard" className="btn-primary w-full justify-center">
+                    В личный кабинет <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30
+                                  flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold">Оплата прошла!</h1>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Подписка активирована. QR-код и ссылка доступны в личном кабинете.
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    <Link href="/dashboard" className="btn-primary w-full justify-center">
+                      Перейти к подписке <ArrowRight className="w-4 h-4" />
+                    </Link>
+                    <Link href="/dashboard/instructions" className="btn-secondary w-full justify-center">
+                      Инструкции по подключению
+                    </Link>
+                  </div>
+                </>
+              )}
             </>
           )}
 

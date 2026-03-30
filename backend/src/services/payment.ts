@@ -369,9 +369,9 @@ export class PaymentService {
 
       const rewardType = config.referral.rewardType // 'days' | 'balance' | 'both'
 
-      // Apply days bonus
+      // Accumulate days bonus (NOT applied to REMNAWAVE — user redeems manually)
       const applyDays = rewardType === 'days' || rewardType === 'both'
-      if (applyDays && referrer.remnawaveUuid) {
+      if (applyDays) {
         await prisma.referralBonus.create({
           data: {
             referrerId,
@@ -381,18 +381,11 @@ export class PaymentService {
           },
         })
 
-        const rmUser = await remnawave.getUserByUuid(referrer.remnawaveUuid)
-        await remnawave.extendSubscription(
-          referrer.remnawaveUuid,
-          config.referral.bonusDays,
-          rmUser.expireAt ? new Date(rmUser.expireAt) : null,
-        )
-
         await notifications.referralBonus(referrerId, config.referral.bonusDays).catch(err =>
           logger.warn('Referral bonus notification failed:', err)
         )
 
-        logger.info(`Referral bonus applied: +${config.referral.bonusDays} days to ${referrerId}`)
+        logger.info(`Referral days accumulated: +${config.referral.bonusDays} days for ${referrerId}`)
       }
 
       // Apply money bonus

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   Save, RefreshCw, Bot, CreditCard, Users,
-  Globe, Bell, Shield, Loader2,
+  Globe, Bell, Shield, Loader2, ChevronDown, Mail,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -70,6 +70,79 @@ const SECTIONS: SettingSection[] = [
     fields: [
       { key: 'maintenance_mode', label: 'Режим обслуживания',
         type: 'toggle', hint: 'Блокирует новые регистрации и покупки' },
+    ],
+  },
+  {
+    id: 'smtp', icon: Globe, title: 'Почта (SMTP)',
+    fields: [
+      { key: 'smtp_host',  label: 'SMTP хост',     type: 'text', placeholder: 'smtp.yandex.ru',  hint: 'Сервер исходящей почты' },
+      { key: 'smtp_port',  label: 'SMTP порт',     type: 'number', placeholder: '587' },
+      { key: 'smtp_user',  label: 'SMTP логин',    type: 'text', placeholder: 'noreply@example.com' },
+      { key: 'smtp_pass',  label: 'SMTP пароль',   type: 'text', placeholder: '••••••••',  hint: 'Пароль приложения' },
+      { key: 'smtp_from',  label: 'Отправитель',   type: 'text', placeholder: 'noreply@example.com', hint: 'Email от имени которого идут письма' },
+    ],
+  },
+]
+
+const EMAIL_TEMPLATES = [
+  {
+    key: 'email_tpl_welcome',
+    label: 'Приветственное письмо',
+    desc: 'Отправляется при регистрации нового пользователя',
+    placeholder: '<h2>Добро пожаловать!</h2>\n<p>Ваш аккаунт создан.</p>\n<a href="{appUrl}/dashboard" class="btn">Открыть кабинет</a>',
+    vars: [
+      { name: '{appUrl}', desc: 'Адрес сайта (https://lk.hideyou.top)' },
+    ],
+  },
+  {
+    key: 'email_tpl_payment',
+    label: 'Успешная оплата',
+    desc: 'Отправляется после подтверждения платежа',
+    placeholder: '<h2>Оплата подтверждена!</h2>\n<p>Тариф: <strong>{tariffName}</strong></p>\n<p>Активна до: {expireAt}</p>',
+    vars: [
+      { name: '{tariffName}', desc: 'Название тарифа' },
+      { name: '{expireAt}', desc: 'Дата окончания подписки' },
+      { name: '{appUrl}', desc: 'Адрес сайта' },
+    ],
+  },
+  {
+    key: 'email_tpl_expiry',
+    label: 'Подписка истекает',
+    desc: 'Отправляется за несколько дней до конца подписки',
+    placeholder: '<h2>Подписка заканчивается</h2>\n<p>Через <strong>{daysLeft} дней</strong>.</p>',
+    vars: [
+      { name: '{daysLeft}', desc: 'Дней до истечения' },
+      { name: '{appUrl}', desc: 'Адрес сайта' },
+    ],
+  },
+  {
+    key: 'email_tpl_verification',
+    label: 'Код подтверждения',
+    desc: 'Отправляется при регистрации и смене email',
+    placeholder: '<h2>Код подтверждения</h2>\n<p>Ваш код: <strong>{code}</strong></p>',
+    vars: [
+      { name: '{code}', desc: '6-значный код подтверждения' },
+    ],
+  },
+  {
+    key: 'email_tpl_gift',
+    label: 'Подарочная подписка',
+    desc: 'Отправляется получателю подарка',
+    placeholder: '<h2>Вам подарок!</h2>\n<p>{senderName} подарил вам подписку {tariffName}.</p>',
+    vars: [
+      { name: '{senderName}', desc: 'Имя отправителя' },
+      { name: '{tariffName}', desc: 'Название тарифа' },
+      { name: '{giftCode}', desc: 'Код подарка' },
+      { name: '{appUrl}', desc: 'Адрес сайта' },
+    ],
+  },
+  {
+    key: 'email_tpl_reset',
+    label: 'Сброс пароля',
+    desc: 'Отправляется при запросе сброса пароля',
+    placeholder: '<h2>Сброс пароля</h2>\n<p>Код: <strong>{code}</strong></p>',
+    vars: [
+      { name: '{code}', desc: '6-значный код для сброса' },
     ],
   },
 ]
@@ -211,6 +284,9 @@ export default function AdminSettings() {
         )
       })}
 
+      {/* Email templates — collapsible */}
+      <EmailTemplatesBlock settings={settings} update={update} />
+
       {/* Env info (read-only) */}
       <div className="glass-card space-y-4">
         <div className="flex items-center gap-3 pb-1" style={{ borderBottom: '1px solid var(--glass-border)' }}>
@@ -263,6 +339,75 @@ export default function AdminSettings() {
             Только через install.sh
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function EmailTemplatesBlock({ settings, update }: { settings: Settings; update: (k: string, v: string) => void }) {
+  const [openTpl, setOpenTpl] = useState<string | null>(null)
+
+  return (
+    <div className="glass-card space-y-3">
+      <div className="flex items-center gap-3 pb-1" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+             style={{ background: 'rgba(6,182,212,0.1)' }}>
+          <Mail className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+        </div>
+        <div>
+          <h2 className="font-semibold">Шаблоны писем</h2>
+          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Если пусто — используется шаблон по умолчанию</p>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        {EMAIL_TEMPLATES.map(tpl => {
+          const isOpen = openTpl === tpl.key
+          const hasValue = !!(settings[tpl.key]?.trim())
+          return (
+            <div key={tpl.key} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
+              {/* Header — click to expand */}
+              <button onClick={() => setOpenTpl(isOpen ? null : tpl.key)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 transition-all hover:bg-white/[0.02]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">{tpl.label}</span>
+                  {hasValue && (
+                    <span className="badge-green text-[9px] flex-shrink-0">Настроен</span>
+                  )}
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                             style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+
+              {/* Expanded content */}
+              {isOpen && (
+                <div className="px-3 pb-3 space-y-2">
+                  <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{tpl.desc}</p>
+
+                  {/* Variables */}
+                  <div className="flex flex-wrap gap-1">
+                    {tpl.vars.map(v => (
+                      <span key={v.name} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px]"
+                            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                            title={v.desc}>
+                        <code style={{ color: 'var(--accent-1)' }}>{v.name}</code>
+                        <span style={{ color: 'var(--text-tertiary)' }}>— {v.desc}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Textarea */}
+                  <textarea
+                    className="glass-input text-xs font-mono w-full min-h-[100px]"
+                    value={settings[tpl.key] || ''}
+                    onChange={e => update(tpl.key, e.target.value)}
+                    placeholder={tpl.placeholder}
+                  />
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

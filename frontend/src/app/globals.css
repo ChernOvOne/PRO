@@ -7,7 +7,7 @@
 @layer base {
   * { box-sizing: border-box; }
 
-  /* ── Dark Theme (default) ── */
+  /* ── Base: Dark Theme ── */
   :root {
     --accent-1: #06b6d4;
     --accent-2: #8b5cf6;
@@ -30,15 +30,15 @@
     color-scheme: dark;
   }
 
-  /* ── Light Theme ── */
-  .light, [data-theme="light"] {
+  /* ── Light Theme (overrides via class from next-themes) ── */
+  html.light {
     --accent-1: #0891b2;
     --accent-2: #7c3aed;
     --accent-gradient: linear-gradient(135deg, #0891b2, #7c3aed);
     --accent-gradient-hover: linear-gradient(135deg, #06b6d4, #8b5cf6);
-    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-bg: rgba(0, 0, 0, 0.02);
     --glass-border: rgba(0, 0, 0, 0.08);
-    --glass-hover: rgba(255, 255, 255, 0.85);
+    --glass-hover: rgba(0, 0, 0, 0.04);
     --surface-0: #f8fafc;
     --surface-1: #f1f5f9;
     --surface-2: #e2e8f0;

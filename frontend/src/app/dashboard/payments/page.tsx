@@ -111,9 +111,19 @@ export default function PaymentHistoryPage() {
                   {/* Amount */}
                   <div className="text-right flex-shrink-0">
                     <p className="font-semibold" style={{ color: p.status === 'PAID' ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-                      {p.currency === 'RUB'
-                        ? `${p.amount.toLocaleString('ru')} ₽`
-                        : `${p.amount} ${p.currency}`}
+                      {(() => {
+                        // Parse metadata
+                        let meta: any = null
+                        try { meta = JSON.parse((p as any).yukassaStatus || '{}') } catch {}
+
+                        if (meta?._type === 'referral_redeem') return `Реф. дни: +${meta.days} дн.`
+                        if (meta?._type === 'bonus_redeem') return `Бонус дни: +${meta.days} дн.`
+                        if (p.purpose === 'GIFT' && p.amount === 0) return 'Подарок'
+                        if (p.amount === 0 && p.provider === 'MANUAL') return 'Бонус'
+                        return p.currency === 'RUB'
+                          ? `${p.amount.toLocaleString('ru')} ₽`
+                          : `${p.amount} ${p.currency}`
+                      })()}
                     </p>
                     {p.tariff?.durationDays && (
                       <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>

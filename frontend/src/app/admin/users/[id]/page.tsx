@@ -28,6 +28,7 @@ export default function AdminUserDetail() {
   const [showNotify, setShowNotify]     = useState(false)
   const [showNote, setShowNote]         = useState(false)
   const [showBalance, setShowBalance]   = useState(false)
+  const [showGrantDays, setShowGrantDays] = useState(false)
   const [showDelete, setShowDelete]     = useState(false)
   const [devicesOpen, setDevicesOpen]   = useState(false)
 
@@ -39,6 +40,8 @@ export default function AdminUserDetail() {
   const [noteText, setNoteText]         = useState('')
   const [balanceAmount, setBalanceAmount] = useState(0)
   const [balanceDesc, setBalanceDesc]   = useState('')
+  const [grantDaysCount, setGrantDaysCount] = useState(30)
+  const [grantDaysDesc, setGrantDaysDesc]   = useState('')
 
   const load = async () => {
     try {
@@ -162,6 +165,9 @@ export default function AdminUserDetail() {
         <button onClick={() => setShowBalance(true)} className="btn-secondary text-xs py-2 px-3">
           <DollarSign className="w-3.5 h-3.5" /> Баланс
         </button>
+        <button onClick={() => setShowGrantDays(true)} className="btn-secondary text-xs py-2 px-3">
+          <Calendar className="w-3.5 h-3.5" /> Выдать дни
+        </button>
         <button onClick={() => action(
           () => user.isActive ? adminApi.disableUser(id) : adminApi.enableUser(id),
           user.isActive ? 'Пользователь заблокирован' : 'Пользователь разблокирован'
@@ -217,6 +223,7 @@ export default function AdminUserDetail() {
               <p>Рефералов: {user._count?.referrals || user.referrals?.length || 0}</p>
               <p>Платежей: {user._count?.payments || user.payments?.length || 0}</p>
               <p>Баланс: {Number(user.balance || 0).toFixed(2)} ₽</p>
+              <p>Бонусные дни: {user.bonusDays ?? 0}</p>
             </div>
 
             {/* IP & Geo info */}
@@ -407,7 +414,15 @@ export default function AdminUserDetail() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold">
-                        {p.currency === 'RUB' ? `${p.amount.toLocaleString('ru')} ₽` : `${p.amount} ${p.currency}`}
+                        {(() => {
+                          let meta: any = null
+                          try { meta = JSON.parse(p.yukassaStatus || '{}') } catch {}
+                          if (meta?._type === 'referral_redeem') return `Реф. дни: +${meta.days} дн.`
+                          if (meta?._type === 'bonus_redeem') return `Бонус: +${meta.days} дн.`
+                          if (p.purpose === 'GIFT' && p.amount === 0) return 'Подарок'
+                          if (p.amount === 0 && p.provider === 'MANUAL') return 'Бонус'
+                          return p.currency === 'RUB' ? `${p.amount.toLocaleString('ru')} ₽` : `${p.amount} ${p.currency}`
+                        })()}
                       </p>
                       <span className={`badge-${p.status === 'PAID' ? 'green' : p.status === 'PENDING' ? 'yellow' : 'red'}`}>
                         {p.status}
@@ -515,6 +530,25 @@ export default function AdminUserDetail() {
             setShowBalance(false); setBalanceAmount(0); setBalanceDesc('')
           }} className="btn-primary w-full justify-center" disabled={acting || balanceAmount === 0}>
             {balanceAmount >= 0 ? `+${balanceAmount} ₽` : `${balanceAmount} ₽`}
+          </button>
+        </ModalOverlay>
+      )}
+
+      {/* Grant Days */}
+      {showGrantDays && (
+        <ModalOverlay onClose={() => setShowGrantDays(false)} title="Выдать бонусные дни">
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Текущие бонусные дни: <strong>{user.bonusDays ?? 0}</strong>
+          </p>
+          <input type="number" className="glass-input" placeholder="Количество дней"
+                 value={grantDaysCount} onChange={e => setGrantDaysCount(+e.target.value)} min={1} />
+          <input className="glass-input" placeholder="Описание (необязательно)"
+                 value={grantDaysDesc} onChange={e => setGrantDaysDesc(e.target.value)} />
+          <button onClick={() => {
+            action(() => adminApi.grantDays(id, grantDaysCount, grantDaysDesc), `+${grantDaysCount} бонусных дней`)
+            setShowGrantDays(false); setGrantDaysCount(30); setGrantDaysDesc('')
+          }} className="btn-primary w-full justify-center" disabled={acting || grantDaysCount < 1}>
+            +{grantDaysCount} бонусных дней
           </button>
         </ModalOverlay>
       )}

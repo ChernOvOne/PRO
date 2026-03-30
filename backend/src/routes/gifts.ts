@@ -58,7 +58,7 @@ export async function giftRoutes(app: FastifyInstance) {
         message:        data.message,
       })
 
-      return { ok: true, giftCode: gift.giftCode, giftUrl: `${process.env.APP_URL || ''}/dashboard?gift=${gift.giftCode}` }
+      return { ok: true, giftCode: gift.giftCode, giftUrl: `${process.env.APP_URL || ''}/present/${gift.giftCode}` }
     }
 
     // For YUKASSA/CRYPTOPAY, create payment with purpose=GIFT

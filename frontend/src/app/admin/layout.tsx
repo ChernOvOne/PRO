@@ -9,6 +9,7 @@ import {
   Package, TrendingUp, ChevronRight, Upload,
   Newspaper, Bell, Wifi, Globe,
 } from 'lucide-react'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const NAV = [
   { href: '/admin',              icon: LayoutDashboard, label: 'Дашборд' },
@@ -136,13 +137,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 md:ml-[250px]">
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 glass-sidebar">
+        {/* Desktop top bar */}
+        <div className="hidden md:flex items-center justify-end px-8 py-3 gap-2">
+          <ThemeToggle compact />
+        </div>
+        {/* Mobile header */}
+        <div className="md:hidden flex items-center justify-between px-4 py-3 glass-sidebar">
           <button onClick={() => setSideOpen(true)} className="p-1.5" style={{ color: 'var(--text-secondary)' }}>
             <Menu className="w-5 h-5" />
           </button>
           <span className="font-semibold text-sm">Admin Panel</span>
+          <ThemeToggle compact />
         </div>
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10 animate-fade-in">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 md:pt-0 relative z-10 animate-fade-in">
           {children}
         </main>
       </div>

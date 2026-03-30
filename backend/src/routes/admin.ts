@@ -523,6 +523,45 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ok: true, newBalance: Number(result.newBalance) }
   })
 
+  // Grant bonus days to a user
+  app.post('/users/:id/grant-days', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { days, description } = z.object({
+      days: z.coerce.number().min(1),
+      description: z.string().optional(),
+    }).parse(req.body)
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { bonusDays: { increment: days } },
+    })
+
+    // Log it as admin note
+    const adminId = (req.user as any).sub
+    await prisma.adminNote.create({
+      data: { userId: id, adminId, text: `Начислено ${days} бонусных дней${description ? ': ' + description : ''}` }
+    })
+
+    logger.info(`Admin granted ${days} bonus days to user ${id}`)
+    return { ok: true, newBonusDays: user.bonusDays }
+  })
+
+  // Grant bonus days to ALL users
+  app.post('/grant-days-all', admin, async (req, reply) => {
+    const { days, description } = z.object({
+      days: z.coerce.number().min(1),
+      description: z.string().optional(),
+    }).parse(req.body)
+
+    const result = await prisma.user.updateMany({
+      where: { isActive: true },
+      data: { bonusDays: { increment: days } },
+    })
+
+    logger.info(`Admin granted ${days} bonus days to all users (${result.count} users)`)
+    return { ok: true, updatedCount: result.count }
+  })
+
   // ─────────────────────────────────────────────────────────
   //  ADMIN NOTES
   // ─────────────────────────────────────────────────────────

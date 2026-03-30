@@ -69,7 +69,7 @@ export default function GiftPage() {
     }
   }
 
-  const giftUrl = (code: string) => `${window.location.origin}/dashboard?gift=${code}`
+  const giftUrl = (code: string) => `${window.location.origin}/present/${code}`
 
   const statusBadge = (status: string) => {
     switch (status) {

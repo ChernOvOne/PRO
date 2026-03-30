@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Users, DollarSign, TrendingUp, Activity,
          ArrowUpRight, Clock, Shield, Package,
-         CreditCard, BookOpen } from 'lucide-react'
+         CreditCard, BookOpen, Calendar } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { adminApi } from '@/lib/api'
 
 interface Stats {
   totalUsers:      number
@@ -19,6 +21,10 @@ interface Stats {
 export default function AdminDashboard() {
   const [stats, setStats]     = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showGrantAll, setShowGrantAll] = useState(false)
+  const [grantAllDays, setGrantAllDays] = useState(7)
+  const [grantAllDesc, setGrantAllDesc] = useState('')
+  const [grantAllLoading, setGrantAllLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/stats', { credentials: 'include' })
@@ -216,7 +222,7 @@ export default function AdminDashboard() {
             { href: '/admin/tariffs',       icon: Package,     label: 'Тарифы' },
             { href: '/admin/instructions',  icon: BookOpen,    label: 'Инструкции' },
             { href: '/admin/payments',      icon: CreditCard,  label: 'Платежи' },
-          ].map(({ href, icon: Icon, label }) => (
+          ].map(({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
             <Link key={href} href={href}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 group"
                   style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
@@ -229,8 +235,51 @@ export default function AdminDashboard() {
                             style={{ color: 'var(--text-tertiary)' }} />
             </Link>
           ))}
+          <button onClick={() => setShowGrantAll(true)}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 group"
+                  style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}>
+            <Calendar className="w-4 h-4" style={{ color: '#fbbf24' }} />
+            <span style={{ color: 'var(--text-secondary)' }}
+                  className="group-hover:text-[var(--text-primary)] transition-colors">
+              Выдать всем дни
+            </span>
+          </button>
         </div>
       </div>
+
+      {/* Grant days to all modal */}
+      {showGrantAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowGrantAll(false)} />
+          <div className="relative glass-card w-full max-w-md space-y-4 animate-scale-in"
+               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+            <h3 className="font-semibold text-lg">Выдать бонусные дни всем</h3>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Бонусные дни будут начислены всем активным пользователям.
+            </p>
+            <input type="number" className="glass-input" placeholder="Количество дней"
+                   value={grantAllDays} onChange={e => setGrantAllDays(+e.target.value)} min={1} />
+            <input className="glass-input" placeholder="Описание (необязательно)"
+                   value={grantAllDesc} onChange={e => setGrantAllDesc(e.target.value)} />
+            <div className="flex gap-2">
+              <button onClick={() => setShowGrantAll(false)} className="btn-secondary flex-1">Отмена</button>
+              <button disabled={grantAllLoading || grantAllDays < 1}
+                      onClick={async () => {
+                        setGrantAllLoading(true)
+                        try {
+                          const res = await adminApi.grantDaysAll(grantAllDays, grantAllDesc)
+                          toast.success(`+${grantAllDays} дней начислено ${res.updatedCount} пользователям`)
+                          setShowGrantAll(false); setGrantAllDays(7); setGrantAllDesc('')
+                        } catch (e: any) { toast.error(e.message || 'Ошибка') }
+                        finally { setGrantAllLoading(false) }
+                      }}
+                      className="btn-primary flex-1 justify-center">
+                {grantAllLoading ? 'Начисляю...' : `+${grantAllDays} дней всем`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

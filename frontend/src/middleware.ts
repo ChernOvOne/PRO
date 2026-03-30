@@ -7,6 +7,8 @@ const PUBLIC_EXACT    = ['/', '/login', '/privacy', '/terms', '/not-found']
 function isPublic(pathname: string): boolean {
   // Exact match for pages
   if (PUBLIC_EXACT.includes(pathname)) return true
+  // Gift present pages are public
+  if (pathname.startsWith('/present')) return true
   // Prefix match for API routes
   if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) return true
   // Static assets, health check
