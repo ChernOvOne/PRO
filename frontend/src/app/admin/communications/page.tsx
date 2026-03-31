@@ -899,7 +899,7 @@ function BroadcastsTab() {
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Варианты ответа</p>
                           {tgPollOptions.map((opt, i) => (
                             <div key={i} className="flex gap-2 items-center">
-                              <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                                 style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{i + 1}</span>
                               <input value={opt} onChange={e => updatePollOption(i, e.target.value)}
                                 placeholder={`Вариант ${i + 1}`} className="glass-input flex-1 text-sm" />
@@ -997,7 +997,7 @@ function BroadcastsTab() {
                                 </div>
                               ))}
                             </div>
-                            <p className="text-[10px] mt-2" style={{ color: '#64748b' }}>
+                            <p className="text-xs mt-2" style={{ color: '#64748b' }}>
                               {tgPollAnonymous ? 'Анонимный опрос' : 'Публичный опрос'}
                             </p>
                           </div>
@@ -1047,7 +1047,7 @@ function BroadcastsTab() {
                                style={{ background: t.bg, border: `1px solid ${t.border}` }}>
                             <div className="w-8 h-1.5 rounded-full" style={{ background: t.accent }} />
                           </div>
-                          <span className="text-[10px] font-medium" style={{
+                          <span className="text-xs font-medium" style={{
                             color: emailTemplate === t.id ? t.accent : 'var(--text-tertiary)',
                           }}>{t.name}</span>
                         </button>
@@ -1245,10 +1245,10 @@ function BroadcastsTab() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{n.title}</p>
-                          <span className={`${cfg.badgeClass} text-[10px]`}>{cfg.label}</span>
+                          <span className={`${cfg.badgeClass} text-xs`}>{cfg.label}</span>
                         </div>
                         <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
-                        <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{new Date(n.createdAt).toLocaleString('ru')}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{new Date(n.createdAt).toLocaleString('ru')}</span>
                       </div>
                       <button onClick={() => deleteNotif(n.id)}
                         className="p-1.5 rounded-lg hover:bg-red-500/10 transition-all flex-shrink-0" title="Удалить">
@@ -1289,7 +1289,7 @@ function BroadcastsTab() {
               <div className="mb-4">
                 <p className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
                   <MessageCircle className="w-3.5 h-3.5" /> Telegram
-                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{tgParseMode}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{tgParseMode}</span>
                 </p>
                 <div className="rounded-2xl overflow-hidden"
                   style={{
@@ -1341,7 +1341,7 @@ function BroadcastsTab() {
                           </div>
                         ))}
                       </div>
-                      <p className="text-[10px] mt-2" style={{ color: '#64748b' }}>
+                      <p className="text-xs mt-2" style={{ color: '#64748b' }}>
                         {tgPollAnonymous ? 'Анонимный опрос' : 'Публичный опрос'}
                       </p>
                     </div>
@@ -1647,7 +1647,7 @@ function FunnelsTab() {
       {/* Category filter */}
       <div className="flex gap-1.5 flex-wrap">
         <button onClick={() => setCatFilter('all')}
-          className="text-[10px] px-2.5 py-1 rounded-lg font-medium transition-all"
+          className="text-xs px-2.5.5 py-1 rounded-lg font-medium transition-all"
           style={{ background: catFilter === 'all' ? 'var(--accent-1)' : 'var(--glass-bg)', color: catFilter === 'all' ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${catFilter === 'all' ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
           Все ({funnels.length})
         </button>
@@ -1656,7 +1656,7 @@ function FunnelsTab() {
           if (count === 0 && cat.id !== 'custom') return null
           return (
             <button key={cat.id} onClick={() => setCatFilter(cat.id)}
-              className="text-[10px] px-2.5 py-1 rounded-lg font-medium transition-all"
+              className="text-xs px-2.5.5 py-1 rounded-lg font-medium transition-all"
               style={{ background: catFilter === cat.id ? 'var(--accent-1)' : 'var(--glass-bg)', color: catFilter === cat.id ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${catFilter === cat.id ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
               {cat.label} ({count})
             </button>
@@ -1680,9 +1680,9 @@ function FunnelsTab() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="text-sm font-semibold" style={{ color: f.enabled ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{f.name}</h4>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--glass-border)' }}>{f.triggerId}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--glass-border)' }}>{f.triggerId}</span>
               </div>
-              <div className="flex items-center gap-3 mt-0.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+              <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                 <span>{f.steps.length} {f.steps.length === 1 ? 'шаг' : f.steps.length < 5 ? 'шага' : 'шагов'}</span>
                 {f.steps[0] && <span><Clock className="w-3 h-3 inline mr-0.5" />{formatStepDelay(f.steps[0])}</span>}
                 {f.steps.some(s => s.channelTg) && <span className="text-cyan-400">TG</span>}
@@ -1693,7 +1693,7 @@ function FunnelsTab() {
             </div>
 
             <button onClick={() => test(f.id)} disabled={testingId === f.id}
-              className="text-[10px] px-2 py-1 rounded-lg font-medium transition-all hover:scale-105"
+              className="text-xs px-2.5 py-1 rounded-lg font-medium transition-all hover:scale-105"
               style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24' }}>
               {testingId === f.id ? '...' : '🧪 Тест'}
             </button>
@@ -1719,14 +1719,14 @@ function FunnelsTab() {
                   <div className="flex gap-1.5 flex-wrap mb-2">
                     {DELAY_TYPES.map(dt => (
                       <button key={dt.value} onClick={() => updStep(f.id, s.id, { delayType: dt.value })}
-                        className="text-[10px] px-2 py-0.5 rounded-lg" style={{ background: s.delayType === dt.value ? 'var(--accent-1)' : 'transparent', color: s.delayType === dt.value ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${s.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>{dt.label}</button>
+                        className="text-xs px-2.5 py-0.5 rounded-lg" style={{ background: s.delayType === dt.value ? 'var(--accent-1)' : 'transparent', color: s.delayType === dt.value ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${s.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>{dt.label}</button>
                     ))}
                   </div>
                   {['minutes','hours','days'].includes(s.delayType) && <input type="number" min={1} value={s.delayValue||1} onChange={e => updStep(f.id,s.id,{delayValue:+e.target.value})} className="glass-input w-20 text-xs mb-2" />}
                   {['exact_time','next_day_time'].includes(s.delayType) && <input type="time" value={s.delayTime||'10:00'} onChange={e => updStep(f.id,s.id,{delayTime:e.target.value})} className="glass-input w-28 text-xs mb-2" />}
                   {/* Condition */}
                   {si > 0 && <div className="mb-2">
-                    <select value={s.condition} onChange={e => updStep(f.id,s.id,{condition:e.target.value})} className="glass-input text-[10px] w-auto py-1">
+                    <select value={s.condition} onChange={e => updStep(f.id,s.id,{condition:e.target.value})} className="glass-input text-xs w-auto py-1">
                       {CONDITIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
                   </div>}
@@ -1735,29 +1735,66 @@ function FunnelsTab() {
                     {[{k:'channelTg' as const,l:'TG'},{k:'channelEmail' as const,l:'Email'},{k:'channelLk' as const,l:'ЛК'}].map(ch => (
                       <label key={ch.k} className="flex items-center gap-1 cursor-pointer">
                         <input type="checkbox" checked={s[ch.k]} onChange={() => updStep(f.id,s.id,{[ch.k]:!s[ch.k]})} className="w-3 h-3 rounded accent-purple-500" />
-                        <span className="text-[10px]" style={{color:'var(--text-secondary)'}}>{ch.l}</span>
+                        <span className="text-xs" style={{color:'var(--text-secondary)'}}>{ch.l}</span>
                       </label>
                     ))}
                   </div>
                   {/* TG */}
                   {s.channelTg && <div className="mb-2">
                     <textarea value={s.tgText||''} rows={2} onChange={e => updStep(f.id,s.id,{tgText:e.target.value})} className="glass-input w-full text-xs resize-y font-mono" placeholder="Текст TG ({name}, {daysLeft}...)" />
-                    <details className="mt-0.5"><summary className="text-[9px] cursor-pointer" style={{color:'var(--accent-1)'}}>📖 Переменные</summary>
-                      <div className="mt-1 p-1.5 rounded text-[9px] grid grid-cols-2 gap-x-3 gap-y-0" style={{background:'var(--surface-1)',color:'var(--text-tertiary)'}}>
-                        {['{name}','{email}','{daysLeft}','{subExpireDate}','{tariffName}','{amount}','{refName}','{referralUrl}','{generatedPromo}','{bonusDays}','{appUrl}','{trialDays}'].map(v => <span key={v}><code>{v}</code></span>)}
+                    <details className="mt-1"><summary className="text-xs cursor-pointer font-medium" style={{color:'var(--accent-1)'}}>📖 Доступные переменные</summary>
+                      <div className="mt-2 p-3 rounded-xl text-xs space-y-1" style={{background:'var(--surface-1)',border:'1px solid var(--glass-border)'}}>
+                        <p className="text-xs mb-3" style={{color:'var(--text-tertiary)'}}>Используйте в тексте — автоматически подставятся данные пользователя:</p>
+                        {[
+                          { title: '👤 Пользователь', vars: [
+                            ['{name}', 'Имя (TG или email)'], ['{email}', 'Email'], ['{telegramName}', 'TG username'],
+                            ['{telegramId}', 'TG ID'], ['{registrationDate}', 'Дата регистрации'], ['{lastLogin}', 'Последний вход'],
+                          ]},
+                          { title: '🔑 Подписка', vars: [
+                            ['{subStatus}', 'Статус (ACTIVE/INACTIVE/EXPIRED)'], ['{subExpireDate}', 'Дата окончания'],
+                            ['{daysLeft}', 'Дней осталось'], ['{trafficUsed}', 'Трафик использован (ГБ)'],
+                            ['{trafficLimit}', 'Лимит трафика'], ['{trafficPercent}', '% трафика'],
+                            ['{deviceCount}', 'Устройств подключено'], ['{deviceLimit}', 'Лимит устройств'],
+                          ]},
+                          { title: '💰 Финансы', vars: [
+                            ['{balance}', 'Баланс (₽)'], ['{bonusDays}', 'Бонусные дни'],
+                            ['{tariffName}', 'Тариф (при оплате)'], ['{amount}', 'Сумма платежа'],
+                            ['{topupAmount}', 'Сумма пополнения'],
+                          ]},
+                          { title: '👥 Рефералы', vars: [
+                            ['{referralUrl}', 'Реф. ссылка'], ['{referralCount}', 'Приглашено'],
+                            ['{referralPaidCount}', 'Оплатили'], ['{refName}', 'Имя реферала'],
+                            ['{refBonusDays}', 'Начислено дней'],
+                          ]},
+                          { title: '🎟 Промо и система', vars: [
+                            ['{promoCode}', 'Промокод'], ['{generatedPromo}', 'Автопромокод (действие шага)'],
+                            ['{trialDays}', 'Дней триала'], ['{appUrl}', 'URL сервиса'],
+                            ['{supportUrl}', 'Ссылка поддержки'], ['{channelUrl}', 'TG канал'],
+                          ]},
+                        ].map(section => (
+                          <div key={section.title} className="mb-2">
+                            <p className="text-xs font-medium mb-1" style={{color:'var(--text-secondary)'}}>{section.title}</p>
+                            <div className="grid gap-y-0.5" style={{gridTemplateColumns:'auto 1fr'}}>
+                              {section.vars.map(([v, desc]) => (
+                                <><code key={v} className="font-mono px-1.5 py-0.5 rounded mr-3 text-xs" style={{background:'rgba(139,92,246,0.08)',color:'#a78bfa'}}>{v}</code>
+                                <span className="text-xs" style={{color:'var(--text-tertiary)'}}>{desc}</span></>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </details>
                     {/* Buttons */}
                     <div className="mt-1.5 space-y-1">
                       {(s.tgButtons||[]).map((btn:any,bi:number) => (
                         <div key={bi} className="flex gap-1 items-center">
-                          <select value={btn.type||'callback'} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,type:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input w-20 text-[9px] py-0.5"><option value="callback">Меню</option><option value="url">URL</option><option value="webapp">WebApp</option></select>
-                          {btn.type==='callback'?<select value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];const o=BOT_BTN_OPTIONS.find(x=>x.value===e.target.value);b[bi]={...btn,data:e.target.value,label:o?.label||btn.label};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input flex-1 text-[9px] py-0.5"><option value="">...</option>{BOT_BTN_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-                          :<><input value={btn.label||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,label:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="Текст" className="glass-input w-24 text-[9px] py-0.5" /><input value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,data:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="URL" className="glass-input flex-1 text-[9px] py-0.5" /></>}
+                          <select value={btn.type||'callback'} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,type:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input w-20 text-xs py-1"><option value="callback">Меню</option><option value="url">URL</option><option value="webapp">WebApp</option></select>
+                          {btn.type==='callback'?<select value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];const o=BOT_BTN_OPTIONS.find(x=>x.value===e.target.value);b[bi]={...btn,data:e.target.value,label:o?.label||btn.label};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input flex-1 text-xs py-1"><option value="">...</option>{BOT_BTN_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+                          :<><input value={btn.label||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,label:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="Текст" className="glass-input w-24 text-xs py-1" /><input value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,data:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="URL" className="glass-input flex-1 text-xs py-1" /></>}
                           <button onClick={()=>{updStep(f.id,s.id,{tgButtons:(s.tgButtons||[]).filter((_:any,j:number)=>j!==bi)})}} className="p-0.5 rounded hover:bg-red-500/10"><Trash2 className="w-2.5 h-2.5 text-red-400"/></button>
                         </div>
                       ))}
-                      <button onClick={()=>updStep(f.id,s.id,{tgButtons:[...(s.tgButtons||[]),{type:'callback',label:'',data:''}]})} className="text-[9px] px-1.5 py-0.5 rounded" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)'}}>+ Кнопка</button>
+                      <button onClick={()=>updStep(f.id,s.id,{tgButtons:[...(s.tgButtons||[]),{type:'callback',label:'',data:''}]})} className="text-xs px-1.5 py-0.5 rounded" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)'}}>+ Кнопка</button>
                     </div>
                   </div>}
                   {/* Email */}
@@ -1773,22 +1810,22 @@ function FunnelsTab() {
                   </div>}
                   {/* Action */}
                   <div className="flex gap-2 items-center">
-                    <select value={s.actionType} onChange={e=>updStep(f.id,s.id,{actionType:e.target.value})} className="glass-input text-[10px] w-auto py-1">
+                    <select value={s.actionType} onChange={e=>updStep(f.id,s.id,{actionType:e.target.value})} className="glass-input text-xs w-auto py-1">
                       {ACTIONS.map(a=><option key={a.value} value={a.value}>{a.label}</option>)}
                     </select>
                     {s.actionType!=='none' && <>
-                      <input type="number" min={1} value={s.actionValue||0} onChange={e=>updStep(f.id,s.id,{actionValue:+e.target.value})} className="glass-input w-16 text-[10px] py-1" />
-                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>{ACTIONS.find(a=>a.value===s.actionType)?.unit}</span>
+                      <input type="number" min={1} value={s.actionValue||0} onChange={e=>updStep(f.id,s.id,{actionValue:+e.target.value})} className="glass-input w-16 text-xs py-1.5" />
+                      <span className="text-xs" style={{color:'var(--text-tertiary)'}}>{ACTIONS.find(a=>a.value===s.actionType)?.unit}</span>
                     </>}
                     {['promo_discount','promo_balance'].includes(s.actionType) && <>
-                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>действует</span>
-                      <input type="number" min={1} value={s.actionPromoExpiry||7} onChange={e=>updStep(f.id,s.id,{actionPromoExpiry:+e.target.value})} className="glass-input w-14 text-[10px] py-1" />
-                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>дн.</span>
+                      <span className="text-xs" style={{color:'var(--text-tertiary)'}}>действует</span>
+                      <input type="number" min={1} value={s.actionPromoExpiry||7} onChange={e=>updStep(f.id,s.id,{actionPromoExpiry:+e.target.value})} className="glass-input w-14 text-xs py-1.5" />
+                      <span className="text-xs" style={{color:'var(--text-tertiary)'}}>дн.</span>
                     </>}
                   </div>
                   {/* Save step */}
                   <div className="flex gap-2 mt-2">
-                    <button onClick={()=>saveStep(s.id)} disabled={savingId===s.id} className="btn-primary text-[10px] py-1 px-3">
+                    <button onClick={()=>saveStep(s.id)} disabled={savingId===s.id} className="btn-primary text-xs py-1.5 px-3">
                       {savingId===s.id?<Loader2 className="w-3 h-3 animate-spin"/>:<Save className="w-3 h-3"/>} Сохранить
                     </button>
                   </div>
@@ -1796,9 +1833,9 @@ function FunnelsTab() {
               ))}
               {/* Add step + funnel actions */}
               <div className="flex gap-2 flex-wrap">
-                <button onClick={()=>addStep(f.id)} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)',border:'1px solid rgba(6,182,212,0.15)'}}>+ Добавить шаг</button>
-                <button onClick={()=>test(f.id)} disabled={testingId===f.id} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'#fbbf24',background:'rgba(245,158,11,0.06)',border:'1px solid rgba(245,158,11,0.15)'}}>🧪 {testingId===f.id?'...':'Тест'}</button>
-                <button onClick={()=>del(f.id)} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'#f87171',background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.15)'}}><Trash2 className="w-3 h-3 inline mr-1"/>Удалить</button>
+                <button onClick={()=>addStep(f.id)} className="text-xs px-3 py-1.5 rounded-lg" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)',border:'1px solid rgba(6,182,212,0.15)'}}>+ Добавить шаг</button>
+                <button onClick={()=>test(f.id)} disabled={testingId===f.id} className="text-xs px-3 py-1.5 rounded-lg" style={{color:'#fbbf24',background:'rgba(245,158,11,0.06)',border:'1px solid rgba(245,158,11,0.15)'}}>🧪 {testingId===f.id?'...':'Тест'}</button>
+                <button onClick={()=>del(f.id)} className="text-xs px-3 py-1.5 rounded-lg" style={{color:'#f87171',background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.15)'}}><Trash2 className="w-3 h-3 inline mr-1"/>Удалить</button>
               </div>
             </div>
           )}
@@ -2155,7 +2192,7 @@ function ChatHistoryTab() {
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-[13px] font-medium truncate"
                         style={{ color: active ? '#a78bfa' : 'var(--text-primary)' }}>{chatDisplayName(item.user)}</span>
-                      <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-tertiary)' }}>{fmtChatDate(item.lastDate)}</span>
+                      <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-tertiary)' }}>{fmtChatDate(item.lastDate)}</span>
                     </div>
                     <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{item.lastMessage}</p>
                   </div>
@@ -2234,7 +2271,7 @@ function ChatHistoryTab() {
                         }}>
                         <p className="text-[13px] whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{msg.text}</p>
                         {renderButtons(msg.buttonsJson)}
-                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)', textAlign: isUser ? 'left' : 'right' }}>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)', textAlign: isUser ? 'left' : 'right' }}>
                           {new Date(msg.createdAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
