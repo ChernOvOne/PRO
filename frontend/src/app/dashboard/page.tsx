@@ -510,11 +510,11 @@ export default function DashboardPage() {
             <Users className="w-4 h-4" style={{ color: 'var(--accent-1)' }} /> Реферальная программа
           </h3>
           <p className="text-xs mb-3 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-            Приглашайте друзей по вашей ссылке. За каждого оплатившего друга вы получите +{config.referralBonusDays || 30} дней к своей подписке. Чем больше друзей — тем больше бонусов!
+            Приглашайте друзей. За каждого оплатившего — +{config.referralBonusDays || 30} дней к подписке.
           </p>
           <div className="flex items-center gap-3 mb-3">
             <div className="text-center flex-1">
-              <p className="text-xl font-bold">{referral?.referrals?.length ?? referralCount ?? 0}</p>
+              <p className="text-xl font-bold">{referral?.referrals?.length ?? 0}</p>
               <p className="text-[9px] uppercase" style={{ color: 'var(--text-tertiary)' }}>приглашено</p>
             </div>
             <div className="w-px h-8" style={{ background: 'var(--glass-border)' }} />
@@ -524,7 +524,7 @@ export default function DashboardPage() {
             </div>
             <div className="w-px h-8" style={{ background: 'var(--glass-border)' }} />
             <div className="text-center flex-1">
-              <p className="text-xl font-bold" style={{ color: 'var(--accent-1)' }}>+{referral?.bonusDaysEarned ?? bonusDaysEarned ?? 0}</p>
+              <p className="text-xl font-bold" style={{ color: 'var(--accent-1)' }}>+{referral?.bonusDaysEarned ?? 0}</p>
               <p className="text-[9px] uppercase" style={{ color: 'var(--text-tertiary)' }}>бонус дней</p>
             </div>
           </div>
@@ -534,9 +534,7 @@ export default function DashboardPage() {
             <button onClick={() => {
               if (navigator.share) {
                 navigator.share({ title: 'HIDEYOU VPN', text: 'Присоединяйся к HIDEYOU VPN!', url: referralUrl }).catch(() => {})
-              } else {
-                copyText(referralUrl, 'ref')
-              }
+              } else { copyText(referralUrl, 'ref') }
             }} className="p-1.5 rounded-lg hover:bg-white/5 flex-shrink-0">
               {copied === 'ref' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" style={{ color: 'var(--accent-1)' }} />}
             </button>
@@ -545,12 +543,47 @@ export default function DashboardPage() {
             </button>
           </div>
 
+          {/* Referral list */}
+          {referral?.referrals?.length > 0 && (
+            <div className="mb-3 space-y-1.5 max-h-[150px] overflow-y-auto">
+              {referral.referrals.map((r: any) => (
+                <div key={r.id} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg"
+                     style={{ background: 'var(--glass-bg)' }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                         style={{ background: r.hasPaid ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.1)', color: r.hasPaid ? '#34d399' : 'var(--text-tertiary)' }}>
+                      {r.displayName[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate">{r.displayName}</p>
+                      <p className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {new Date(r.joinedAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {r.hasPaid ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                            style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>Оплатил</span>
+                    ) : r.subStatus === 'ACTIVE' ? (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                            style={{ background: 'rgba(6,182,212,0.1)', color: '#22d3ee' }}>Тест</span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                            style={{ background: 'rgba(148,163,184,0.1)', color: 'var(--text-tertiary)' }}>Ожидание</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Redeem days button */}
-          {(referral?.bonusDaysEarned ?? bonusDaysEarned ?? 0) > 0 && (
-            <button onClick={() => { setShowRedeem(true); setRedeemDays(Math.min(referral?.bonusDaysEarned ?? bonusDaysEarned ?? 1, 30)) }}
+          {(referral?.bonusDaysEarned ?? 0) > 0 && (
+            <button onClick={() => { setShowRedeem(true); setRedeemDays(Math.min(referral?.bonusDaysEarned ?? 1, 30)) }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-all"
                     style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: 'var(--success)' }}>
-              <Zap className="w-3.5 h-3.5" /> Использовать {referral?.bonusDaysEarned ?? bonusDaysEarned} дней
+              <Zap className="w-3.5 h-3.5" /> Использовать {pluralDays(referral?.bonusDaysEarned ?? 0)}
             </button>
           )}
         </div>
@@ -706,7 +739,8 @@ export default function DashboardPage() {
               <div className="flex flex-wrap gap-1 mb-3">
                 {[
                   { key: 'all', label: 'Все' },
-                  { key: 'payment', label: 'Платежи' },
+                  { key: 'payment', label: 'Оплата' },
+                  { key: 'trial', label: 'Тест' },
                   { key: 'bonus_redeem', label: 'Бонусы' },
                   { key: 'referral_redeem', label: 'Рефералы' },
                   { key: 'promo', label: 'Промокоды' },
@@ -729,11 +763,13 @@ export default function DashboardPage() {
                   .filter(a => activityFilter === 'all' || a.type === activityFilter)
                   .map((a, idx, arr) => {
                     const colors: Record<string, string> = {
-                      payment: '#34d399', bonus_redeem: '#a78bfa', referral_redeem: '#22d3ee',
+                      payment: '#34d399', trial: '#a78bfa', bonus_redeem: '#c084fc',
+                      referral_redeem: '#22d3ee', balance_purchase: '#60a5fa',
                       promo: '#fbbf24', balance: '#60a5fa',
                     }
                     const labels: Record<string, string> = {
-                      payment: 'Платёж', bonus_redeem: 'Бонус', referral_redeem: 'Реферал',
+                      payment: 'Оплата', trial: 'Тест', bonus_redeem: 'Бонус дни',
+                      referral_redeem: 'Реф. дни', balance_purchase: 'С баланса',
                       promo: 'Промокод', balance: 'Баланс',
                     }
                     const color = colors[a.type] || 'var(--text-tertiary)'

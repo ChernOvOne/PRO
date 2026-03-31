@@ -186,9 +186,14 @@ export async function userRoutes(app: FastifyInstance) {
           select: {
             id: true, createdAt: true,
             telegramName: true, email: true,
+            subStatus: true,
             payments: {
-              where:  { status: 'PAID' },
-              select: { id: true },
+              where: {
+                status: 'PAID',
+                amount: { gt: 0 },
+                provider: { in: ['YUKASSA', 'CRYPTOPAY'] },
+              },
+              select: { id: true, amount: true, createdAt: true },
             },
           },
         },
@@ -207,7 +212,10 @@ export async function userRoutes(app: FastifyInstance) {
         id:          r.id,
         joinedAt:    r.createdAt,
         displayName: r.telegramName || r.email?.split('@')[0] || 'User',
-        hasPaid:     r.payments.length > 0,
+        subStatus:   r.subStatus,
+        hasPaid:     r.payments.length > 0,  // real money payments only
+        totalPaid:   r.payments.reduce((s: number, p: any) => s + (p.amount || 0), 0),
+        lastPayment: r.payments[0]?.createdAt || null,
       })),
       bonusDaysEarned: user.bonusHistory.reduce((s, b) => s + b.bonusDays, 0),
       bonusHistory:    user.bonusHistory,
@@ -722,7 +730,7 @@ export function parseYukassaStatus(raw: string | null): Record<string, any> | nu
 
 interface ActivityEntry {
   id: string
-  type: 'payment' | 'promo' | 'balance' | 'bonus_redeem' | 'referral_redeem'
+  type: 'payment' | 'trial' | 'promo' | 'balance' | 'bonus_redeem' | 'referral_redeem' | 'balance_purchase'
   description: string
   amount: number | null
   date: Date
@@ -740,7 +748,8 @@ export async function buildActivityLog(
   const entries: ActivityEntry[] = []
 
   // --- Payments ---
-  const includePayments = !types || types.some(t => ['payment', 'bonus_redeem', 'referral_redeem', 'bonus', 'referral'].includes(t))
+  const allPaymentTypes = ['payment', 'trial', 'bonus_redeem', 'referral_redeem', 'balance_purchase', 'bonus', 'referral']
+  const includePayments = !types || types.some(t => allPaymentTypes.includes(t))
   if (includePayments) {
     const payments = await prisma.payment.findMany({
       where:   { userId },
@@ -751,25 +760,30 @@ export async function buildActivityLog(
     for (const p of payments) {
       const meta = parseYukassaStatus(p.yukassaStatus)
       let entryType: ActivityEntry['type'] = 'payment'
+      if (meta?.type === 'trial')           entryType = 'trial'
       if (meta?.type === 'bonus_redeem')    entryType = 'bonus_redeem'
       if (meta?.type === 'referral_redeem') entryType = 'referral_redeem'
+      if (p.provider === 'BALANCE' && p.amount > 0) entryType = 'balance_purchase'
 
       // Apply type filter
       if (types) {
         const match = types.some(t => {
-          if (t === 'payment' && entryType === 'payment') return true
-          if (t === 'bonus_redeem' && entryType === 'bonus_redeem') return true
+          if (t === entryType) return true
           if (t === 'bonus' && entryType === 'bonus_redeem') return true
-          if (t === 'referral_redeem' && entryType === 'referral_redeem') return true
           if (t === 'referral' && entryType === 'referral_redeem') return true
           return false
         })
         if (!match) continue
       }
 
-      let desc = p.tariff?.name || `Платёж ${p.provider}`
-      if (entryType === 'bonus_redeem') desc = `Активация бонусных дней: ${meta?.days ?? '?'} дн.`
-      if (entryType === 'referral_redeem') desc = `Активация реферальных дней: ${meta?.days ?? '?'} дн.`
+      let desc = ''
+      switch (entryType) {
+        case 'trial':          desc = `Тестовый период: ${meta?.days ?? '?'} дн.`; break
+        case 'bonus_redeem':   desc = `Использование бонусных дней: ${meta?.days ?? '?'} дн.`; break
+        case 'referral_redeem': desc = `Использование реферальных дней: ${meta?.days ?? '?'} дн.`; break
+        case 'balance_purchase': desc = `Оплата с баланса: ${p.tariff?.name || 'Тариф'}`; break
+        default:               desc = p.amount > 0 ? `Оплата: ${p.tariff?.name || 'Тариф'}` : (p.tariff?.name || `Действие`); break
+      }
 
       entries.push({
         id:          p.id,
