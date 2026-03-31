@@ -168,10 +168,14 @@ export async function authRoutes(app: FastifyInstance) {
     })
     const { email, password, code, referralCode } = schema.parse(req.body)
 
-    // Verify email code
-    const verified = await verificationService.isRecentlyVerified(email, 'REGISTRATION')
+    // Verify email code — either already verified or verify now
+    let verified = await verificationService.isRecentlyVerified(email, 'REGISTRATION')
     if (!verified) {
-      return reply.status(400).send({ error: 'Email не подтверждён. Отправьте код подтверждения.' })
+      // Try to verify the code inline (user sends code with registration)
+      verified = await verificationService.verifyCode({ email, code, type: 'REGISTRATION' })
+    }
+    if (!verified) {
+      return reply.status(400).send({ error: 'Неверный или просроченный код подтверждения' })
     }
 
     // Check if email already taken
@@ -283,10 +287,13 @@ export async function authRoutes(app: FastifyInstance) {
     })
     const { email, code, newPassword } = schema.parse(req.body)
 
-    // Verify code
-    const verified = await verificationService.isRecentlyVerified(email, 'PASSWORD_RESET')
+    // Verify code — either already verified or verify now
+    let verified = await verificationService.isRecentlyVerified(email, 'PASSWORD_RESET')
     if (!verified) {
-      return reply.status(400).send({ error: 'Код не подтверждён' })
+      verified = await verificationService.verifyCode({ email, code, type: 'PASSWORD_RESET' })
+    }
+    if (!verified) {
+      return reply.status(400).send({ error: 'Неверный или просроченный код' })
     }
 
     const user = await prisma.user.findUnique({ where: { email } })
