@@ -321,9 +321,13 @@ function BroadcastsTab() {
   }, [channelMode])
 
   // ---- Audience options filtered by channel ----
+  // When email selected → hide "only with telegram" (obvious)
+  // When telegram selected → hide "only with email" (obvious)
+  // Also hide redundant "only with email"/"only with telegram" for single-channel modes
   const filteredAudienceOptions = AUDIENCE_OPTIONS.filter(opt => {
-    if (channelMode === 'email') return opt.value !== 'with_telegram'
-    if (channelMode === 'tg_bot') return opt.value !== 'with_email'
+    if (channelMode === 'email') return opt.value !== 'with_telegram' && opt.value !== 'with_email'
+    if (channelMode === 'tg_bot') return opt.value !== 'with_email' && opt.value !== 'with_telegram'
+    if (channelMode === 'lk') return opt.value !== 'with_email' && opt.value !== 'with_telegram'
     return true
   })
 
