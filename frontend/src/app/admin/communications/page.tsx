@@ -1785,16 +1785,16 @@ function FunnelsTab() {
                       </div>
                     </details>
                     {/* Buttons */}
-                    <div className="mt-1.5 space-y-1">
+                    <div className="mt-2 space-y-1.5">
                       {(s.tgButtons||[]).map((btn:any,bi:number) => (
-                        <div key={bi} className="flex gap-1 items-center">
-                          <select value={btn.type||'callback'} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,type:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input w-20 text-xs py-1"><option value="callback">Меню</option><option value="url">URL</option><option value="webapp">WebApp</option></select>
-                          {btn.type==='callback'?<select value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];const o=BOT_BTN_OPTIONS.find(x=>x.value===e.target.value);b[bi]={...btn,data:e.target.value,label:o?.label||btn.label};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input flex-1 text-xs py-1"><option value="">...</option>{BOT_BTN_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-                          :<><input value={btn.label||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,label:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="Текст" className="glass-input w-24 text-xs py-1" /><input value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,data:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="URL" className="glass-input flex-1 text-xs py-1" /></>}
-                          <button onClick={()=>{updStep(f.id,s.id,{tgButtons:(s.tgButtons||[]).filter((_:any,j:number)=>j!==bi)})}} className="p-0.5 rounded hover:bg-red-500/10"><Trash2 className="w-2.5 h-2.5 text-red-400"/></button>
+                        <div key={bi} className="flex gap-2 items-center">
+                          <select value={btn.type||'callback'} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,type:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input text-xs py-1.5 px-2 min-w-[100px] w-auto"><option value="callback">Меню</option><option value="url">URL</option><option value="webapp">WebApp</option></select>
+                          {btn.type==='callback'?<select value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];const o=BOT_BTN_OPTIONS.find(x=>x.value===e.target.value);b[bi]={...btn,data:e.target.value,label:o?.label||btn.label};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input flex-1 text-xs py-1.5 px-2"><option value="">Выберите кнопку...</option>{BOT_BTN_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+                          :<><input value={btn.label||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,label:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="Текст кнопки" className="glass-input w-36 text-xs py-1.5 px-2" /><input value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,data:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="https://..." className="glass-input flex-1 text-xs py-1.5 px-2" /></>}
+                          <button onClick={()=>{updStep(f.id,s.id,{tgButtons:(s.tgButtons||[]).filter((_:any,j:number)=>j!==bi)})}} className="p-1 rounded hover:bg-red-500/10"><Trash2 className="w-3.5 h-3.5 text-red-400"/></button>
                         </div>
                       ))}
-                      <button onClick={()=>updStep(f.id,s.id,{tgButtons:[...(s.tgButtons||[]),{type:'callback',label:'',data:''}]})} className="text-xs px-1.5 py-0.5 rounded" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)'}}>+ Кнопка</button>
+                      <button onClick={()=>updStep(f.id,s.id,{tgButtons:[...(s.tgButtons||[]),{type:'callback',label:'',data:''}]})} className="text-xs px-2 py-1 rounded" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)'}}>+ Кнопка</button>
                     </div>
                   </div>}
                   {/* Email */}
@@ -1809,17 +1809,17 @@ function FunnelsTab() {
                     <input value={s.lkMessage||''} onChange={e=>updStep(f.id,s.id,{lkMessage:e.target.value})} placeholder="Текст" className="glass-input w-full text-xs" />
                   </div>}
                   {/* Action */}
-                  <div className="flex gap-2 items-center">
-                    <select value={s.actionType} onChange={e=>updStep(f.id,s.id,{actionType:e.target.value})} className="glass-input text-xs w-auto py-1">
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <select value={s.actionType} onChange={e=>updStep(f.id,s.id,{actionType:e.target.value})} className="glass-input text-xs py-1.5 px-2 min-w-[180px] w-auto">
                       {ACTIONS.map(a=><option key={a.value} value={a.value}>{a.label}</option>)}
                     </select>
                     {s.actionType!=='none' && <>
-                      <input type="number" min={1} value={s.actionValue||0} onChange={e=>updStep(f.id,s.id,{actionValue:+e.target.value})} className="glass-input w-16 text-xs py-1.5" />
+                      <input type="number" min={1} value={s.actionValue||0} onChange={e=>updStep(f.id,s.id,{actionValue:+e.target.value})} className="glass-input w-20 text-xs py-1.5 px-2" />
                       <span className="text-xs" style={{color:'var(--text-tertiary)'}}>{ACTIONS.find(a=>a.value===s.actionType)?.unit}</span>
                     </>}
                     {['promo_discount','promo_balance'].includes(s.actionType) && <>
                       <span className="text-xs" style={{color:'var(--text-tertiary)'}}>действует</span>
-                      <input type="number" min={1} value={s.actionPromoExpiry||7} onChange={e=>updStep(f.id,s.id,{actionPromoExpiry:+e.target.value})} className="glass-input w-14 text-xs py-1.5" />
+                      <input type="number" min={1} value={s.actionPromoExpiry||7} onChange={e=>updStep(f.id,s.id,{actionPromoExpiry:+e.target.value})} className="glass-input w-20 text-xs py-1.5 px-2" />
                       <span className="text-xs" style={{color:'var(--text-tertiary)'}}>дн.</span>
                     </>}
                   </div>
