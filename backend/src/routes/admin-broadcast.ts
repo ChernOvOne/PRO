@@ -1,10 +1,25 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { InlineKeyboard } from 'grammy'
+import { InlineKeyboard, InputFile } from 'grammy'
+import { existsSync, createReadStream } from 'fs'
 import { prisma } from '../db'
 import { bot } from '../bot'
 import { emailService } from '../services/email'
 import { logger } from '../utils/logger'
+
+/** Convert media URL/path to something Telegram Bot API accepts */
+function resolveMedia(url: string): string | InputFile {
+  // Local uploads path → read from disk
+  if (url.startsWith('/uploads/') || url.startsWith('/app/uploads/')) {
+    const diskPath = url.startsWith('/app/') ? url : `/app${url}`
+    if (existsSync(diskPath)) return new InputFile(createReadStream(diskPath))
+  }
+  // Full URL → pass as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  // Try as local file
+  if (existsSync(url)) return new InputFile(createReadStream(url))
+  return url
+}
 
 // ── Audience filter builder ─────────────────────────────────
 function buildAudienceWhere(audience: string, channel?: string) {
@@ -178,20 +193,40 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
           // Send Telegram
           if (sendTelegram && user.telegramId) {
             try {
-              // Build inline keyboard
+              // Build inline keyboard (skip invalid URLs)
               let reply_markup: InlineKeyboard | undefined
               if (broadcast.tgButtons && Array.isArray(broadcast.tgButtons)) {
-                reply_markup = new InlineKeyboard()
-                for (const btn of broadcast.tgButtons as Array<{ label: string; url: string }>) {
-                  reply_markup.url(btn.label, btn.url).row()
+                const validBtns = (broadcast.tgButtons as Array<{ label: string; url: string }>)
+                  .filter(btn => btn.label && btn.url && /^https?:\/\/.+/.test(btn.url))
+                if (validBtns.length > 0) {
+                  reply_markup = new InlineKeyboard()
+                  for (const btn of validBtns) reply_markup.url(btn.label, btn.url).row()
                 }
               }
 
               const parseMode = (broadcast.tgParseMode as 'Markdown' | 'HTML') || 'Markdown'
 
-              // Send based on content type
+              // 1. Send media (photo/video/gif/doc) if attached
+              if (broadcast.tgMediaUrl && broadcast.tgMediaType) {
+                const media = resolveMedia(broadcast.tgMediaUrl)
+                // Caption only if no poll follows (otherwise text goes with poll or separate)
+                const hasPoll = !!(broadcast.tgPollQuestion && broadcast.tgPollOptions)
+                const caption = !hasPoll ? (broadcast.tgText || undefined) : undefined
+                const mediaOpts: any = {
+                  ...(caption && { caption, parse_mode: parseMode }),
+                  ...(!hasPoll && reply_markup && { reply_markup }),
+                }
+
+                switch (broadcast.tgMediaType) {
+                  case 'photo':     await bot.api.sendPhoto(user.telegramId, media, mediaOpts); break
+                  case 'video':     await bot.api.sendVideo(user.telegramId, media, mediaOpts); break
+                  case 'animation': await bot.api.sendAnimation(user.telegramId, media, mediaOpts); break
+                  case 'document':  await bot.api.sendDocument(user.telegramId, media, mediaOpts); break
+                }
+              }
+
+              // 2. Send poll if attached
               if (broadcast.tgPollQuestion && broadcast.tgPollOptions) {
-                // Send poll
                 const pollMsg = await bot.api.sendPoll(
                   user.telegramId,
                   broadcast.tgPollQuestion,
@@ -201,40 +236,18 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
                     allows_multiple_answers: broadcast.tgPollMultiple ?? false,
                   }
                 )
-                // Capture poll_id from first successful send
                 if (!broadcast.tgPollId && pollMsg.poll) {
-                  await prisma.broadcast.update({
-                    where: { id },
-                    data: { tgPollId: pollMsg.poll.id },
-                  }).catch(() => {})
-                  // Update local reference so we don't try again
+                  await prisma.broadcast.update({ where: { id }, data: { tgPollId: pollMsg.poll.id } }).catch(() => {})
                   ;(broadcast as any).tgPollId = pollMsg.poll.id
                 }
-                // Send text after poll if exists
-                if (broadcast.tgText) {
-                  await bot.api.sendMessage(user.telegramId, broadcast.tgText, { parse_mode: parseMode, reply_markup })
-                }
-              } else if (broadcast.tgMediaUrl && broadcast.tgMediaType) {
-                // Send media with caption
-                const caption = broadcast.tgText || undefined
-                const mediaOpts: any = { caption, parse_mode: parseMode, reply_markup }
+              }
 
-                switch (broadcast.tgMediaType) {
-                  case 'photo':
-                    await bot.api.sendPhoto(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
-                    break
-                  case 'video':
-                    await bot.api.sendVideo(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
-                    break
-                  case 'animation':
-                    await bot.api.sendAnimation(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
-                    break
-                  case 'document':
-                    await bot.api.sendDocument(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
-                    break
-                }
-              } else if (broadcast.tgText) {
-                // Text only
+              // 3. Send text separately if needed
+              const hasMedia = !!(broadcast.tgMediaUrl && broadcast.tgMediaType)
+              const hasPoll = !!(broadcast.tgPollQuestion && broadcast.tgPollOptions)
+              const textSentAsCaption = hasMedia && !hasPoll
+
+              if (broadcast.tgText && !textSentAsCaption) {
                 await bot.api.sendMessage(user.telegramId, broadcast.tgText, { parse_mode: parseMode, reply_markup })
               }
             } catch (err) {

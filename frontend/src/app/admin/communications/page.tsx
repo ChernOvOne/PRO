@@ -552,6 +552,33 @@ function BroadcastsTab() {
     setTimeout(() => { ta.focus() }, 0)
   }
 
+  const insertCustomEmoji = () => {
+    const emojiId = prompt('Введите ID премиум-эмоджи (custom_emoji_id):\n\nНайти ID можно: отправь эмоджи боту @RawDataBot')
+    if (!emojiId?.trim()) return
+    const ta = tgTextareaRef.current
+    const pos = ta ? ta.selectionStart : tgText.length
+    // Custom emoji works only in HTML parse mode
+    if (tgParseMode !== 'HTML') setTgParseMode('HTML')
+    const tag = `<tg-emoji emoji-id="${emojiId.trim()}">⭐</tg-emoji>`
+    const newText = tgText.substring(0, pos) + tag + tgText.substring(pos)
+    setTgText(newText)
+    setTimeout(() => { ta?.focus() }, 0)
+  }
+
+  const insertSpoiler = () => {
+    const ta = tgTextareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = tgText.substring(start, end) || 'скрытый текст'
+    const tag = tgParseMode === 'Markdown'
+      ? `||${selected}||`
+      : `<tg-spoiler>${selected}</tg-spoiler>`
+    const newText = tgText.substring(0, start) + tag + tgText.substring(end)
+    setTgText(newText)
+    setTimeout(() => { ta.focus() }, 0)
+  }
+
   const uploadMedia = async (file: File) => {
     setUploading(true)
     try {
@@ -753,6 +780,24 @@ function BroadcastsTab() {
                         color: 'var(--text-secondary)',
                       }}>
                       <Link2 className="w-3 h-3" /> Ссылка
+                    </button>
+                    <button onClick={insertSpoiler} title="Спойлер"
+                      className="px-2.5 py-1.5 rounded-lg text-xs transition-all hover:scale-105"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'var(--text-secondary)',
+                      }}>
+                      ▓ Спойлер
+                    </button>
+                    <button onClick={insertCustomEmoji} title="Премиум эмоджи"
+                      className="px-2.5 py-1.5 rounded-lg text-xs transition-all hover:scale-105"
+                      style={{
+                        background: 'rgba(139,92,246,0.08)',
+                        border: '1px solid rgba(139,92,246,0.2)',
+                        color: '#a78bfa',
+                      }}>
+                      ✨ Эмоджи
                     </button>
                   </div>
 
