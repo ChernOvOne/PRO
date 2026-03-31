@@ -404,7 +404,50 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        ) : config.features?.trial ? (
+          /* ── Trial offer — prominent, cannot be dismissed ── */
+          <div className="space-y-5 py-6">
+            <div className="text-center space-y-3">
+              <div className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center animate-float"
+                   style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.15))', border: '1px solid rgba(139,92,246,0.2)' }}>
+                <Gift className="w-10 h-10" style={{ color: '#a78bfa' }} />
+              </div>
+              <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                Попробуйте бесплатно!
+              </p>
+              <p className="text-sm leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-secondary)' }}>
+                Активируйте пробный период на <strong style={{ color: 'var(--accent-1)' }}>{config.features?.trialDays || 3} дней</strong> — полный доступ к VPN без ограничений и обязательств.
+              </p>
+            </div>
+
+            <button onClick={async () => {
+              try {
+                const res = await fetch('/api/user/trial/activate', { method: 'POST', credentials: 'include' })
+                const d = await res.json()
+                if (!res.ok) throw new Error(d.error || 'Ошибка')
+                toast.success(`Пробный период активирован! ${d.days} дней`)
+                window.location.reload()
+              } catch (e: any) { toast.error(e.message) }
+            }}
+              className="w-full py-4 rounded-2xl text-base font-semibold transition-all duration-300 flex items-center justify-center gap-3"
+              style={{
+                background: 'var(--accent-gradient)',
+                boxShadow: '0 4px 20px rgba(139,92,246,0.3), 0 0 60px rgba(6,182,212,0.08)',
+                color: '#fff',
+              }}>
+              <Gift className="w-5 h-5" /> Активировать пробный период
+            </button>
+
+            <div className="text-center">
+              <button onClick={() => setShowTariffs(true)}
+                      className="text-xs transition-opacity hover:opacity-80"
+                      style={{ color: 'var(--text-tertiary)' }}>
+                или выбрать тариф →
+              </button>
+            </div>
+          </div>
         ) : (
+          /* ── No trial — just show tariff button ── */
           <div className="flex flex-col items-center py-10 text-center space-y-4">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center gradient-border animate-float"
                  style={{ background: 'rgba(6,182,212,0.05)' }}>
@@ -412,21 +455,6 @@ export default function DashboardPage() {
             </div>
             <p className="text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Нет подписки</p>
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Выберите тариф, чтобы начать</p>
-            {config.features?.trial && (
-              <button onClick={async () => {
-                try {
-                  const res = await fetch('/api/user/trial/activate', { method: 'POST', credentials: 'include' })
-                  const d = await res.json()
-                  if (!res.ok) throw new Error(d.error || 'Ошибка')
-                  toast.success(`Пробный период активирован! ${d.days} дней`)
-                  window.location.reload()
-                } catch (e: any) { toast.error(e.message) }
-              }}
-                className="w-full py-3.5 rounded-2xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.15))', border: '1px solid rgba(139,92,246,0.25)', color: '#a78bfa' }}>
-                <Gift className="w-4 h-4" /> Пробный период ({config.features?.trialDays || 3} дней бесплатно)
-              </button>
-            )}
             <button onClick={() => setShowTariffs(true)} className="btn-primary px-8 py-3">
               <CreditCard className="w-4 h-4" /> Выбрать тариф
             </button>
