@@ -42,9 +42,13 @@ interface Broadcast {
 
 // ---- Funnel types ----
 interface FunnelConfig {
-  id: string; name: string; enabled: boolean; delay: number
-  channels: ('telegram' | 'email' | 'lk')[]
-  tgText?: string; emailSubject?: string; emailHtml?: string
+  id: string; triggerId: string; name: string; description?: string; enabled: boolean; isCustom: boolean
+  delayType: string; delayValue: number; delayTime?: string; delayWeekdays?: number[]
+  channelTg: boolean; channelEmail: boolean; channelLk: boolean
+  tgText?: string; tgButtons?: any[]; tgParseMode: string
+  emailSubject?: string; emailHtml?: string; emailBtnText?: string; emailBtnUrl?: string; emailTemplate: string
+  lkTitle?: string; lkMessage?: string; lkType: string
+  sortOrder: number; _count?: { logs: number }
 }
 
 // ---- Chat types ----
@@ -1441,170 +1445,382 @@ function BroadcastsTab() {
    TAB 2: AUTO-FUNNELS
    ============================================================ */
 
+const CATEGORIES = [
+  { id: 'onboarding', label: 'Онбординг', range: [100, 199] },
+  { id: 'subscription', label: 'Подписка', range: [200, 299] },
+  { id: 'payment', label: 'Оплата', range: [300, 399] },
+  { id: 'referral', label: 'Рефералы', range: [400, 499] },
+  { id: 'bonus', label: 'Бонусы', range: [500, 599] },
+  { id: 'security', label: 'Безопасность', range: [600, 699] },
+  { id: 'upsell', label: 'Апсейл', range: [700, 799] },
+  { id: 'social', label: 'Социальное', range: [800, 899] },
+  { id: 'engagement', label: 'Вовлечение', range: [900, 999] },
+  { id: 'feedback', label: 'Фидбек', range: [1000, 1099] },
+  { id: 'custom', label: 'Кастомные', range: [1100, 9999] },
+]
+
+const BOT_BTN_OPTIONS = [
+  { label: '💳 Тарифы', value: 'menu:tariffs' },
+  { label: '🔑 Подписка', value: 'menu:subscription' },
+  { label: '📖 Инструкции', value: 'menu:instructions' },
+  { label: '👥 Рефералы', value: 'menu:referral' },
+  { label: '💰 Баланс', value: 'menu:balance' },
+  { label: '🎟 Промокод', value: 'menu:promo' },
+  { label: '📱 Устройства', value: 'menu:devices' },
+]
+
+const DELAY_TYPES = [
+  { value: 'immediate', label: 'Сразу' },
+  { value: 'minutes', label: 'Минуты' },
+  { value: 'hours', label: 'Часы' },
+  { value: 'days', label: 'Дни' },
+  { value: 'exact_time', label: 'В точное время' },
+  { value: 'next_day_time', label: 'На след. день' },
+  { value: 'weekdays', label: 'По дням недели' },
+]
+
+const WEEKDAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+function formatDelay(f: FunnelConfig): string {
+  switch (f.delayType) {
+    case 'immediate': return 'Сразу'
+    case 'minutes': return `Через ${f.delayValue} мин.`
+    case 'hours': return `Через ${f.delayValue} ч.`
+    case 'days': return `Через ${f.delayValue} дн.`
+    case 'exact_time': return `В ${f.delayTime || '10:00'}`
+    case 'next_day_time': return `На след. день в ${f.delayTime || '10:00'}`
+    case 'weekdays': return `По дням в ${f.delayTime || '10:00'}`
+    default: return 'Сразу'
+  }
+}
+
+const funnelApi = (path: string, opts?: RequestInit) =>
+  fetch(`/api/admin/communications${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...opts?.headers }, ...opts })
+    .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`); return r.json() })
+
 function FunnelsTab() {
   const [funnels, setFunnels] = useState<FunnelConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [catFilter, setCatFilter] = useState('all')
+  const [showCreate, setShowCreate] = useState(false)
+  const [newTriggerId, setNewTriggerId] = useState('')
+  const [newName, setNewName] = useState('')
 
-  const loadFunnels = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true)
-    try {
-      const res = await fetch('/api/admin/communications/funnels', { credentials: 'include' })
-      if (!res.ok) throw new Error()
-      setFunnels(await res.json())
-    } catch { toast.error('Не удалось загрузить воронки') }
+    try { setFunnels(await funnelApi('/funnels')) }
+    catch { toast.error('Не удалось загрузить воронки') }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { loadFunnels() }, [loadFunnels])
+  useEffect(() => { load() }, [load])
 
-  const updateFunnel = (id: string, patch: Partial<FunnelConfig>) => {
+  const upd = (id: string, patch: Partial<FunnelConfig>) =>
     setFunnels(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f))
-  }
 
-  const toggleChannel = (id: string, ch: 'telegram' | 'email' | 'lk') => {
-    setFunnels(prev => prev.map(f => {
-      if (f.id !== id) return f
-      const channels = f.channels.includes(ch) ? f.channels.filter(c => c !== ch) : [...f.channels, ch]
-      return { ...f, channels }
-    }))
-  }
-
-  const saveFunnel = async (id: string) => {
+  const save = async (id: string) => {
     setSavingId(id)
+    const f = funnels.find(x => x.id === id)
+    if (!f) return
     try {
-      const res = await fetch('/api/admin/communications/funnels', {
-        method: 'PUT', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(funnels),
-      })
-      if (!res.ok) throw new Error()
+      await funnelApi(`/funnels/${id}`, { method: 'PUT', body: JSON.stringify(f) })
       toast.success('Сохранено')
-    } catch { toast.error('Ошибка сохранения') }
+    } catch { toast.error('Ошибка') }
     finally { setSavingId(null) }
   }
 
-  const formatDelay = (seconds: number) => {
-    if (seconds === 0) return 'сразу'
-    const h = Math.floor(seconds / 3600)
-    if (h < 24) return `через ${h} ч.`
-    const d = Math.floor(h / 24)
-    return `через ${d} д.`
+  const toggle = async (id: string) => {
+    try {
+      const res = await funnelApi(`/funnels/${id}/toggle`, { method: 'POST' })
+      upd(id, { enabled: res.enabled })
+    } catch { toast.error('Ошибка') }
   }
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-tertiary)' }} />
-      </div>
-    )
+  const test = async (id: string) => {
+    setTestingId(id)
+    try {
+      const res = await funnelApi(`/funnels/${id}/test`, { method: 'POST' })
+      toast.success(`Тест отправлен: ${res.sentTo} админам`)
+    } catch (e: any) { toast.error(e.message) }
+    finally { setTestingId(null) }
   }
+
+  const del = async (id: string) => {
+    if (!confirm('Удалить воронку?')) return
+    try { await funnelApi(`/funnels/${id}`, { method: 'DELETE' }); load() }
+    catch (e: any) { toast.error(e.message) }
+  }
+
+  const seed = async () => {
+    try {
+      const res = await funnelApi('/funnels/seed', { method: 'POST' })
+      toast.success(`Создано ${res.created} воронок`)
+      load()
+    } catch { toast.error('Ошибка') }
+  }
+
+  const create = async () => {
+    if (!newTriggerId || !newName) return
+    try {
+      await funnelApi('/funnels', { method: 'POST', body: JSON.stringify({ triggerId: newTriggerId, name: newName }) })
+      toast.success('Воронка создана')
+      setShowCreate(false); setNewTriggerId(''); setNewName('')
+      load()
+    } catch (e: any) { toast.error(e.message) }
+  }
+
+  const filtered = catFilter === 'all' ? funnels :
+    funnels.filter(f => {
+      const cat = CATEGORIES.find(c => c.id === catFilter)
+      return cat ? f.sortOrder >= cat.range[0] && f.sortOrder <= cat.range[1] : f.isCustom
+    })
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-tertiary)' }} /></div>
 
   return (
     <div className="space-y-4">
-      <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        Автоматические сообщения по триггерам. Каждую воронку можно включить/выключить и настроить отдельно.
-      </p>
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          {funnels.length} воронок · {funnels.filter(f => f.enabled).length} активных
+        </p>
+        <div className="flex gap-2">
+          {funnels.length === 0 && (
+            <button onClick={seed} className="btn-primary text-xs py-2 px-3"><Zap className="w-3.5 h-3.5" /> Загрузить стандартные</button>
+          )}
+          <button onClick={() => setShowCreate(true)} className="btn-secondary text-xs py-2 px-3"><Plus className="w-3.5 h-3.5" /> Создать</button>
+        </div>
+      </div>
 
-      {funnels.map(funnel => (
-        <div key={funnel.id} className="glass-card gradient-border">
-          {/* Header row */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Toggle */}
-            <button onClick={() => updateFunnel(funnel.id, { enabled: !funnel.enabled })}
+      {/* Category filter */}
+      <div className="flex gap-1.5 flex-wrap">
+        <button onClick={() => setCatFilter('all')}
+          className="text-[10px] px-2.5 py-1 rounded-lg font-medium transition-all"
+          style={{ background: catFilter === 'all' ? 'var(--accent-1)' : 'var(--glass-bg)', color: catFilter === 'all' ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${catFilter === 'all' ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
+          Все ({funnels.length})
+        </button>
+        {CATEGORIES.map(cat => {
+          const count = funnels.filter(f => f.sortOrder >= cat.range[0] && f.sortOrder <= cat.range[1]).length
+          if (count === 0 && cat.id !== 'custom') return null
+          return (
+            <button key={cat.id} onClick={() => setCatFilter(cat.id)}
+              className="text-[10px] px-2.5 py-1 rounded-lg font-medium transition-all"
+              style={{ background: catFilter === cat.id ? 'var(--accent-1)' : 'var(--glass-bg)', color: catFilter === cat.id ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${catFilter === cat.id ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
+              {cat.label} ({count})
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Funnels list */}
+      {filtered.map(f => (
+        <div key={f.id} className="glass-card !p-0 overflow-hidden"
+             style={{ borderLeft: `3px solid ${f.enabled ? '#34d399' : 'var(--glass-border)'}` }}>
+          {/* Header */}
+          <div className="flex items-center gap-3 p-4 flex-wrap">
+            <button onClick={() => toggle(f.id)}
               className="relative w-11 h-6 rounded-full transition-all duration-300 flex-shrink-0"
-              style={{ background: funnel.enabled ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.08)' }}>
+              style={{ background: f.enabled ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.08)' }}>
               <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
-                style={{ transform: funnel.enabled ? 'translateX(20px)' : 'translateX(0)' }} />
+                style={{ transform: f.enabled ? 'translateX(20px)' : 'translateX(0)' }} />
             </button>
 
-            {/* Name & delay */}
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-semibold" style={{ color: funnel.enabled ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-                {funnel.name}
-              </h4>
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                <Clock className="w-3 h-3 inline mr-1" />
-                {formatDelay(funnel.delay)}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-semibold" style={{ color: f.enabled ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{f.name}</h4>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--glass-border)' }}>{f.triggerId}</span>
+              </div>
+              <div className="flex items-center gap-3 mt-0.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                <span><Clock className="w-3 h-3 inline mr-0.5" />{formatDelay(f)}</span>
+                {f.channelTg && <span className="text-cyan-400">TG</span>}
+                {f.channelEmail && <span className="text-blue-400">Email</span>}
+                {f.channelLk && <span className="text-violet-400">ЛК</span>}
+                {(f._count?.logs ?? 0) > 0 && <span>📊 {f._count?.logs}</span>}
+              </div>
             </div>
 
-            {/* Channel checkboxes */}
-            <div className="flex gap-2">
-              {(['telegram', 'email', 'lk'] as const).map(ch => (
-                <label key={ch} className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={funnel.channels.includes(ch)}
-                    onChange={() => toggleChannel(funnel.id, ch)}
-                    className="w-3.5 h-3.5 rounded accent-purple-500" />
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {ch === 'telegram' ? 'TG' : ch === 'email' ? 'Email' : 'ЛК'}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <button onClick={() => test(f.id)} disabled={testingId === f.id}
+              className="text-[10px] px-2 py-1 rounded-lg font-medium transition-all hover:scale-105"
+              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24' }}>
+              {testingId === f.id ? '...' : '🧪 Тест'}
+            </button>
 
-            {/* Expand/collapse */}
-            <button onClick={() => setExpandedId(expandedId === funnel.id ? null : funnel.id)}
-              className="p-1.5 rounded-lg transition-all" style={{ color: 'var(--text-tertiary)' }}>
-              <ChevronDown className="w-4 h-4 transition-transform"
-                style={{ transform: expandedId === funnel.id ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+            <button onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}
+              className="p-1.5 rounded-lg" style={{ color: 'var(--text-tertiary)' }}>
+              <ChevronDown className="w-4 h-4 transition-transform" style={{ transform: expandedId === f.id ? 'rotate(180deg)' : '' }} />
             </button>
           </div>
 
-          {/* Expanded: editable fields */}
-          {expandedId === funnel.id && (
-            <div className="mt-4 space-y-4 pt-4" style={{ borderTop: '1px solid var(--glass-border)' }}>
-              {/* Delay */}
+          {/* Expanded */}
+          {expandedId === f.id && (
+            <div className="px-4 pb-4 space-y-4 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+              {/* Timer */}
               <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                  Задержка (секунды)
-                </label>
-                <input type="number" min={0} value={funnel.delay}
-                  onChange={e => updateFunnel(funnel.id, { delay: parseInt(e.target.value) || 0 })}
-                  className="glass-input w-full text-sm" />
-                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  0 = сразу, 3600 = 1 час, 86400 = 1 день
-                </p>
+                <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Таймер</p>
+                <div className="flex gap-1.5 flex-wrap mb-2">
+                  {DELAY_TYPES.map(dt => (
+                    <button key={dt.value} onClick={() => upd(f.id, { delayType: dt.value })}
+                      className="text-[10px] px-2 py-1 rounded-lg transition-all"
+                      style={{ background: f.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-bg)', color: f.delayType === dt.value ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${f.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
+                      {dt.label}
+                    </button>
+                  ))}
+                </div>
+                {['minutes', 'hours', 'days'].includes(f.delayType) && (
+                  <input type="number" min={1} value={f.delayValue || 1} onChange={e => upd(f.id, { delayValue: +e.target.value })}
+                    className="glass-input w-24 text-sm" />
+                )}
+                {['exact_time', 'next_day_time', 'weekdays'].includes(f.delayType) && (
+                  <input type="time" value={f.delayTime || '10:00'} onChange={e => upd(f.id, { delayTime: e.target.value })}
+                    className="glass-input w-32 text-sm" />
+                )}
+                {f.delayType === 'weekdays' && (
+                  <div className="flex gap-1 mt-2">
+                    {WEEKDAY_NAMES.map((d, i) => (
+                      <button key={i} onClick={() => {
+                        const wd = f.delayWeekdays || []
+                        upd(f.id, { delayWeekdays: wd.includes(i + 1) ? wd.filter((x: number) => x !== i + 1) : [...wd, i + 1] })
+                      }}
+                        className="w-8 h-8 rounded-lg text-[10px] font-medium transition-all"
+                        style={{ background: (f.delayWeekdays || []).includes(i + 1) ? 'var(--accent-1)' : 'var(--glass-bg)', color: (f.delayWeekdays || []).includes(i + 1) ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${(f.delayWeekdays || []).includes(i + 1) ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* TG text */}
-              {funnel.channels.includes('telegram') && (
-                <div>
-                  <label className="block text-xs font-medium mb-1.5 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-                    <MessageCircle className="w-3.5 h-3.5" /> Telegram текст
-                  </label>
-                  <textarea value={funnel.tgText || ''} rows={3}
-                    onChange={e => updateFunnel(funnel.id, { tgText: e.target.value })}
-                    className="glass-input w-full text-sm resize-y" placeholder="Текст сообщения для Telegram..." />
+              {/* Channels */}
+              <div>
+                <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Каналы</p>
+                <div className="flex gap-3">
+                  {[{ key: 'channelTg' as const, label: 'TG бот' }, { key: 'channelEmail' as const, label: 'Email' }, { key: 'channelLk' as const, label: 'ЛК' }].map(ch => (
+                    <label key={ch.key} className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={f[ch.key]} onChange={() => upd(f.id, { [ch.key]: !f[ch.key] })}
+                        className="w-3.5 h-3.5 rounded accent-purple-500" />
+                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{ch.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* TG message */}
+              {f.channelTg && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}>
+                    <MessageCircle className="w-3.5 h-3.5" /> Telegram
+                  </p>
+                  <textarea value={f.tgText || ''} rows={3} onChange={e => upd(f.id, { tgText: e.target.value })}
+                    className="glass-input w-full text-sm resize-y font-mono" placeholder="*жирный*, _курсив_" />
+                  {/* Bot buttons */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Кнопки</p>
+                    {(f.tgButtons || []).map((btn: any, i: number) => (
+                      <div key={i} className="flex gap-1.5 items-center">
+                        <select value={btn.type || 'callback'} onChange={e => {
+                          const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, type: e.target.value }; upd(f.id, { tgButtons: btns })
+                        }} className="glass-input w-24 text-[10px] py-1">
+                          <option value="callback">Бот меню</option>
+                          <option value="url">URL</option>
+                          <option value="webapp">WebApp</option>
+                        </select>
+                        {btn.type === 'callback' ? (
+                          <select value={btn.data || ''} onChange={e => {
+                            const btns = [...(f.tgButtons || [])]; const opt = BOT_BTN_OPTIONS.find(o => o.value === e.target.value)
+                            btns[i] = { ...btn, data: e.target.value, label: opt?.label || btn.label }; upd(f.id, { tgButtons: btns })
+                          }} className="glass-input flex-1 text-[10px] py-1">
+                            <option value="">Выберите...</option>
+                            {BOT_BTN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        ) : (
+                          <>
+                            <input value={btn.label || ''} onChange={e => { const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, label: e.target.value }; upd(f.id, { tgButtons: btns }) }}
+                              placeholder="Текст" className="glass-input w-28 text-[10px] py-1" />
+                            <input value={btn.data || ''} onChange={e => { const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, data: e.target.value }; upd(f.id, { tgButtons: btns }) }}
+                              placeholder="URL" className="glass-input flex-1 text-[10px] py-1" />
+                          </>
+                        )}
+                        <button onClick={() => { const btns = (f.tgButtons || []).filter((_: any, j: number) => j !== i); upd(f.id, { tgButtons: btns }) }}
+                          className="p-1 rounded hover:bg-red-500/10"><Trash2 className="w-3 h-3 text-red-400" /></button>
+                      </div>
+                    ))}
+                    <button onClick={() => upd(f.id, { tgButtons: [...(f.tgButtons || []), { type: 'callback', label: '', data: '' }] })}
+                      className="text-[10px] px-2 py-1 rounded-lg" style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)' }}>
+                      + Кнопка
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Email fields */}
-              {funnel.channels.includes('email') && (
-                <div className="space-y-3">
-                  <label className="block text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-                    <Mail className="w-3.5 h-3.5" /> Email
-                  </label>
-                  <input value={funnel.emailSubject || ''}
-                    onChange={e => updateFunnel(funnel.id, { emailSubject: e.target.value })}
-                    placeholder="Тема письма" className="glass-input w-full text-sm" />
-                  <textarea value={funnel.emailHtml || ''} rows={4}
-                    onChange={e => updateFunnel(funnel.id, { emailHtml: e.target.value })}
-                    placeholder="HTML-тело письма" className="glass-input w-full text-sm resize-y" />
+              {/* Email */}
+              {f.channelEmail && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}><Mail className="w-3.5 h-3.5" /> Email</p>
+                  <input value={f.emailSubject || ''} onChange={e => upd(f.id, { emailSubject: e.target.value })} placeholder="Тема" className="glass-input w-full text-sm" />
+                  <textarea value={f.emailHtml || ''} rows={3} onChange={e => upd(f.id, { emailHtml: e.target.value })} placeholder="HTML текст" className="glass-input w-full text-sm resize-y" />
+                  <div className="flex gap-2">
+                    <input value={f.emailBtnText || ''} onChange={e => upd(f.id, { emailBtnText: e.target.value })} placeholder="Кнопка текст" className="glass-input flex-1 text-sm" />
+                    <input value={f.emailBtnUrl || ''} onChange={e => upd(f.id, { emailBtnUrl: e.target.value })} placeholder="Кнопка URL" className="glass-input flex-1 text-sm" />
+                  </div>
                 </div>
               )}
 
-              {/* Save */}
-              <button onClick={() => saveFunnel(funnel.id)} disabled={savingId === funnel.id}
-                className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
-                {savingId === funnel.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Сохранить
-              </button>
+              {/* LK */}
+              {f.channelLk && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}><Bell className="w-3.5 h-3.5" /> ЛК уведомление</p>
+                  <input value={f.lkTitle || ''} onChange={e => upd(f.id, { lkTitle: e.target.value })} placeholder="Заголовок" className="glass-input w-full text-sm" />
+                  <textarea value={f.lkMessage || ''} rows={2} onChange={e => upd(f.id, { lkMessage: e.target.value })} placeholder="Текст" className="glass-input w-full text-sm resize-y" />
+                  <select value={f.lkType} onChange={e => upd(f.id, { lkType: e.target.value })} className="glass-input w-auto text-sm">
+                    <option value="INFO">Info</option><option value="WARNING">Warning</option><option value="SUCCESS">Success</option><option value="PROMO">Promo</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => save(f.id)} disabled={savingId === f.id} className="btn-primary text-xs py-2 px-4">
+                  {savingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Сохранить
+                </button>
+                <button onClick={() => test(f.id)} disabled={testingId === f.id} className="btn-secondary text-xs py-2 px-3">
+                  🧪 {testingId === f.id ? '...' : 'Тест'}
+                </button>
+                {f.isCustom && (
+                  <button onClick={() => del(f.id)} className="btn-danger text-xs py-2 px-3"><Trash2 className="w-3.5 h-3.5" /> Удалить</button>
+                )}
+              </div>
             </div>
           )}
         </div>
       ))}
+
+      {filtered.length === 0 && (
+        <div className="text-center py-12">
+          <Zap className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-tertiary)' }} />
+          <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет воронок</p>
+          <button onClick={seed} className="btn-primary mt-3 text-sm"><Zap className="w-4 h-4" /> Загрузить стандартные</button>
+        </div>
+      )}
+
+      {/* Create modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+          <div className="relative glass-card w-full max-w-md space-y-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+            <h3 className="font-semibold">Создать воронку</h3>
+            <input value={newTriggerId} onChange={e => setNewTriggerId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="trigger_id (латиница, _, цифры)" className="glass-input w-full text-sm" />
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название" className="glass-input w-full text-sm" />
+            <div className="flex gap-2">
+              <button onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Отмена</button>
+              <button onClick={create} disabled={!newTriggerId || !newName} className="btn-primary flex-1">Создать</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

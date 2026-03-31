@@ -517,6 +517,63 @@ model Broadcast {
   @@map("broadcasts")
 }
 
+// ── Auto-Funnels ─────────────────────────────────────────────
+model Funnel {
+  id            String   @id @default(uuid())
+  triggerId     String   @unique @map("trigger_id")
+  name          String
+  description   String?
+  enabled       Boolean  @default(false)
+
+  delayType     String   @default("immediate") @map("delay_type")
+  delayValue    Int      @default(0) @map("delay_value")
+  delayTime     String?  @map("delay_time")
+  delayWeekdays Json?    @map("delay_weekdays")
+
+  channelTg     Boolean  @default(false) @map("channel_tg")
+  channelEmail  Boolean  @default(false) @map("channel_email")
+  channelLk     Boolean  @default(false) @map("channel_lk")
+
+  tgText        String?  @map("tg_text")
+  tgButtons     Json?    @map("tg_buttons")
+  tgParseMode   String   @default("Markdown") @map("tg_parse_mode")
+
+  emailSubject  String?  @map("email_subject")
+  emailHtml     String?  @map("email_html")
+  emailBtnText  String?  @map("email_btn_text")
+  emailBtnUrl   String?  @map("email_btn_url")
+  emailTemplate String   @default("dark") @map("email_template")
+
+  lkTitle       String?  @map("lk_title")
+  lkMessage     String?  @map("lk_message")
+  lkType        String   @default("INFO") @map("lk_type")
+
+  isCustom      Boolean  @default(false) @map("is_custom")
+  sortOrder     Int      @default(0) @map("sort_order")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  logs          FunnelLog[]
+
+  @@map("funnels")
+}
+
+model FunnelLog {
+  id        String   @id @default(uuid())
+  funnelId  String   @map("funnel_id")
+  funnel    Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  channel   String
+  status    String   @default("sent")
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([funnelId, userId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("funnel_logs")
+}
+
 // ── Enums ────────────────────────────────────────────────────
 enum Role {
   USER
