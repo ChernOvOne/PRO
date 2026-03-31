@@ -90,6 +90,11 @@ export default function DashboardPage() {
   const [promoChecking, setPromoChecking]   = useState(false)
   const [promoActivating, setPromoActivating] = useState(false)
 
+  /* ── activity history ── */
+  const [activity, setActivity] = useState<any[]>([])
+  const [activityFilter, setActivityFilter] = useState('all')
+  const [historyOpen, setHistoryOpen] = useState(false)
+
   /* ── public config ── */
   const [config, setConfig] = useState<any>({})
 
@@ -114,6 +119,12 @@ export default function DashboardPage() {
     ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg, disc]) => {
       setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setMyGifts(Array.isArray(gifts) ? gifts : []); setConfig(cfg || {}); if (disc?.active) setActiveDiscount(disc)
     }).finally(() => setLoading(false))
+
+    // Load activity history separately
+    fetch('/api/user/activity?limit=50', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setActivity(d.items || []))
+      .catch(() => {})
   }, [])
 
   /* devices loaded in initial Promise.all */
@@ -624,6 +635,115 @@ export default function DashboardPage() {
                 )
               })}
           </div>
+        </div>
+      )}
+
+      {/* ═══════ 3.6. ACTIVITY HISTORY ═══════ */}
+      {activity.length > 0 && (
+        <div className="glass-card animate-slide-up" style={{ animationDelay: '120ms' }}>
+          <button onClick={() => setHistoryOpen(!historyOpen)} className="w-full flex items-center justify-between">
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              <Clock className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+              История ({activity.length})
+            </h3>
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${historyOpen ? 'rotate-180' : ''}`}
+                         style={{ color: 'var(--text-tertiary)' }} />
+          </button>
+          {historyOpen && (
+            <div className="mt-3 space-y-0">
+              {/* Filter pills */}
+              <div className="flex flex-wrap gap-1 mb-3">
+                {[
+                  { key: 'all', label: 'Все' },
+                  { key: 'payment', label: 'Платежи' },
+                  { key: 'bonus_redeem', label: 'Бонусы' },
+                  { key: 'referral_redeem', label: 'Рефералы' },
+                  { key: 'promo', label: 'Промокоды' },
+                  { key: 'balance', label: 'Баланс' },
+                ].map(f => (
+                  <button key={f.key} onClick={() => setActivityFilter(f.key)}
+                          className="text-[10px] px-2.5 py-1 rounded-lg font-medium transition-all"
+                          style={{
+                            background: activityFilter === f.key ? 'var(--accent-1)' : 'var(--glass-bg)',
+                            color: activityFilter === f.key ? '#fff' : 'var(--text-tertiary)',
+                            border: `1px solid ${activityFilter === f.key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                          }}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {/* Items */}
+              <div className="space-y-0 max-h-[300px] overflow-y-auto">
+                {activity
+                  .filter(a => activityFilter === 'all' || a.type === activityFilter)
+                  .map((a, idx, arr) => {
+                    const colors: Record<string, string> = {
+                      payment: '#34d399', bonus_redeem: '#a78bfa', referral_redeem: '#22d3ee',
+                      promo: '#fbbf24', balance: '#60a5fa',
+                    }
+                    const labels: Record<string, string> = {
+                      payment: 'Платёж', bonus_redeem: 'Бонус', referral_redeem: 'Реферал',
+                      promo: 'Промокод', balance: 'Баланс',
+                    }
+                    const color = colors[a.type] || 'var(--text-tertiary)'
+                    const isLast = idx === arr.length - 1
+                    return (
+                      <div key={a.id} className="flex gap-2.5">
+                        <div className="flex flex-col items-center" style={{ width: 24 }}>
+                          <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                               style={{ background: `${color}15`, color }}>
+                            {a.type === 'payment' ? <CreditCard className="w-3 h-3" /> :
+                             a.type === 'bonus_redeem' ? <Zap className="w-3 h-3" /> :
+                             a.type === 'referral_redeem' ? <Users className="w-3 h-3" /> :
+                             a.type === 'promo' ? <Tag className="w-3 h-3" /> :
+                             <Wallet className="w-3 h-3" />}
+                          </div>
+                          {!isLast && <div className="flex-1 w-px my-0.5" style={{ background: 'var(--glass-border)' }} />}
+                        </div>
+                        <div className="flex-1 min-w-0 pb-3">
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                {a.description}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                      style={{ background: `${color}12`, color, border: `1px solid ${color}25` }}>
+                                  {labels[a.type] || a.type}
+                                </span>
+                                {a.metadata?.promoCode && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                                        style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.2)' }}>
+                                    {a.metadata.promoCode}{a.metadata.discountPct ? ` -${a.metadata.discountPct}%` : ''}
+                                  </span>
+                                )}
+                                <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>
+                                  {new Date(a.date).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })}
+                                </span>
+                              </div>
+                            </div>
+                            {a.amount != null && a.amount !== 0 && (
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-xs font-semibold" style={{ color }}>
+                                  {a.type === 'balance' && a.amount > 0 ? '+' : ''}
+                                  {a.amount.toLocaleString?.('ru') ?? a.amount}
+                                  {a.metadata?.currency === 'RUB' || !a.metadata?.currency ? ' ₽' : ` ${a.metadata.currency}`}
+                                </p>
+                                {a.metadata?.originalAmount != null && a.metadata.originalAmount !== a.amount && (
+                                  <p className="text-[9px] line-through" style={{ color: 'var(--text-tertiary)' }}>
+                                    {a.metadata.originalAmount} ₽
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
