@@ -22,11 +22,11 @@ type TabKey = 'broadcasts' | 'funnels' | 'bot_settings' | 'chat_history'
 type Channel = 'telegram' | 'email' | 'both'
 type Audience =
   | 'all'
-  | 'active_subscription'
-  | 'no_subscription'
-  | 'expiring_subscription'
-  | 'email_only'
-  | 'telegram_only'
+  | 'active'
+  | 'inactive'
+  | 'expiring'
+  | 'with_email'
+  | 'with_telegram'
 
 type BroadcastStatus = 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'COMPLETED' | 'CANCELLED'
 
@@ -83,11 +83,11 @@ const broadcastAPI = (path: string, opts?: RequestInit) =>
 
 const AUDIENCE_OPTIONS: { value: Audience; label: string }[] = [
   { value: 'all', label: 'Все пользователи' },
-  { value: 'active_subscription', label: 'С активной подпиской' },
-  { value: 'no_subscription', label: 'Без подписки' },
-  { value: 'expiring_subscription', label: 'С истекающей подпиской (1-7 дней)' },
-  { value: 'email_only', label: 'Только с email' },
-  { value: 'telegram_only', label: 'Только с Telegram' },
+  { value: 'active', label: 'С активной подпиской' },
+  { value: 'inactive', label: 'Без подписки' },
+  { value: 'expiring', label: 'С истекающей подпиской (1-7 дней)' },
+  { value: 'with_email', label: 'Только с email' },
+  { value: 'with_telegram', label: 'Только с Telegram' },
 ]
 
 const STATUS_MAP: Record<BroadcastStatus, { label: string; cls: string; animate?: boolean }> = {
@@ -100,8 +100,8 @@ const STATUS_MAP: Record<BroadcastStatus, { label: string; cls: string; animate?
 
 const CHANNEL_LABELS: Record<Channel, string> = { telegram: 'Telegram', email: 'Email', both: 'Оба' }
 const AUDIENCE_LABELS: Record<Audience, string> = {
-  all: 'Все', active_subscription: 'С подпиской', no_subscription: 'Без подписки',
-  expiring_subscription: 'Истекающие', email_only: 'Email', telegram_only: 'Telegram',
+  all: 'Все', active: 'С подпиской', inactive: 'Без подписки',
+  expiring: 'Истекающие', with_email: 'Email', with_telegram: 'Telegram',
 }
 
 const NOTIF_TYPE_CONFIG: Record<string, { label: string; color: string; icon: string; badgeClass: string }> = {
@@ -364,8 +364,8 @@ function BroadcastsTab() {
     const channel = getBroadcastChannel()
     return {
       channel, audience,
-      ...(channel !== 'email' && { telegramText: tgText, telegramButtons: tgButtons.filter(b => b.label && b.url) }),
-      ...(channel !== 'telegram' && { emailSubject, emailBody, ...(emailCtaText && { emailCtaText }), ...(emailCtaUrl && { emailCtaUrl }) }),
+      ...(channel !== 'email' && { tgText, tgButtons: tgButtons.filter(b => b.label && b.url) }),
+      ...(channel !== 'telegram' && { emailSubject, emailHtml: emailBody, ...(emailCtaText && { emailBtnText: emailCtaText }), ...(emailCtaUrl && { emailBtnUrl: emailCtaUrl }) }),
       ...extra,
     }
   }
