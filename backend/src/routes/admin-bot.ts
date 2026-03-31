@@ -49,14 +49,17 @@ export async function adminBotRoutes(app: FastifyInstance) {
     const total = totalAgg.length
 
     // Fetch user info + last message text for each
-    const items = await Promise.all(
+    const chats = await Promise.all(
       grouped.map(async (g) => {
         const userId = g.userId!
 
         const [user, lastMsg] = await Promise.all([
           prisma.user.findUnique({
             where:  { id: userId },
-            select: { id: true, email: true, telegramId: true, telegramName: true },
+            select: {
+              id: true, email: true, telegramId: true, telegramName: true,
+              subStatus: true, balance: true, bonusDays: true, createdAt: true, role: true,
+            },
           }),
           prisma.botMessage.findFirst({
             where:   { userId },
@@ -66,15 +69,15 @@ export async function adminBotRoutes(app: FastifyInstance) {
         ])
 
         return {
-          user,
-          lastMessageText: lastMsg?.text ?? null,
-          lastMessageDate: lastMsg?.createdAt ?? g._max.createdAt,
-          messageCount:    g._count.id,
+          user: user ? { ...user, balance: Number(user.balance) } : null,
+          lastMessage:    lastMsg?.text ?? '',
+          lastDate:       (lastMsg?.createdAt ?? g._max.createdAt)?.toISOString() ?? null,
+          messageCount:   g._count.id,
         }
       }),
     )
 
-    return { items, total, page, limit }
+    return { chats, total, page, limit }
   })
 
   // ── GET /chats/:userId/messages — chat history for user ─────────
