@@ -8,12 +8,18 @@ import {
 import toast from 'react-hot-toast'
 
 interface Squad  { uuid: string; name: string; info: { membersCount: number } }
+interface TariffVariant { days: number; priceRub: number; priceUsdt?: number; label: string; trafficGb?: number; deviceLimit?: number }
+interface ConfiguratorParam { pricePerUnit: number; min: number; max: number; step: number; default: number }
+interface TariffConfigurator { traffic?: ConfiguratorParam; days?: ConfiguratorParam; devices?: ConfiguratorParam }
 interface Tariff {
   id: string; name: string; description?: string; type: 'SUBSCRIPTION' | 'TRAFFIC_ADDON'
   durationDays: number; priceRub: number; priceUsdt?: number
   deviceLimit: number; trafficGb?: number; trafficAddonGb?: number
   trafficStrategy: string; isActive: boolean; isFeatured: boolean; sortOrder: number
   remnawaveSquads: string[]; remnawaveTag?: string
+  mode?: 'simple' | 'variants' | 'configurator'
+  variants?: TariffVariant[]
+  configurator?: TariffConfigurator
 }
 
 const EMPTY_SUB: Partial<Tariff> = {
@@ -37,6 +43,9 @@ async function req(method: string, path: string, body?: any) {
 }
 
 // ── Form ──────────────────────────────────────────────────────
+const EMPTY_VARIANT: TariffVariant = { label: '', days: 30, priceRub: 0 }
+const EMPTY_CFG_PARAM: ConfiguratorParam = { pricePerUnit: 0, min: 1, max: 100, step: 1, default: 10 }
+
 function TariffForm({ initial, squads, onSave, onCancel }: {
   initial: Partial<Tariff>;
   squads: Squad[];
@@ -45,13 +54,38 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
 }) {
   const [form, setForm] = useState<Partial<Tariff>>(initial)
   const [saving, setSaving] = useState(false)
+  const [variants, setVariants] = useState<TariffVariant[]>(initial.variants ?? [])
+  const [cfgTraffic, setCfgTraffic] = useState<ConfiguratorParam>(initial.configurator?.traffic ?? { ...EMPTY_CFG_PARAM, max: 500, default: 50, pricePerUnit: 2 })
+  const [cfgDays, setCfgDays] = useState<ConfiguratorParam>(initial.configurator?.days ?? { ...EMPTY_CFG_PARAM, min: 7, max: 365, step: 1, default: 30, pricePerUnit: 5 })
+  const [cfgDevices, setCfgDevices] = useState<ConfiguratorParam>(initial.configurator?.devices ?? { ...EMPTY_CFG_PARAM, min: 1, max: 10, step: 1, default: 3, pricePerUnit: 30 })
+  const [cfgEnabled, setCfgEnabled] = useState<{ traffic: boolean; days: boolean; devices: boolean }>({
+    traffic: !!initial.configurator?.traffic,
+    days: !!initial.configurator?.days,
+    devices: !!initial.configurator?.devices,
+  })
+
   const set = (k: keyof Tariff, v: any) => setForm(f => ({ ...f, [k]: v }))
+  const mode = form.mode ?? 'simple'
 
   const save = async () => {
     setSaving(true)
     try {
       const isEdit = !!initial.id
-      const payload = { ...form }
+      const payload: any = { ...form }
+      if (mode === 'variants') {
+        payload.variants = variants
+        payload.configurator = null
+      } else if (mode === 'configurator') {
+        const cfg: any = {}
+        if (cfgEnabled.traffic) cfg.traffic = cfgTraffic
+        if (cfgEnabled.days) cfg.days = cfgDays
+        if (cfgEnabled.devices) cfg.devices = cfgDevices
+        payload.configurator = cfg
+        payload.variants = null
+      } else {
+        payload.variants = null
+        payload.configurator = null
+      }
       const result = isEdit
         ? await req('PATCH', `/api/admin/tariffs/${initial.id}`, payload)
         : await req('POST', '/api/admin/tariffs', payload)
@@ -67,6 +101,8 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
   }
 
   const isAddon = form.type === 'TRAFFIC_ADDON'
+
+  const inputCls = "w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-500/40 transition-all"
 
   return (
     <div className="rounded-3xl bg-white/4 border border-white/8 p-6 space-y-5">
@@ -96,70 +132,189 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
         ))}
       </div>
 
+      {/* Mode selector (only for subscriptions) */}
+      {!isAddon && (
+        <div className="flex gap-1 p-1 rounded-2xl bg-white/4 border border-white/8">
+          {([
+            { key: 'simple' as const, label: 'Простой' },
+            { key: 'variants' as const, label: 'С вариантами' },
+            { key: 'configurator' as const, label: 'Конфигуратор' },
+          ]).map(m => (
+            <button key={m.key} onClick={() => set('mode', m.key)}
+              className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium transition-all
+                          ${mode === m.key ? 'bg-violet-500/20 border border-violet-500/30 text-violet-300' : 'hover:bg-white/5'}`}
+              style={mode !== m.key ? { color: 'var(--text-tertiary)' } : undefined}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Common fields */}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1">
           <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Название *</label>
           <input value={form.name ?? ''} onChange={e => set('name', e.target.value)}
             placeholder={isAddon ? '+100 ГБ трафика' : 'Базовый · 1 месяц'}
-            className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                       text-sm focus:outline-none focus:border-violet-500/40 transition-all"
+            className={inputCls}
             style={{ color: 'var(--text-primary)' }} />
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена ₽ *</label>
-          <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
-            className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                       text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-            style={{ color: 'var(--text-primary)' }} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена USDT</label>
-          <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
-            className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                       text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-            style={{ color: 'var(--text-primary)' }} />
-        </div>
+        {mode === 'simple' && (
+          <>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена ₽ *</label>
+              <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
+                className={inputCls} style={{ color: 'var(--text-primary)' }} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена USDT</label>
+              <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
+                className={inputCls} style={{ color: 'var(--text-primary)' }} />
+            </div>
+          </>
+        )}
+        {(mode === 'variants' || mode === 'configurator') && (
+          <>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовая цена ₽ (отображение)</label>
+              <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
+                className={inputCls} style={{ color: 'var(--text-primary)' }} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовая цена USDT</label>
+              <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
+                className={inputCls} style={{ color: 'var(--text-primary)' }} />
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Subscription fields */}
+      {/* ── VARIANTS MODE ── */}
+      {!isAddon && mode === 'variants' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Варианты</label>
+            <button onClick={() => setVariants(v => [...v, { ...EMPTY_VARIANT }])}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium
+                         bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all">
+              <Plus className="w-3 h-3" /> Вариант
+            </button>
+          </div>
+          {variants.length === 0 && (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Добавьте хотя бы один вариант</p>
+          )}
+          {variants.map((v, i) => (
+            <div key={i} className="grid grid-cols-[1fr_80px_80px_80px_36px] gap-2 items-end">
+              <div className="space-y-1">
+                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Метка</label>
+                <input value={v.label} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], label: e.target.value }; setVariants(nv) }}
+                  placeholder="1 мес" className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Дней</label>
+                <input type="number" value={v.days} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], days: +e.target.value }; setVariants(nv) }}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Цена ₽</label>
+                <input type="number" value={v.priceRub} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceRub: +e.target.value }; setVariants(nv) }}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>USDT</label>
+                <input type="number" step="0.01" value={v.priceUsdt ?? ''} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceUsdt: +e.target.value || undefined }; setVariants(nv) }}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <button onClick={() => setVariants(v => v.filter((_, j) => j !== i))}
+                className="p-2 rounded-xl hover:bg-red-500/10 transition-all self-end mb-0.5">
+                <Trash2 className="w-4 h-4 text-red-400" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── CONFIGURATOR MODE ── */}
+      {!isAddon && mode === 'configurator' && (
+        <div className="space-y-4">
+          <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Параметры конфигуратора</label>
+          {([
+            { key: 'traffic' as const, label: 'Трафик (ГБ)', state: cfgTraffic, setState: setCfgTraffic },
+            { key: 'days' as const, label: 'Дни', state: cfgDays, setState: setCfgDays },
+            { key: 'devices' as const, label: 'Устройства', state: cfgDevices, setState: setCfgDevices },
+          ]).map(p => (
+            <div key={p.key} className="rounded-xl bg-white/3 border border-white/8 p-3 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={cfgEnabled[p.key]}
+                  onChange={e => setCfgEnabled(prev => ({ ...prev, [p.key]: e.target.checked }))}
+                  className="w-4 h-4 rounded accent-violet-500" />
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{p.label}</span>
+              </label>
+              {cfgEnabled[p.key] && (
+                <div className="grid grid-cols-5 gap-2">
+                  {(['pricePerUnit', 'min', 'max', 'step', 'default'] as const).map(f => (
+                    <div key={f} className="space-y-0.5">
+                      <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {f === 'pricePerUnit' ? '₽/ед' : f === 'min' ? 'Мин' : f === 'max' ? 'Макс' : f === 'step' ? 'Шаг' : 'По умолч.'}
+                      </label>
+                      <input type="number" value={p.state[f]} onChange={e => p.setState(prev => ({ ...prev, [f]: +e.target.value }))}
+                        className={inputCls} style={{ color: 'var(--text-primary)' }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Subscription fields (simple mode base fields, always shown for non-addon) */}
       {!isAddon && (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Дней *</label>
-              <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
-                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                           text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-                style={{ color: 'var(--text-primary)' }} />
+          {mode === 'simple' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Дней *</label>
+                <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Устройств</label>
+                <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Устройств</label>
-              <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
-                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                           text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-                style={{ color: 'var(--text-primary)' }} />
+          )}
+
+          {(mode === 'variants' || mode === 'configurator') && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовые дни (fallback)</label>
+                <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовые устройства</label>
+                <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
+                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Трафик ГБ (пусто = ∞)</label>
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Трафик ГБ (пусто = безлимит)</label>
               <input type="number" value={form.trafficGb ?? ''} onChange={e => set('trafficGb', +e.target.value || undefined)}
-                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                           text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-                style={{ color: 'var(--text-primary)' }} />
+                className={inputCls} style={{ color: 'var(--text-primary)' }} />
             </div>
             <div className="space-y-1">
               <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Стратегия трафика</label>
               <select value={form.trafficStrategy ?? 'MONTH'} onChange={e => set('trafficStrategy', e.target.value)}
-                className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                           text-sm focus:outline-none focus:border-violet-500/40 transition-all"
-                style={{ color: 'var(--text-primary)' }}>
-                <option value="MONTH">MONTH — сброс раз в месяц</option>
-                <option value="NO_RESET">NO_RESET — не сбрасывается</option>
-                <option value="WEEK">WEEK — сброс раз в неделю</option>
+                className={inputCls} style={{ color: 'var(--text-primary)' }}>
+                <option value="MONTH">MONTH -- сброс раз в месяц</option>
+                <option value="NO_RESET">NO_RESET -- не сбрасывается</option>
+                <option value="WEEK">WEEK -- сброс раз в неделю</option>
               </select>
             </div>
           </div>
@@ -168,8 +323,7 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
             <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tag в Remnawave</label>
             <input value={form.remnawaveTag ?? ''} onChange={e => set('remnawaveTag', e.target.value || undefined)}
               placeholder="premium / basic / ..."
-              className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                         text-sm font-mono focus:outline-none focus:border-violet-500/40 transition-all"
+              className={`${inputCls} font-mono`}
               style={{ color: 'var(--text-primary)' }} />
           </div>
 
@@ -206,8 +360,7 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
           <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Объём трафика ГБ *</label>
           <input type="number" value={form.trafficAddonGb ?? ''} onChange={e => set('trafficAddonGb', +e.target.value)}
             placeholder="100"
-            className="w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5
-                       text-sm focus:outline-none focus:border-violet-500/40 transition-all"
+            className={inputCls}
             style={{ color: 'var(--text-primary)' }} />
         </div>
       )}
@@ -223,7 +376,7 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.isFeatured ?? false} onChange={e => set('isFeatured', e.target.checked)}
               className="w-4 h-4 rounded accent-amber-400" />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный ★</span>
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный</span>
           </label>
         )}
       </div>
@@ -269,6 +422,8 @@ function TariffCard({ tariff, onEdit, onDelete }: {
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{tariff.name}</span>
               {tariff.isFeatured && <Star className="w-3.5 h-3.5 text-amber-400" fill="currentColor" />}
+              {tariff.mode === 'variants' && <span className="text-[10px] bg-blue-500/15 text-blue-300 px-1.5 py-0.5 rounded-full">варианты</span>}
+              {tariff.mode === 'configurator' && <span className="text-[10px] bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 rounded-full">конфигуратор</span>}
               {!tariff.isActive && <span className="text-xs bg-white/6 px-2 py-0.5 rounded-full" style={{ color: 'var(--text-tertiary)' }}>Неактивен</span>}
             </div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>

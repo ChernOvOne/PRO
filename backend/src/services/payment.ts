@@ -234,6 +234,25 @@ export class PaymentService {
 
     const { user, tariff } = payment
 
+    // Override tariff values from payment metadata (variants/configurator)
+    let meta: any = null
+    try { meta = JSON.parse(payment.yukassaStatus || '{}') } catch {}
+
+    let effectiveDays = tariff.durationDays
+    let effectiveTrafficGb = tariff.trafficGb
+    let effectiveDeviceLimit = tariff.deviceLimit
+
+    if (meta?._mode === 'variant') {
+      effectiveDays = meta.days ?? effectiveDays
+      if (meta.trafficGb != null) effectiveTrafficGb = meta.trafficGb
+      if (meta.deviceLimit != null) effectiveDeviceLimit = meta.deviceLimit
+    }
+    if (meta?._mode === 'configurator') {
+      effectiveDays = meta.days ?? effectiveDays
+      effectiveTrafficGb = meta.trafficGb ?? effectiveTrafficGb
+      effectiveDeviceLimit = meta.devices ?? effectiveDeviceLimit
+    }
+
     // Handle balance top-up
     if (payment.purpose === 'TOPUP') {
       await balanceService.credit({
@@ -280,8 +299,8 @@ export class PaymentService {
     let remnawaveUuid = user.remnawaveUuid
 
     // Convert tariff trafficGb to bytes (null = unlimited = 0)
-    const trafficLimitBytes = tariff.trafficGb ? tariff.trafficGb * 1024 * 1024 * 1024 : 0
-    const newExpireDate = new Date(Date.now() + tariff.durationDays * 86400_000)
+    const trafficLimitBytes = effectiveTrafficGb ? effectiveTrafficGb * 1024 * 1024 * 1024 : 0
+    const newExpireDate = new Date(Date.now() + effectiveDays * 86400_000)
 
     if (!remnawaveUuid) {
       // Create user in REMNAWAVE on first purchase
@@ -292,7 +311,7 @@ export class PaymentService {
         expireAt:             newExpireDate.toISOString(),
         trafficLimitBytes,
         trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
-        hwidDeviceLimit:      tariff.deviceLimit ?? 3,
+        hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
         tag:                  tariff.remnawaveTag ?? undefined,
         activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
       })
@@ -310,7 +329,7 @@ export class PaymentService {
       const rmUser = await remnawave.getUserByUuid(remnawaveUuid)
       const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
       const base = currentExpire > new Date() ? currentExpire : new Date()
-      base.setDate(base.getDate() + tariff.durationDays)
+      base.setDate(base.getDate() + effectiveDays)
 
       await remnawave.updateUser({
         uuid:                 remnawaveUuid,
@@ -318,7 +337,7 @@ export class PaymentService {
         expireAt:             base.toISOString(),
         trafficLimitBytes,
         trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
-        hwidDeviceLimit:      tariff.deviceLimit ?? 3,
+        hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
         tag:                  tariff.remnawaveTag ?? undefined,
         activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
       })
@@ -331,7 +350,7 @@ export class PaymentService {
 
     // Update local subscription status
     const newExpireAt = new Date()
-    newExpireAt.setDate(newExpireAt.getDate() + tariff.durationDays)
+    newExpireAt.setDate(newExpireAt.getDate() + effectiveDays)
 
     await prisma.user.update({
       where: { id: user.id },
@@ -347,7 +366,7 @@ export class PaymentService {
       await this.applyReferralBonus(user.referredById, payment.id)
     }
 
-    logger.info(`Payment confirmed: ${orderId}, user: ${user.id}, +${tariff.durationDays} days`)
+    logger.info(`Payment confirmed: ${orderId}, user: ${user.id}, +${effectiveDays} days`)
 
     // Send payment confirmation notifications (Telegram + Email)
     await notifications.paymentConfirmed(user.id, tariff.name, newExpireAt).catch(err =>

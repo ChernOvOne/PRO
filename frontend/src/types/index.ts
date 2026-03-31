@@ -37,6 +37,13 @@ export interface Tariff {
   isActive:        boolean
   remnawaveSquads?: string[]
   remnawaveTag?:   string
+  mode?:           'simple' | 'variants' | 'configurator'
+  variants?:       Array<{ days: number; priceRub: number; priceUsdt?: number; label: string; trafficGb?: number; deviceLimit?: number }>
+  configurator?:   {
+    traffic?: { pricePerUnit: number; min: number; max: number; step: number; default: number }
+    days?: { pricePerUnit: number; min: number; max: number; step: number; default: number }
+    devices?: { pricePerUnit: number; min: number; max: number; step: number; default: number }
+  }
 }
 
 // ── Payment ──────────────────────────────────────────────────

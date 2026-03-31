@@ -97,6 +97,11 @@ model Tariff {
   isFeatured      Boolean     @default(false) @map("is_featured")
   sortOrder       Int         @default(0) @map("sort_order")
 
+  // Tariff mode: simple (legacy), variants (multiple durations), configurator (user builds)
+  mode            String      @default("simple") @map("mode")
+  variants        Json?       @map("variants")       // [{days,priceRub,priceUsdt,label}]
+  configurator    Json?       @map("configurator")    // {traffic:{pricePerUnit,min,max,step,default},days:{...},devices:{...}}
+
   // REMNAWAVE config (for SUBSCRIPTION type)
   remnawaveSquads String[]    @default([]) @map("remnawave_squads")   // Internal squad UUIDs
   remnawaveTag    String?     @map("remnawave_tag")

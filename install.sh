@@ -147,6 +147,8 @@ SMTP_FROM=
 # ── Реферальная система ───────────────────────────────────────
 REFERRAL_BONUS_DAYS=30
 REFERRAL_MIN_DAYS=30
+REFERRAL_REWARD_TYPE=days
+REFERRAL_REWARD_AMOUNT=100
 
 # ── Функции ───────────────────────────────────────────────────
 FEATURE_CRYPTO_PAYMENTS=true
@@ -155,6 +157,11 @@ FEATURE_EMAIL_AUTH=true
 FEATURE_TELEGRAM_AUTH=true
 FEATURE_TRIAL=false
 TRIAL_DAYS=3
+FEATURE_GIFTS=true
+FEATURE_BALANCE=true
+
+GIFT_CODE_EXPIRY_DAYS=30
+VERIFICATION_CODE_TTL=600
 
 LOG_LEVEL=info
 ENVEOF

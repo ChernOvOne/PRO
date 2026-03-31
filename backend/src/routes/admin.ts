@@ -53,6 +53,9 @@ const TariffSchema = z.object({
   remnawaveSquads:  z.array(z.string()).default([]),
   remnawaveTag:     z.string().optional().nullable(),
   remnawaveTagIds:  z.array(z.string()).default([]),
+  mode:             z.enum(['simple', 'variants', 'configurator']).default('simple'),
+  variants:         z.any().optional().nullable(),
+  configurator:     z.any().optional().nullable(),
 })
 
 const InstructionSchema = z.object({
