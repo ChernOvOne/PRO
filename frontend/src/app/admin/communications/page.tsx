@@ -288,6 +288,7 @@ function BroadcastsTab() {
   const [emailBody, setEmailBody] = useState('')
   const [emailCtaText, setEmailCtaText] = useState('')
   const [emailCtaUrl, setEmailCtaUrl] = useState('')
+  const [emailTemplate, setEmailTemplate] = useState<'dark' | 'gradient' | 'minimal' | 'neon'>('dark')
   // LK (notification) fields
   const [notifTitle, setNotifTitle] = useState('')
   const [notifMessage, setNotifMessage] = useState('')
@@ -311,17 +312,39 @@ function BroadcastsTab() {
   const [notifPage, setNotifPage] = useState(1)
   const [notifLoading, setNotifLoading] = useState(false)
 
+  // ---- Map channelMode to backend channel ----
+  const getBroadcastChannel = useCallback(() => {
+    if (channelMode === 'tg_bot') return 'telegram'
+    if (channelMode === 'email') return 'email'
+    if (channelMode === 'all') return 'both'
+    return 'telegram' // lk doesn't use broadcast API
+  }, [channelMode])
+
+  // ---- Audience options filtered by channel ----
+  const filteredAudienceOptions = AUDIENCE_OPTIONS.filter(opt => {
+    if (channelMode === 'email') return opt.value !== 'with_telegram'
+    if (channelMode === 'tg_bot') return opt.value !== 'with_email'
+    return true
+  })
+
+  // Reset audience if current selection is no longer valid
+  useEffect(() => {
+    if (!filteredAudienceOptions.find(o => o.value === audience)) {
+      setAudience('all')
+    }
+  }, [channelMode])
+
   // ---- Fetch recipient count ----
-  const fetchCount = useCallback(async (aud: Audience) => {
+  const fetchCount = useCallback(async (aud: Audience, chan: string) => {
     setLoadingCount(true)
     try {
-      const data = await broadcastAPI(`/preview?audience=${aud}`)
-      setRecipientCount(data.count ?? data.recipientCount ?? 0)
+      const data = await broadcastAPI(`/preview?audience=${aud}&channel=${chan}`)
+      setRecipientCount(data.count ?? 0)
     } catch { setRecipientCount(null) }
     finally { setLoadingCount(false) }
   }, [])
 
-  useEffect(() => { fetchCount(audience) }, [audience, fetchCount])
+  useEffect(() => { fetchCount(audience, getBroadcastChannel()) }, [audience, channelMode, fetchCount, getBroadcastChannel])
 
   // ---- Fetch histories ----
   const loadHistory = useCallback(async () => {
@@ -351,21 +374,13 @@ function BroadcastsTab() {
     }
   }, [subTab, loadHistory, loadNotifHistory])
 
-  // ---- Build broadcast channel ----
-  const getBroadcastChannel = (): Channel => {
-    if (channelMode === 'tg_bot') return 'telegram'
-    if (channelMode === 'email') return 'email'
-    if (channelMode === 'all') return 'both'
-    return 'telegram' // fallback
-  }
-
   // ---- Actions ----
   const buildPayload = (extra: Record<string, unknown> = {}) => {
     const channel = getBroadcastChannel()
     return {
       channel, audience,
       ...(channel !== 'email' && { tgText, tgButtons: tgButtons.filter(b => b.label && b.url) }),
-      ...(channel !== 'telegram' && { emailSubject, emailHtml: emailBody, ...(emailCtaText && { emailBtnText: emailCtaText }), ...(emailCtaUrl && { emailBtnUrl: emailCtaUrl }) }),
+      ...(channel !== 'telegram' && { emailSubject, emailHtml: emailBody, emailTemplate, ...(emailCtaText && { emailBtnText: emailCtaText }), ...(emailCtaUrl && { emailBtnUrl: emailCtaUrl }) }),
       ...extra,
     }
   }
@@ -537,7 +552,7 @@ function BroadcastsTab() {
               )}
             </h3>
             <div className="space-y-1.5">
-              {AUDIENCE_OPTIONS.map(opt => (
+              {filteredAudienceOptions.map(opt => (
                 <label key={opt.value}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all"
                   style={{ background: audience === opt.value ? 'rgba(139,92,246,0.06)' : 'transparent' }}>
@@ -608,6 +623,34 @@ function BroadcastsTab() {
                       placeholder="CTA текст" className="glass-input flex-1 text-sm" />
                     <input value={emailCtaUrl} onChange={e => setEmailCtaUrl(e.target.value)}
                       placeholder="CTA URL" className="glass-input flex-1 text-sm" />
+                  </div>
+
+                  {/* Email template selector */}
+                  <div>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Шаблон письма</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {([
+                        { id: 'dark' as const, name: 'Тёмный', bg: '#1e293b', accent: '#5569ff', border: '#334155' },
+                        { id: 'gradient' as const, name: 'Градиент', bg: '#1e1b4b', accent: '#a78bfa', border: 'rgba(139,92,246,0.3)' },
+                        { id: 'minimal' as const, name: 'Светлый', bg: '#ffffff', accent: '#3b82f6', border: '#e2e8f0' },
+                        { id: 'neon' as const, name: 'Неон', bg: '#0a0a0a', accent: '#22d3ee', border: 'rgba(34,211,238,0.3)' },
+                      ]).map(t => (
+                        <button key={t.id} type="button" onClick={() => setEmailTemplate(t.id)}
+                          className="p-2 rounded-xl transition-all text-center"
+                          style={{
+                            border: `2px solid ${emailTemplate === t.id ? t.accent : 'var(--glass-border)'}`,
+                            background: emailTemplate === t.id ? `${t.accent}10` : 'transparent',
+                          }}>
+                          <div className="w-full h-8 rounded-lg mb-1.5 flex items-center justify-center"
+                               style={{ background: t.bg, border: `1px solid ${t.border}` }}>
+                            <div className="w-8 h-1.5 rounded-full" style={{ background: t.accent }} />
+                          </div>
+                          <span className="text-[10px] font-medium" style={{
+                            color: emailTemplate === t.id ? t.accent : 'var(--text-tertiary)',
+                          }}>{t.name}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

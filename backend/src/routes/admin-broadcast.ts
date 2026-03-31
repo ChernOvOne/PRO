@@ -1,50 +1,55 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { InlineKeyboard } from 'grammy'
-import nodemailer from 'nodemailer'
 import { prisma } from '../db'
 import { bot } from '../bot'
+import { emailService } from '../services/email'
 import { logger } from '../utils/logger'
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-})
-
 // ── Audience filter builder ─────────────────────────────────
-function buildAudienceWhere(audience: string) {
+function buildAudienceWhere(audience: string, channel?: string) {
   const now = new Date()
   const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
 
+  const base: any = {}
+
+  // Channel constraint: email needs email, telegram needs telegramId
+  if (channel === 'email') base.email = { not: null }
+  else if (channel === 'telegram') base.telegramId = { not: null }
+  else if (channel === 'both') {
+    // For "both" — user must have at least one contact method
+    base.OR = [{ email: { not: null } }, { telegramId: { not: null } }]
+  }
+
   switch (audience) {
     case 'all':
-      return { isActive: true }
+      return { ...base, isActive: true }
     case 'active':
-      return { subStatus: 'ACTIVE' as const }
+      return { ...base, subStatus: 'ACTIVE' as const }
     case 'inactive':
-      return { subStatus: { not: 'ACTIVE' as const } }
+      return { ...base, subStatus: { not: 'ACTIVE' as const } }
     case 'expiring':
       return {
+        ...base,
         subStatus: 'ACTIVE' as const,
         subExpireAt: { gte: now, lte: in7days },
       }
     case 'with_email':
-      return { email: { not: null } }
+      return { ...base, email: { not: null } }
     case 'with_telegram':
-      return { telegramId: { not: null } }
+      return { ...base, telegramId: { not: null } }
     default:
-      return { isActive: true }
+      return { ...base, isActive: true }
   }
 }
 
 export async function adminBroadcastRoutes(app: FastifyInstance) {
   const admin = { preHandler: [app.adminOnly] }
 
-  // ── GET /preview — count recipients for audience ────────────
+  // ── GET /preview — count recipients for audience + channel ───
   app.get('/preview', admin, async (req) => {
-    const qs = z.object({ audience: z.string() }).parse(req.query)
-    const count = await prisma.user.count({ where: buildAudienceWhere(qs.audience) })
+    const qs = z.object({ audience: z.string(), channel: z.string().optional() }).parse(req.query)
+    const count = await prisma.user.count({ where: buildAudienceWhere(qs.audience, qs.channel) })
     return { count }
   })
 
@@ -92,6 +97,7 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
         emailHtml:    z.string().optional(),
         emailBtnText: z.string().optional(),
         emailBtnUrl:  z.string().optional(),
+        emailTemplate: z.enum(['dark', 'gradient', 'minimal', 'neon']).default('dark'),
         scheduledAt:  z.string().datetime().optional(),
       })
       .parse(req.body)
@@ -126,7 +132,7 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Broadcast cannot be sent in current status' })
     }
 
-    const where = buildAudienceWhere(broadcast.audience)
+    const where = buildAudienceWhere(broadcast.audience, broadcast.channel)
     const recipients = await prisma.user.findMany({
       where,
       select: { id: true, telegramId: true, email: true },
@@ -177,21 +183,19 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
             }
           }
 
-          // Send Email
+          // Send Email (via emailService — uses DB SMTP settings + templates)
           if (sendEmail && user.email && broadcast.emailSubject && broadcast.emailHtml) {
             try {
-              let html = broadcast.emailHtml
-              if (broadcast.emailBtnText && broadcast.emailBtnUrl) {
-                html += `<br/><a href="${broadcast.emailBtnUrl}" style="display:inline-block;padding:12px 24px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;">${broadcast.emailBtnText}</a>`
-              }
-              await transporter.sendMail({
-                from: process.env.SMTP_FROM || process.env.SMTP_USER,
+              await emailService.sendBroadcastEmail({
                 to: user.email,
                 subject: broadcast.emailSubject,
-                html,
+                html: broadcast.emailHtml,
+                btnText: broadcast.emailBtnText ?? undefined,
+                btnUrl: broadcast.emailBtnUrl ?? undefined,
+                template: (broadcast as any).emailTemplate ?? 'dark',
               })
             } catch (err) {
-              logger.warn('Broadcast email send failed', { err, userId: user.id, email: user.email })
+              logger.warn(`Broadcast email failed for ${user.email}: ${err}`)
               failedCount++
               continue
             }
