@@ -98,6 +98,22 @@ function LoginContent() {
     window.location.href = target
   }, [params])
 
+  // ── Telegram MiniApp auto-login ──
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp
+    if (tg?.initData) {
+      setLoading(true)
+      fetch('/api/auth/telegram-mini-app', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData }),
+      })
+        .then(r => { if (r.ok) return r.json(); throw new Error() })
+        .then(d => { tg.expand?.(); redirectAfterAuth(d.user) })
+        .catch(() => setLoading(false))
+    }
+  }, [redirectAfterAuth])
+
   // ── Telegram widget ──
   useEffect(() => {
     if (tab !== 'telegram' || !tgRef.current) return
