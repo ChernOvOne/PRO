@@ -169,7 +169,7 @@ async function createTrialSubscription(userId: string) {
   const expireAt = new Date(Date.now() + trialDays * 86400_000).toISOString()
 
   const rmUser = await remnawave.createUser({
-    username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+    username: user.email ? user.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_') : user.telegramId ? `tg_${user.telegramId}` : `user_${user.id.slice(0, 8)}`,
     email: user.email ?? undefined,
     telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
     expireAt,

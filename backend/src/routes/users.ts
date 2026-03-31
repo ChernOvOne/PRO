@@ -8,6 +8,13 @@ import { paymentService }  from '../services/payment'
 import { config }    from '../config'
 import { logger }    from '../utils/logger'
 
+/** REMNAWAVE username: only letters, numbers, underscores, dashes */
+function toRmUsername(user: { email?: string | null; telegramId?: string | null; id: string }): string {
+  if (user.email) return user.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_')
+  if (user.telegramId) return `tg_${user.telegramId}`
+  return `user_${user.id.slice(0, 8)}`
+}
+
 function getClientIp(req: any): string | null {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim()
     || req.headers['x-real-ip']
@@ -567,7 +574,7 @@ export async function userRoutes(app: FastifyInstance) {
       if (!cheapestTariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
       const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
       const rmUser = await remnawave.createUser({
-        username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        username: toRmUsername(user),
         email: user.email ?? undefined,
         telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
         expireAt: new Date(Date.now() + days * 86400_000).toISOString(),
@@ -638,7 +645,7 @@ export async function userRoutes(app: FastifyInstance) {
 
     try {
       const rmUser = await remnawave.createUser({
-        username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        username: toRmUsername(user),
         email: user.email ?? undefined,
         telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
         expireAt,
