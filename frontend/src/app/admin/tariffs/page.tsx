@@ -17,7 +17,7 @@ interface Tariff {
   id: string; name: string; description?: string; type: 'SUBSCRIPTION' | 'TRAFFIC_ADDON'
   durationDays: number; priceRub: number; priceUsdt?: number
   deviceLimit: number; trafficGb?: number; trafficAddonGb?: number
-  trafficStrategy: string; isActive: boolean; isFeatured: boolean; sortOrder: number
+  trafficStrategy: string; isActive: boolean; isVisible: boolean; isFeatured: boolean; isTrial: boolean; sortOrder: number
   remnawaveSquads: string[]; remnawaveTag?: string
   mode?: 'simple' | 'variants' | 'configurator'
   variants?: TariffVariant[]
@@ -27,12 +27,12 @@ interface Tariff {
 
 const EMPTY_SUB: Partial<Tariff> = {
   type: 'SUBSCRIPTION', name: '', durationDays: 30, priceRub: 0,
-  deviceLimit: 3, trafficStrategy: 'MONTH', isActive: true,
-  isFeatured: false, sortOrder: 0, remnawaveSquads: [], mode: 'simple',
+  deviceLimit: 3, trafficStrategy: 'MONTH', isActive: true, isVisible: true,
+  isFeatured: false, isTrial: false, sortOrder: 0, remnawaveSquads: [], mode: 'simple',
 }
 const EMPTY_ADDON: Partial<Tariff> = {
   type: 'TRAFFIC_ADDON', name: '', priceRub: 0, trafficAddonGb: 100,
-  isActive: true, sortOrder: 0, remnawaveSquads: [],
+  isActive: true, isVisible: true, isTrial: false, sortOrder: 0, remnawaveSquads: [],
 }
 
 async function req(method: string, path: string, body?: any) {
@@ -626,11 +626,23 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
               className="w-4 h-4 rounded accent-[var(--accent-1)]" />
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Активен</span>
           </label>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.isVisible ?? true} onChange={e => set('isVisible', e.target.checked)}
+              className="w-4 h-4 rounded accent-[#60a5fa]" />
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Видимый</span>
+          </label>
           {!isAddon && (
             <label className="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" checked={form.isFeatured ?? false} onChange={e => set('isFeatured', e.target.checked)}
                 className="w-4 h-4 rounded accent-[var(--warning)]" />
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный</span>
+            </label>
+          )}
+          {!isAddon && (
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={form.isTrial ?? false} onChange={e => set('isTrial', e.target.checked)}
+                className="w-4 h-4 rounded accent-[#a78bfa]" />
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Тестовый</span>
             </label>
           )}
           <div className="flex items-center gap-2">
@@ -716,6 +728,8 @@ function TariffCard({ tariff, squads, expanded, onToggle, onSave, onDelete }: {
               </span>
             )}
             {!tariff.isActive && <span className="badge-gray text-[10px]">Неактивен</span>}
+            {!(tariff as any).isVisible && <span className="badge-gray text-[10px]">Скрыт</span>}
+            {(tariff as any).isTrial && <span className="badge-violet text-[10px]">Тестовый</span>}
           </div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             {isAddon
