@@ -81,12 +81,20 @@ class EmailService {
       return false
     }
     try {
+      // Strip HTML tags for plain-text fallback (improves deliverability)
+      const autoText = params.text || params.html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+
       await this.transporter.sendMail({
         from:    `HIDEYOU VPN <${this.fromAddress}>`,
+        replyTo: this.fromAddress,
         to:      params.to,
         subject: params.subject,
         html:    params.html,
-        text:    params.text,
+        text:    autoText,
+        headers: {
+          'X-Mailer': 'HIDEYOU VPN Platform',
+          'List-Unsubscribe': `<mailto:${this.fromAddress}?subject=unsubscribe>`,
+        },
       })
       logger.info(`Email sent: ${params.to} — ${params.subject}`)
       return true
