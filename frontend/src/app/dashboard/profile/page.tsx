@@ -1,13 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Mail, MessageCircle, Calendar, Edit3, Save, X, Loader2,
-         RefreshCw, AlertTriangle, Shield, Lock, Eye, EyeOff, KeyRound } from 'lucide-react'
+         RefreshCw, AlertTriangle, Shield, Lock, Eye, EyeOff, KeyRound, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi, verificationApi } from '@/lib/api'
 import type { User as UserType } from '@/types'
 
 export default function ProfilePage() {
+  const router = useRouter()
   const [user, setUser]       = useState<UserType | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -338,6 +340,17 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {/* ── Logout ── */}
+      <button
+        onClick={async () => {
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+          router.push('/')
+        }}
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-medium transition-all"
+        style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}>
+        <LogOut className="w-4 h-4" /> Выйти из аккаунта
+      </button>
 
       {/* ── Delete account ── */}
       <div className="glass-card space-y-3">
