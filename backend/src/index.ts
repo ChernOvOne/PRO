@@ -32,6 +32,7 @@ async function bootstrap() {
       },
     )
 
+    await app.register(import('@fastify/multipart'), { limits: { fileSize: 5 * 1024 * 1024 } })
     await registerPlugins(app)
     await registerRoutes(app)
     await app.listen({ port: config.port, host: '0.0.0.0' })
