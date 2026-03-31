@@ -183,6 +183,21 @@
   select option, select optgroup { background: var(--surface-2); color: var(--text-primary); }
   select option:disabled { color: var(--text-tertiary); }
 
+  /* ── Admin layout: bigger elements on desktop ── */
+  @media (min-width: 768px) {
+    .admin-layout { font-size: 16px; }
+    .admin-layout .glass-card  { @apply p-7; }
+    .admin-layout .glass-input { @apply px-5 py-3.5; font-size: 15px; }
+    .admin-layout .btn-primary, .admin-layout .btn-secondary, .admin-layout .btn-danger { @apply px-7 py-3.5; font-size: 15px; }
+    .admin-layout .badge { @apply px-3 py-1.5; font-size: 13px; }
+    .admin-layout h1 { font-size: 1.75rem !important; }
+    .admin-layout h2 { font-size: 1.25rem !important; }
+    .admin-layout h3 { font-size: 1.1rem !important; }
+    .admin-layout .text-xs { font-size: 13px !important; }
+    .admin-layout .text-sm { font-size: 15px !important; }
+    .admin-layout select, .admin-layout textarea { font-size: 15px; }
+  }
+
   .text-gradient {
     background: var(--accent-gradient);
     -webkit-background-clip: text;

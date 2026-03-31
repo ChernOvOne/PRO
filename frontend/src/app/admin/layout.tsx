@@ -118,7 +118,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
+    <div className="min-h-screen flex admin-layout" style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
       <div className="aurora-bg" />
 
       {/* Desktop sidebar */}

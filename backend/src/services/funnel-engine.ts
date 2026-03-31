@@ -14,24 +14,52 @@ import { nanoid } from 'nanoid'
 
 // ── Variable documentation ──────────────────────────────────
 export const VARIABLE_DOCS = [
-  { var: '{name}', desc: 'Имя пользователя' },
-  { var: '{email}', desc: 'Email' },
-  { var: '{telegramName}', desc: 'Telegram username' },
-  { var: '{referralCode}', desc: 'Реферальный код' },
-  { var: '{referralUrl}', desc: 'Реферальная ссылка' },
-  { var: '{referralCount}', desc: 'Кол-во рефералов' },
-  { var: '{balance}', desc: 'Баланс (руб)' },
-  { var: '{bonusDays}', desc: 'Бонусные дни' },
-  { var: '{subExpireDate}', desc: 'Дата окончания подписки' },
-  { var: '{daysLeft}', desc: 'Дней осталось' },
-  { var: '{tariffName}', desc: 'Название тарифа' },
-  { var: '{amount}', desc: 'Сумма платежа' },
-  { var: '{refName}', desc: 'Имя реферала' },
-  { var: '{refBonusDays}', desc: 'Реферальные дни' },
-  { var: '{promoCode}', desc: 'Промокод (если есть)' },
-  { var: '{generatedPromo}', desc: 'Автосгенерированный промокод' },
-  { var: '{trialDays}', desc: 'Дней пробного периода' },
-  { var: '{appUrl}', desc: 'URL сервиса' },
+  // Пользователь
+  { var: '{name}', desc: 'Имя пользователя (Telegram username или часть email)', group: 'Пользователь' },
+  { var: '{email}', desc: 'Email пользователя', group: 'Пользователь' },
+  { var: '{telegramName}', desc: 'Telegram username', group: 'Пользователь' },
+  { var: '{telegramId}', desc: 'Telegram ID (числовой)', group: 'Пользователь' },
+  { var: '{userId}', desc: 'ID пользователя в системе (UUID)', group: 'Пользователь' },
+  { var: '{registrationDate}', desc: 'Дата регистрации (ДД.ММ.ГГГГ)', group: 'Пользователь' },
+  { var: '{lastLogin}', desc: 'Последний вход в ЛК', group: 'Пользователь' },
+
+  // Подписка
+  { var: '{subStatus}', desc: 'Статус подписки (ACTIVE/INACTIVE/EXPIRED)', group: 'Подписка' },
+  { var: '{subExpireDate}', desc: 'Дата окончания подписки (ДД.ММ.ГГГГ)', group: 'Подписка' },
+  { var: '{daysLeft}', desc: 'Дней до окончания подписки', group: 'Подписка' },
+  { var: '{trafficUsed}', desc: 'Использованный трафик (ГБ)', group: 'Подписка' },
+  { var: '{trafficLimit}', desc: 'Лимит трафика (ГБ или "безлимит")', group: 'Подписка' },
+  { var: '{trafficPercent}', desc: 'Процент использованного трафика', group: 'Подписка' },
+  { var: '{deviceCount}', desc: 'Количество подключённых устройств', group: 'Подписка' },
+  { var: '{deviceLimit}', desc: 'Лимит устройств', group: 'Подписка' },
+
+  // Финансы
+  { var: '{balance}', desc: 'Текущий баланс в рублях', group: 'Финансы' },
+  { var: '{bonusDays}', desc: 'Количество накопленных бонусных дней', group: 'Финансы' },
+  { var: '{tariffName}', desc: 'Название тарифа (при оплате)', group: 'Финансы' },
+  { var: '{amount}', desc: 'Сумма платежа в рублях', group: 'Финансы' },
+  { var: '{topupAmount}', desc: 'Сумма пополнения баланса', group: 'Финансы' },
+
+  // Рефералы
+  { var: '{referralCode}', desc: 'Реферальный код пользователя', group: 'Рефералы' },
+  { var: '{referralUrl}', desc: 'Полная реферальная ссылка', group: 'Рефералы' },
+  { var: '{referralCount}', desc: 'Количество приглашённых рефералов', group: 'Рефералы' },
+  { var: '{referralPaidCount}', desc: 'Количество оплативших рефералов', group: 'Рефералы' },
+  { var: '{refName}', desc: 'Имя реферала (при реферальных событиях)', group: 'Рефералы' },
+  { var: '{refBonusDays}', desc: 'Начисленные реферальные дни', group: 'Рефералы' },
+
+  // Промо и действия
+  { var: '{promoCode}', desc: 'Промокод (при активации промокода)', group: 'Промо' },
+  { var: '{generatedPromo}', desc: 'Автоматически созданный промокод (действие шага)', group: 'Промо' },
+  { var: '{trialDays}', desc: 'Количество дней пробного периода', group: 'Промо' },
+
+  // Устройства
+  { var: '{deviceName}', desc: 'Название/модель нового устройства', group: 'Устройства' },
+
+  // Система
+  { var: '{appUrl}', desc: 'URL вашего сервиса', group: 'Система' },
+  { var: '{supportUrl}', desc: 'Ссылка на поддержку', group: 'Система' },
+  { var: '{channelUrl}', desc: 'Ссылка на Telegram-канал', group: 'Система' },
 ]
 
 // ── Available triggers for dropdown ─────────────────────────
@@ -104,18 +132,68 @@ function subVars(text: string, vars: Record<string, string>): string {
 async function buildVars(userId: string, extra: Record<string, string> = {}): Promise<Record<string, string>> {
   const u = await prisma.user.findUnique({
     where: { id: userId },
-    select: { email: true, telegramName: true, referralCode: true, balance: true, bonusDays: true, subStatus: true, subExpireAt: true, _count: { select: { referrals: true } } },
+    select: {
+      id: true, email: true, telegramName: true, telegramId: true,
+      referralCode: true, balance: true, bonusDays: true,
+      subStatus: true, subExpireAt: true, remnawaveUuid: true,
+      createdAt: true, lastLoginAt: true,
+      _count: { select: { referrals: true } },
+    },
   })
   if (!u) return { appUrl: config.appUrl, ...extra }
+
   const daysLeft = u.subExpireAt ? Math.max(0, Math.ceil((u.subExpireAt.getTime() - Date.now()) / 86400_000)) : 0
+
+  // Referral paid count
+  const paidRefs = await prisma.user.count({
+    where: { referredById: u.id, payments: { some: { status: 'PAID', amount: { gt: 0 }, provider: { in: ['YUKASSA', 'CRYPTOPAY'] } } } },
+  }).catch(() => 0)
+
+  // Traffic from REMNAWAVE
+  let trafficUsed = '0', trafficLimit = 'безлимит', trafficPercent = '0', deviceCount = '0', deviceLimit = '0'
+  if (u.remnawaveUuid) {
+    try {
+      const rm = await remnawave.getUserByUuid(u.remnawaveUuid)
+      const usedBytes = rm.userTraffic?.usedTrafficBytes ?? 0
+      trafficUsed = (usedBytes / 1e9).toFixed(1)
+      trafficLimit = rm.trafficLimitBytes && rm.trafficLimitBytes > 0 ? (rm.trafficLimitBytes / 1e9).toFixed(0) : 'безлимит'
+      trafficPercent = rm.trafficLimitBytes && rm.trafficLimitBytes > 0 ? String(Math.round(usedBytes / rm.trafficLimitBytes * 100)) : '0'
+      deviceLimit = String(rm.hwidDeviceLimit || 0)
+    } catch {}
+    try {
+      const devs = await remnawave.getDevices(u.remnawaveUuid)
+      deviceCount = String(devs?.devices?.length ?? 0)
+    } catch {}
+  }
+
+  // Support/channel from settings
+  const supportUrl = await prisma.setting.findUnique({ where: { key: 'support_url' } }).then(s => s?.value || '').catch(() => '')
+  const channelUrl = await prisma.setting.findUnique({ where: { key: 'channel_url' } }).then(s => s?.value || '').catch(() => '')
+
   return {
     name: u.telegramName || u.email?.split('@')[0] || 'Пользователь',
-    email: u.email || '', telegramName: u.telegramName || '',
-    referralCode: u.referralCode || '', referralUrl: `${config.appUrl}?ref=${u.referralCode}`,
-    referralCount: String(u._count.referrals), balance: String(Number(u.balance || 0)),
-    bonusDays: String(u.bonusDays || 0), subExpireDate: u.subExpireAt?.toLocaleDateString('ru') || '—',
-    daysLeft: String(daysLeft), trialDays: String(config.features.trialDays || 3),
-    appUrl: config.appUrl, generatedPromo: '', ...extra,
+    email: u.email || '',
+    telegramName: u.telegramName || '',
+    telegramId: u.telegramId || '',
+    userId: u.id,
+    registrationDate: u.createdAt.toLocaleDateString('ru'),
+    lastLogin: u.lastLoginAt?.toLocaleDateString('ru') || '—',
+    subStatus: u.subStatus,
+    subExpireDate: u.subExpireAt?.toLocaleDateString('ru') || '—',
+    daysLeft: String(daysLeft),
+    trafficUsed, trafficLimit, trafficPercent,
+    deviceCount, deviceLimit,
+    balance: String(Number(u.balance || 0)),
+    bonusDays: String(u.bonusDays || 0),
+    referralCode: u.referralCode || '',
+    referralUrl: `${config.appUrl}?ref=${u.referralCode}`,
+    referralCount: String(u._count.referrals),
+    referralPaidCount: String(paidRefs),
+    trialDays: String(config.features.trialDays || 3),
+    appUrl: config.appUrl,
+    supportUrl, channelUrl,
+    generatedPromo: '', topupAmount: '',
+    ...extra,
   }
 }
 
@@ -228,8 +306,12 @@ async function sendStep(step: any, funnelId: string, userId: string, extraVars: 
     return
   }
 
-  // Execute action (before sending, so {generatedPromo} is available)
+  // Build vars + set action-related vars before executing
   const vars = await buildVars(userId, extraVars)
+  // Pre-fill action vars so they're available in message text
+  if (step.actionType === 'balance') vars.topupAmount = String(step.actionValue || 0)
+  if (step.actionType === 'bonus_days') vars.bonusDays = String((parseInt(vars.bonusDays) || 0) + (step.actionValue || 0))
+  // Execute action (creates promo etc, sets {generatedPromo})
   await executeAction(step, userId, vars)
 
   // TG
