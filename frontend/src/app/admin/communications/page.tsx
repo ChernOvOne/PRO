@@ -105,10 +105,10 @@ const AUDIENCE_LABELS: Record<Audience, string> = {
 }
 
 const NOTIF_TYPE_CONFIG: Record<string, { label: string; color: string; icon: string; badgeClass: string }> = {
-  INFO: { label: 'Инфо', color: '#06b6d4', icon: '\u2139\uFE0F', badgeClass: 'badge-blue' },
-  WARNING: { label: 'Внимание', color: '#f59e0b', icon: '\u26A0\uFE0F', badgeClass: 'badge-yellow' },
-  SUCCESS: { label: 'Успех', color: '#10b981', icon: '\u2705', badgeClass: 'badge-green' },
-  PROMO: { label: 'Промо', color: '#8b5cf6', icon: '\uD83C\uDF81', badgeClass: 'badge-violet' },
+  INFO: { label: 'Инфо', color: '#06b6d4', icon: 'ℹ️', badgeClass: 'badge-blue' },
+  WARNING: { label: 'Внимание', color: '#f59e0b', icon: '⚠️', badgeClass: 'badge-yellow' },
+  SUCCESS: { label: 'Успех', color: '#10b981', icon: '✅', badgeClass: 'badge-green' },
+  PROMO: { label: 'Промо', color: '#8b5cf6', icon: '🎁', badgeClass: 'badge-violet' },
 }
 
 const fmtDate = (iso: string) => {
@@ -136,20 +136,20 @@ const chatInitial = (u: ChatUser) => (u.telegramName || u.email || 'U')[0].toUpp
 const chatDisplayName = (u: ChatUser) => u.telegramName || u.email?.split('@')[0] || `ID:${u.id.slice(0, 8)}`
 
 const BOT_DEFAULTS: BotSettings = {
-  bot_start_text: '\uD83D\uDC4B \u041F\u0440\u0438\u0432\u0435\u0442! \u042F \u0431\u043E\u0442 \u0441\u0435\u0440\u0432\u0438\u0441\u0430 HIDEYOU VPN.',
-  bot_subscription_active: '\u2705 \u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430 \u0430\u043A\u0442\u0438\u0432\u043D\u0430',
-  bot_subscription_inactive: '\u274C \u0423 \u0432\u0430\u0441 \u043D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0439 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438',
-  bot_tariff_header: '\uD83D\uDCB3 \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0442\u0430\u0440\u0438\u0444:',
-  bot_promo_prompt: '\uD83C\uDF9F \u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434:',
-  bot_promo_success: '\u2705 \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D!',
-  bot_btn_subscription: '\uD83D\uDD11 \u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430',
-  bot_btn_tariffs: '\uD83D\uDCB3 \u0422\u0430\u0440\u0438\u0444\u044B',
-  bot_btn_referral: '\uD83D\uDC65 \u0420\u0435\u0444\u0435\u0440\u0430\u043B\u044B',
-  bot_btn_balance: '\uD83D\uDCB0 \u0411\u0430\u043B\u0430\u043D\u0441',
-  bot_btn_promo: '\uD83C\uDF9F \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434',
-  bot_btn_devices: '\uD83D\uDCF1 \u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430',
-  bot_btn_instructions: '\uD83D\uDCD6 \u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438',
-  bot_btn_open_lk: '\uD83C\uDF10 \u041E\u0442\u043A\u0440\u044B\u0442\u044C \u041B\u041A',
+  bot_start_text: '👋 Привет! Я бот сервиса HIDEYOU VPN.',
+  bot_subscription_active: '✅ Подписка активна',
+  bot_subscription_inactive: '❌ У вас нет активной подписки',
+  bot_tariff_header: '💳 Выберите тариф:',
+  bot_promo_prompt: '🎟 Введите промокод:',
+  bot_promo_success: '✅ Промокод активирован!',
+  bot_btn_subscription: '🔑 Подписка',
+  bot_btn_tariffs: '💳 Тарифы',
+  bot_btn_referral: '👥 Рефералы',
+  bot_btn_balance: '💰 Баланс',
+  bot_btn_promo: '🎟 Промокод',
+  bot_btn_devices: '📱 Устройства',
+  bot_btn_instructions: '📖 Инструкции',
+  bot_btn_open_lk: '🌐 Открыть ЛК',
   bot_support_url: '', bot_channel_url: '',
   bot_feature_promo: 'true', bot_feature_devices: 'true',
   bot_feature_instructions: 'true', bot_feature_balance: 'true',
@@ -165,43 +165,43 @@ interface BotSection { id: string; icon: any; title: string; fields: FieldDef[] 
 
 const BOT_SECTIONS: BotSection[] = [
   {
-    id: 'messages', icon: MessageSquare, title: '\u0422\u0435\u043A\u0441\u0442\u044B \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439',
+    id: 'messages', icon: MessageSquare, title: 'Тексты сообщений',
     fields: [
-      { key: 'bot_start_text', label: '\u041F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u0435', type: 'textarea', placeholder: '\u0422\u0435\u043A\u0441\u0442 \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u044F \u0431\u043E\u0442\u0430...' },
-      { key: 'bot_subscription_active', label: '\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430 \u0430\u043A\u0442\u0438\u0432\u043D\u0430', type: 'textarea', placeholder: '\u0422\u0435\u043A\u0441\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0439 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438...' },
-      { key: 'bot_subscription_inactive', label: '\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430 \u043D\u0435\u0430\u043A\u0442\u0438\u0432\u043D\u0430', type: 'textarea', placeholder: '\u0422\u0435\u043A\u0441\u0442 \u043D\u0435\u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0439 \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438...' },
-      { key: 'bot_tariff_header', label: '\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0442\u0430\u0440\u0438\u0444\u043E\u0432', type: 'textarea', placeholder: '\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0441\u043F\u0438\u0441\u043A\u0430 \u0442\u0430\u0440\u0438\u0444\u043E\u0432...' },
-      { key: 'bot_promo_prompt', label: '\u0417\u0430\u043F\u0440\u043E\u0441 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u0430', type: 'textarea', placeholder: '\u0422\u0435\u043A\u0441\u0442 \u0437\u0430\u043F\u0440\u043E\u0441\u0430 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u0430...' },
-      { key: 'bot_promo_success', label: '\u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434 \u043F\u0440\u0438\u043C\u0435\u043D\u0451\u043D', type: 'textarea', placeholder: '\u0422\u0435\u043A\u0441\u0442 \u0443\u0441\u043F\u0435\u0445\u0430 \u043F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u0430...' },
+      { key: 'bot_start_text', label: 'Приветствие', type: 'textarea', placeholder: 'Текст приветствия бота...' },
+      { key: 'bot_subscription_active', label: 'Подписка активна', type: 'textarea', placeholder: 'Текст активной подписки...' },
+      { key: 'bot_subscription_inactive', label: 'Подписка неактивна', type: 'textarea', placeholder: 'Текст неактивной подписки...' },
+      { key: 'bot_tariff_header', label: 'Заголовок тарифов', type: 'textarea', placeholder: 'Заголовок списка тарифов...' },
+      { key: 'bot_promo_prompt', label: 'Запрос промокода', type: 'textarea', placeholder: 'Текст запроса промокода...' },
+      { key: 'bot_promo_success', label: 'Промокод применён', type: 'textarea', placeholder: 'Текст успеха промокода...' },
     ],
   },
   {
-    id: 'buttons', icon: Mouse, title: '\u041A\u043D\u043E\u043F\u043A\u0438 \u0433\u043B\u0430\u0432\u043D\u043E\u0433\u043E \u043C\u0435\u043D\u044E',
+    id: 'buttons', icon: Mouse, title: 'Кнопки главного меню',
     fields: [
-      { key: 'bot_btn_subscription', label: '\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430', type: 'text', placeholder: '\uD83D\uDD11 \u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0430' },
-      { key: 'bot_btn_tariffs', label: '\u0422\u0430\u0440\u0438\u0444\u044B', type: 'text', placeholder: '\uD83D\uDCB3 \u0422\u0430\u0440\u0438\u0444\u044B' },
-      { key: 'bot_btn_referral', label: '\u0420\u0435\u0444\u0435\u0440\u0430\u043B\u044B', type: 'text', placeholder: '\uD83D\uDC65 \u0420\u0435\u0444\u0435\u0440\u0430\u043B\u044B' },
-      { key: 'bot_btn_balance', label: '\u0411\u0430\u043B\u0430\u043D\u0441', type: 'text', placeholder: '\uD83D\uDCB0 \u0411\u0430\u043B\u0430\u043D\u0441' },
-      { key: 'bot_btn_promo', label: '\u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434', type: 'text', placeholder: '\uD83C\uDF9F \u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434' },
-      { key: 'bot_btn_devices', label: '\u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430', type: 'text', placeholder: '\uD83D\uDCF1 \u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430' },
-      { key: 'bot_btn_instructions', label: '\u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438', type: 'text', placeholder: '\uD83D\uDCD6 \u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438' },
-      { key: 'bot_btn_open_lk', label: '\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u041B\u041A', type: 'text', placeholder: '\uD83C\uDF10 \u041E\u0442\u043A\u0440\u044B\u0442\u044C \u041B\u041A' },
+      { key: 'bot_btn_subscription', label: 'Подписка', type: 'text', placeholder: '🔑 Подписка' },
+      { key: 'bot_btn_tariffs', label: 'Тарифы', type: 'text', placeholder: '💳 Тарифы' },
+      { key: 'bot_btn_referral', label: 'Рефералы', type: 'text', placeholder: '👥 Рефералы' },
+      { key: 'bot_btn_balance', label: 'Баланс', type: 'text', placeholder: '💰 Баланс' },
+      { key: 'bot_btn_promo', label: 'Промокод', type: 'text', placeholder: '🎟 Промокод' },
+      { key: 'bot_btn_devices', label: 'Устройства', type: 'text', placeholder: '📱 Устройства' },
+      { key: 'bot_btn_instructions', label: 'Инструкции', type: 'text', placeholder: '📖 Инструкции' },
+      { key: 'bot_btn_open_lk', label: 'Открыть ЛК', type: 'text', placeholder: '🌐 Открыть ЛК' },
     ],
   },
   {
-    id: 'links', icon: Link2, title: '\u0421\u0441\u044B\u043B\u043A\u0438',
+    id: 'links', icon: Link2, title: 'Ссылки',
     fields: [
-      { key: 'bot_support_url', label: '\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u043A\u0443', type: 'url', placeholder: 'https://t.me/support' },
-      { key: 'bot_channel_url', label: '\u041A\u0430\u043D\u0430\u043B Telegram', type: 'url', placeholder: 'https://t.me/channel' },
+      { key: 'bot_support_url', label: 'Ссылка на поддержку', type: 'url', placeholder: 'https://t.me/support' },
+      { key: 'bot_channel_url', label: 'Канал Telegram', type: 'url', placeholder: 'https://t.me/channel' },
     ],
   },
   {
-    id: 'toggles', icon: ToggleLeft, title: '\u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0430\u0442\u0435\u043B\u0438',
+    id: 'toggles', icon: ToggleLeft, title: 'Переключатели',
     fields: [
-      { key: 'bot_feature_promo', label: '\u041F\u0440\u043E\u043C\u043E\u043A\u043E\u0434\u044B \u0432 \u0431\u043E\u0442\u0435', type: 'toggle' },
-      { key: 'bot_feature_devices', label: '\u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u0432 \u0431\u043E\u0442\u0435', type: 'toggle' },
-      { key: 'bot_feature_instructions', label: '\u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u0438 \u0432 \u0431\u043E\u0442\u0435', type: 'toggle' },
-      { key: 'bot_feature_balance', label: '\u0411\u0430\u043B\u0430\u043D\u0441 \u0432 \u0431\u043E\u0442\u0435', type: 'toggle' },
+      { key: 'bot_feature_promo', label: 'Промокоды в боте', type: 'toggle' },
+      { key: 'bot_feature_devices', label: 'Устройства в боте', type: 'toggle' },
+      { key: 'bot_feature_instructions', label: 'Инструкции в боте', type: 'toggle' },
+      { key: 'bot_feature_balance', label: 'Баланс в боте', type: 'toggle' },
     ],
   },
 ]
@@ -214,10 +214,10 @@ export default function CommunicationsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('broadcasts')
 
   const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'broadcasts', label: '\u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0438', icon: <Send className="w-4 h-4" /> },
-    { key: 'funnels', label: '\u0410\u0432\u0442\u043E\u0432\u043E\u0440\u043E\u043D\u043A\u0438', icon: <Zap className="w-4 h-4" /> },
-    { key: 'bot_settings', label: '\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0431\u043E\u0442\u0430', icon: <Settings className="w-4 h-4" /> },
-    { key: 'chat_history', label: '\u0427\u0430\u0442-\u0438\u0441\u0442\u043E\u0440\u0438\u044F', icon: <MessageCircle className="w-4 h-4" /> },
+    { key: 'broadcasts', label: 'Рассылки', icon: <Send className="w-4 h-4" /> },
+    { key: 'funnels', label: 'Автоворонки', icon: <Zap className="w-4 h-4" /> },
+    { key: 'bot_settings', label: 'Настройки бота', icon: <Settings className="w-4 h-4" /> },
+    { key: 'chat_history', label: 'Чат-история', icon: <MessageCircle className="w-4 h-4" /> },
   ]
 
   return (
@@ -225,10 +225,10 @@ export default function CommunicationsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          \u041A\u043E\u043C\u043C\u0443\u043D\u0438\u043A\u0430\u0446\u0438\u0438
+          Коммуникации
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
-          \u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0438, \u0430\u0432\u0442\u043E\u0432\u043E\u0440\u043E\u043D\u043A\u0438, \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0431\u043E\u0442\u0430 \u0438 \u0447\u0430\u0442-\u0438\u0441\u0442\u043E\u0440\u0438\u044F
+          Рассылки, автоворонки, настройки бота и чат-история
         </p>
       </div>
 
@@ -375,12 +375,12 @@ function BroadcastsTab() {
     try {
       const created = await broadcastAPI('', { method: 'POST', body: JSON.stringify(buildPayload()) })
       await broadcastAPI(`/${created.id}/send`, { method: 'POST' })
-      toast.success('\u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0430')
+      toast.success('Рассылка отправлена')
       setConfirmSend(false)
       resetForm()
       setSubTab('history')
       loadHistory()
-    } catch (e: any) { toast.error(e.message || '\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438') }
+    } catch (e: any) { toast.error(e.message || 'Ошибка отправки') }
     finally { setSending(false) }
   }
 
@@ -393,9 +393,9 @@ function BroadcastsTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: notifTitle, message: notifMessage, type: notifType }),
       })
-      toast.success('\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E')
+      toast.success('Уведомление отправлено')
       setNotifTitle(''); setNotifMessage('')
-    } catch (e: any) { toast.error(e.message || '\u041E\u0448\u0438\u0431\u043A\u0430') }
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
     finally { setSending(false) }
   }
 
@@ -417,11 +417,11 @@ function BroadcastsTab() {
           })
         }
       }
-      toast.success('\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E')
+      toast.success('Отправлено')
       setConfirmSend(false)
       resetForm()
       setSubTab('history')
-    } catch (e: any) { toast.error(e.message || '\u041E\u0448\u0438\u0431\u043A\u0430') }
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
     finally { setSending(false) }
   }
 
@@ -431,11 +431,11 @@ function BroadcastsTab() {
     try {
       await broadcastAPI('', { method: 'POST', body: JSON.stringify(buildPayload({ scheduledAt })) })
       setShowScheduler(false)
-      toast.success('\u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0430 \u0437\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0430')
+      toast.success('Рассылка запланирована')
       resetForm()
       setSubTab('history')
       loadHistory()
-    } catch (e: any) { toast.error(e.message || '\u041E\u0448\u0438\u0431\u043A\u0430') }
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
     finally { setSending(false) }
   }
 
@@ -445,14 +445,14 @@ function BroadcastsTab() {
   }
 
   const deleteBroadcast = async (id: string) => {
-    if (!confirm('\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0440\u0430\u0441\u0441\u044B\u043B\u043A\u0443?')) return
+    if (!confirm('Удалить рассылку?')) return
     try { await broadcastAPI(`/${id}`, { method: 'DELETE' }); loadHistory() }
     catch (e: any) { toast.error(e.message) }
   }
 
   const deleteNotif = async (id: string) => {
     await fetch(`/api/admin/notifications/${id}`, { method: 'DELETE', credentials: 'include' })
-    toast.success('\u0423\u0434\u0430\u043B\u0435\u043D\u043E')
+    toast.success('Удалено')
     loadNotifHistory()
   }
 
@@ -486,7 +486,7 @@ function BroadcastsTab() {
     <div className="space-y-6">
       {/* Sub-tabs */}
       <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        {([['create', '\u0421\u043E\u0437\u0434\u0430\u0442\u044C'], ['history', '\u0418\u0441\u0442\u043E\u0440\u0438\u044F']] as const).map(([key, label]) => (
+        {([['create', 'Создать'], ['history', 'История']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setSubTab(key)}
             className="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all"
             style={{ background: subTab === key ? 'rgba(139,92,246,0.12)' : 'transparent', color: subTab === key ? 'var(--accent-1)' : 'var(--text-secondary)' }}
@@ -501,14 +501,14 @@ function BroadcastsTab() {
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>1</span>
-              \u041A\u0430\u043D\u0430\u043B
+              Канал
             </h3>
             <div className="flex gap-2 flex-wrap">
               {([
-                ['tg_bot', 'TG \u0431\u043E\u0442', MessageCircle],
+                ['tg_bot', 'TG бот', MessageCircle],
                 ['email', 'Email', Mail],
-                ['lk', '\u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435 \u0432 \u041B\u041A', Bell],
-                ['all', '\u0412\u0441\u0435', Send],
+                ['lk', 'Уведомление в ЛК', Bell],
+                ['all', 'Все', Send],
               ] as const).map(([ch, label, Icon]) => (
                 <button key={ch} onClick={() => setChannelMode(ch)}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm transition-all"
@@ -528,11 +528,11 @@ function BroadcastsTab() {
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>2</span>
-              \u0410\u0443\u0434\u0438\u0442\u043E\u0440\u0438\u044F
+              Аудитория
               {recipientCount !== null && (
                 <span className="ml-auto badge-green text-xs px-2 py-0.5 rounded-full font-medium">
                   <Users className="w-3 h-3 inline mr-1" />
-                  {loadingCount ? '...' : recipientCount} \u043F\u043E\u043B\u0443\u0447\u0430\u0442\u0435\u043B\u0435\u0439
+                  {loadingCount ? '...' : recipientCount} получателей
                 </span>
               )}
             </h3>
@@ -558,7 +558,7 @@ function BroadcastsTab() {
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>3</span>
-              \u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435
+              Сообщение
             </h3>
             <div className="space-y-5">
               {/* TG fields */}
@@ -568,13 +568,13 @@ function BroadcastsTab() {
                     <MessageCircle className="w-3.5 h-3.5" /> Telegram
                   </label>
                   <textarea value={tgText} onChange={e => setTgText(e.target.value)}
-                    placeholder="\u0422\u0435\u043A\u0441\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F (Markdown)"
+                    placeholder="Текст сообщения (Markdown)"
                     rows={5} className="glass-input w-full resize-y text-sm" />
                   <div className="space-y-2">
                     {tgButtons.map((btn, i) => (
                       <div key={i} className="flex gap-2 items-center">
                         <input value={btn.label} onChange={e => updateTgButton(i, 'label', e.target.value)}
-                          placeholder="\u0422\u0435\u043A\u0441\u0442 \u043A\u043D\u043E\u043F\u043A\u0438" className="glass-input flex-1 text-sm" />
+                          placeholder="Текст кнопки" className="glass-input flex-1 text-sm" />
                         <input value={btn.url} onChange={e => updateTgButton(i, 'url', e.target.value)}
                           placeholder="URL" className="glass-input flex-1 text-sm" />
                         <button onClick={() => removeTgButton(i)} className="p-2 rounded-lg transition-colors hover:bg-red-500/10"
@@ -584,7 +584,7 @@ function BroadcastsTab() {
                     {tgButtons.length < 5 && (
                       <button onClick={addTgButton} className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg transition-all"
                         style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.06)' }}>
-                        <Plus className="w-3.5 h-3.5" /> \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043A\u043D\u043E\u043F\u043A\u0443
+                        <Plus className="w-3.5 h-3.5" /> Добавить кнопку
                       </button>
                     )}
                   </div>
@@ -600,12 +600,12 @@ function BroadcastsTab() {
                     <Mail className="w-3.5 h-3.5" /> Email
                   </label>
                   <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
-                    placeholder="\u0422\u0435\u043C\u0430 \u043F\u0438\u0441\u044C\u043C\u0430" className="glass-input w-full text-sm" />
+                    placeholder="Тема письма" className="glass-input w-full text-sm" />
                   <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)}
-                    placeholder="\u0422\u0435\u043A\u0441\u0442 \u043F\u0438\u0441\u044C\u043C\u0430 (HTML)" rows={6} className="glass-input w-full resize-y text-sm" />
+                    placeholder="Текст письма (HTML)" rows={6} className="glass-input w-full resize-y text-sm" />
                   <div className="flex gap-2">
                     <input value={emailCtaText} onChange={e => setEmailCtaText(e.target.value)}
-                      placeholder="CTA \u0442\u0435\u043A\u0441\u0442" className="glass-input flex-1 text-sm" />
+                      placeholder="CTA текст" className="glass-input flex-1 text-sm" />
                     <input value={emailCtaUrl} onChange={e => setEmailCtaUrl(e.target.value)}
                       placeholder="CTA URL" className="glass-input flex-1 text-sm" />
                   </div>
@@ -618,7 +618,7 @@ function BroadcastsTab() {
               {showLk && (
                 <div className="space-y-3">
                   <label className="text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <Bell className="w-3.5 h-3.5" /> \u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435 \u0432 \u041B\u041A
+                    <Bell className="w-3.5 h-3.5" /> Уведомление в ЛК
                   </label>
                   <div className="flex gap-2 flex-wrap">
                     {(['INFO', 'WARNING', 'SUCCESS', 'PROMO'] as const).map(t => {
@@ -638,9 +638,9 @@ function BroadcastsTab() {
                     })}
                   </div>
                   <input value={notifTitle} onChange={e => setNotifTitle(e.target.value)}
-                    placeholder="\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A" className="glass-input w-full text-sm" />
+                    placeholder="Заголовок" className="glass-input w-full text-sm" />
                   <textarea value={notifMessage} onChange={e => setNotifMessage(e.target.value)}
-                    placeholder="\u0422\u0435\u043A\u0441\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F" rows={3} className="glass-input w-full resize-y text-sm" />
+                    placeholder="Текст уведомления" rows={3} className="glass-input w-full resize-y text-sm" />
                 </div>
               )}
             </div>
@@ -651,22 +651,22 @@ function BroadcastsTab() {
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>4</span>
-              \u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430
+              Отправка
             </h3>
             <div className="flex flex-wrap gap-3">
               <button onClick={() => setShowPreview(true)} disabled={!canSend}
                 className="btn-secondary text-sm flex items-center gap-2 disabled:opacity-40">
-                <Eye className="w-4 h-4" /> \u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440
+                <Eye className="w-4 h-4" /> Предпросмотр
               </button>
               {channelMode !== 'lk' && (
                 <button onClick={() => setShowScheduler(true)} disabled={!canSend}
                   className="btn-secondary text-sm flex items-center gap-2 disabled:opacity-40">
-                  <Calendar className="w-4 h-4" /> \u0417\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u0442\u044C
+                  <Calendar className="w-4 h-4" /> Запланировать
                 </button>
               )}
               <button onClick={() => setConfirmSend(true)} disabled={!canSend}
                 className="btn-primary text-sm flex items-center gap-2 disabled:opacity-40">
-                <Send className="w-4 h-4" /> \u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441
+                <Send className="w-4 h-4" /> Отправить сейчас
               </button>
             </div>
           </div>
@@ -679,7 +679,7 @@ function BroadcastsTab() {
           {/* Broadcast history */}
           <div className="glass-card gradient-border overflow-hidden">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 px-1" style={{ color: 'var(--text-primary)' }}>
-              <Send className="w-4 h-4" style={{ color: '#a78bfa' }} /> \u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0438 (TG / Email)
+              <Send className="w-4 h-4" style={{ color: '#a78bfa' }} /> Рассылки (TG / Email)
             </h3>
             {loadingHistory ? (
               <div className="flex justify-center py-8">
@@ -689,14 +689,14 @@ function BroadcastsTab() {
             ) : history.length === 0 ? (
               <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>
                 <Send className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">\u0420\u0430\u0441\u0441\u044B\u043B\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</p>
+                <p className="text-sm">Рассылок пока нет</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      {['\u0414\u0430\u0442\u0430', '\u041A\u0430\u043D\u0430\u043B', '\u0410\u0443\u0434\u0438\u0442\u043E\u0440\u0438\u044F', '\u041F\u043E\u043B\u0443\u0447.', '\u041E\u0442\u043F\u0440.', '\u041E\u0448\u0438\u0431\u043A\u0438', '\u0421\u0442\u0430\u0442\u0443\u0441', ''].map(h => (
+                      {['Дата', 'Канал', 'Аудитория', 'Получ.', 'Отпр.', 'Ошибки', 'Статус', ''].map(h => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                       ))}
                     </tr>
@@ -744,20 +744,20 @@ function BroadcastsTab() {
                               )}
                               {item.scheduledAt && (
                                 <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                                  <Clock className="w-3.5 h-3.5" /> \u0417\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043E \u043D\u0430 {fmtDate(item.scheduledAt)}
+                                  <Clock className="w-3.5 h-3.5" /> Запланировано на {fmtDate(item.scheduledAt)}
                                 </div>
                               )}
                               <div className="flex gap-2 pt-1">
                                 {item.status === 'SCHEDULED' && (
                                   <button onClick={e => { e.stopPropagation(); cancelBroadcast(item.id) }}
                                     className="text-xs flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-500/10 transition-all" style={{ color: '#f87171' }}>
-                                    <X className="w-3.5 h-3.5" /> \u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C
+                                    <X className="w-3.5 h-3.5" /> Отменить
                                   </button>
                                 )}
                                 {(['DRAFT', 'CANCELLED', 'COMPLETED'] as BroadcastStatus[]).includes(item.status) && (
                                   <button onClick={e => { e.stopPropagation(); deleteBroadcast(item.id) }}
                                     className="text-xs flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-500/10 transition-all" style={{ color: '#f87171' }}>
-                                    <Trash2 className="w-3.5 h-3.5" /> \u0423\u0434\u0430\u043B\u0438\u0442\u044C
+                                    <Trash2 className="w-3.5 h-3.5" /> Удалить
                                   </button>
                                 )}
                               </div>
@@ -776,7 +776,7 @@ function BroadcastsTab() {
           <div className="glass-card gradient-border p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
               <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                <Bell className="w-4 h-4" style={{ color: '#a78bfa' }} /> \u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F \u0432 \u041B\u041A ({notifTotal})
+                <Bell className="w-4 h-4" style={{ color: '#a78bfa' }} /> Уведомления в ЛК ({notifTotal})
               </h3>
             </div>
             {notifLoading ? (
@@ -787,7 +787,7 @@ function BroadcastsTab() {
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center">
                 <Bell className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-tertiary)' }} />
-                <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>\u041D\u0435\u0442 \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0439</p>
+                <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет уведомлений</p>
               </div>
             ) : (
               <div>
@@ -806,7 +806,7 @@ function BroadcastsTab() {
                         <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{new Date(n.createdAt).toLocaleString('ru')}</span>
                       </div>
                       <button onClick={() => deleteNotif(n.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 transition-all flex-shrink-0" title="\u0423\u0434\u0430\u043B\u0438\u0442\u044C">
+                        className="p-1.5 rounded-lg hover:bg-red-500/10 transition-all flex-shrink-0" title="Удалить">
                         <Trash2 className="w-3.5 h-3.5" style={{ color: '#f87171' }} />
                       </button>
                     </div>
@@ -837,7 +837,7 @@ function BroadcastsTab() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)} />
           <div className="glass-card relative z-10 w-full max-w-lg max-h-[80vh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>\u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440</h3>
+              <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Предпросмотр</h3>
               <button onClick={() => setShowPreview(false)} className="p-1" style={{ color: 'var(--text-tertiary)' }}><X className="w-4 h-4" /></button>
             </div>
             {showTg && (
@@ -846,7 +846,7 @@ function BroadcastsTab() {
                   <MessageCircle className="w-3.5 h-3.5" /> Telegram
                 </p>
                 <div className="rounded-xl p-4 text-sm" style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
-                  <pre className="whitespace-pre-wrap font-sans">{tgText || '(\u043F\u0443\u0441\u0442\u043E)'}</pre>
+                  <pre className="whitespace-pre-wrap font-sans">{tgText || '(пусто)'}</pre>
                   {tgButtons.filter(b => b.label).length > 0 && (
                     <div className="mt-3 space-y-1.5">
                       {tgButtons.filter(b => b.label).map((btn, i) => (
@@ -864,8 +864,8 @@ function BroadcastsTab() {
                   <Mail className="w-3.5 h-3.5" /> Email
                 </p>
                 <div className="rounded-xl p-4 text-sm space-y-2" style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
-                  <p className="font-medium">{emailSubject || '(\u0431\u0435\u0437 \u0442\u0435\u043C\u044B)'}</p>
-                  <div className="text-sm" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: emailBody || '(\u043F\u0443\u0441\u0442\u043E)' }} />
+                  <p className="font-medium">{emailSubject || '(без темы)'}</p>
+                  <div className="text-sm" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: emailBody || '(пусто)' }} />
                   {emailCtaText && (
                     <div className="pt-2">
                       <span className="inline-block px-4 py-2 rounded-lg text-xs font-medium text-white"
@@ -878,7 +878,7 @@ function BroadcastsTab() {
             {showLk && notifTitle && (
               <div>
                 <p className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-                  <Bell className="w-3.5 h-3.5" /> \u0423\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435 \u0432 \u041B\u041A
+                  <Bell className="w-3.5 h-3.5" /> Уведомление в ЛК
                 </p>
                 <div className="p-3 rounded-xl" style={{
                   background: `${NOTIF_TYPE_CONFIG[notifType].color}08`,
@@ -906,16 +906,16 @@ function BroadcastsTab() {
           <div className="glass-card relative z-10 w-full max-w-sm animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                <Calendar className="w-4 h-4" /> \u0417\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u0442\u044C
+                <Calendar className="w-4 h-4" /> Запланировать
               </h3>
               <button onClick={() => setShowScheduler(false)} className="p-1" style={{ color: 'var(--text-tertiary)' }}><X className="w-4 h-4" /></button>
             </div>
             <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} className="glass-input w-full text-sm mb-4" />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowScheduler(false)} className="btn-secondary text-sm">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+              <button onClick={() => setShowScheduler(false)} className="btn-secondary text-sm">Отмена</button>
               <button onClick={scheduleBroadcast} disabled={!scheduledAt || sending}
                 className="btn-primary text-sm flex items-center gap-2 disabled:opacity-40">
-                {sending ? '\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435...' : '\u0417\u0430\u043F\u043B\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u0442\u044C'}
+                {sending ? 'Сохранение...' : 'Запланировать'}
               </button>
             </div>
           </div>
@@ -932,20 +932,20 @@ function BroadcastsTab() {
                 <AlertCircle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443</h3>
+                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Подтвердите отправку</h3>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  {recipientCount ?? '?'} \u043F\u043E\u043B\u0443\u0447\u0430\u0442\u0435\u043B\u0435\u0439
+                  {recipientCount ?? '?'} получателей
                 </p>
               </div>
             </div>
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-              \u0420\u0430\u0441\u0441\u044B\u043B\u043A\u0430 \u0431\u0443\u0434\u0435\u0442 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0430 \u043D\u0435\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u043E. \u042D\u0442\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043D\u0435\u043B\u044C\u0437\u044F \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C.
+              Рассылка будет отправлена немедленно. Это действие нельзя отменить.
             </p>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmSend(false)} className="btn-secondary text-sm">\u041E\u0442\u043C\u0435\u043D\u0430</button>
+              <button onClick={() => setConfirmSend(false)} className="btn-secondary text-sm">Отмена</button>
               <button onClick={channelMode === 'lk' ? sendNotification : (channelMode === 'all' ? sendAll : sendBroadcast)}
                 disabled={sending} className="btn-primary text-sm flex items-center gap-2 disabled:opacity-40">
-                {sending ? '\u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430...' : <><Send className="w-4 h-4" /> \u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C</>}
+                {sending ? 'Отправка...' : <><Send className="w-4 h-4" /> Отправить</>}
               </button>
             </div>
           </div>
@@ -971,7 +971,7 @@ function FunnelsTab() {
       const res = await fetch('/api/admin/communications/funnels', { credentials: 'include' })
       if (!res.ok) throw new Error()
       setFunnels(await res.json())
-    } catch { toast.error('\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0432\u043E\u0440\u043E\u043D\u043A\u0438') }
+    } catch { toast.error('Не удалось загрузить воронки') }
     finally { setLoading(false) }
   }, [])
 
@@ -998,17 +998,17 @@ function FunnelsTab() {
         body: JSON.stringify(funnels),
       })
       if (!res.ok) throw new Error()
-      toast.success('\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E')
-    } catch { toast.error('\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F') }
+      toast.success('Сохранено')
+    } catch { toast.error('Ошибка сохранения') }
     finally { setSavingId(null) }
   }
 
   const formatDelay = (seconds: number) => {
-    if (seconds === 0) return '\u0441\u0440\u0430\u0437\u0443'
+    if (seconds === 0) return 'сразу'
     const h = Math.floor(seconds / 3600)
-    if (h < 24) return `\u0447\u0435\u0440\u0435\u0437 ${h} \u0447.`
+    if (h < 24) return `через ${h} ч.`
     const d = Math.floor(h / 24)
-    return `\u0447\u0435\u0440\u0435\u0437 ${d} \u0434.`
+    return `через ${d} д.`
   }
 
   if (loading) {
@@ -1022,7 +1022,7 @@ function FunnelsTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        \u0410\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u043F\u043E \u0442\u0440\u0438\u0433\u0433\u0435\u0440\u0430\u043C. \u041A\u0430\u0436\u0434\u0443\u044E \u0432\u043E\u0440\u043E\u043D\u043A\u0443 \u043C\u043E\u0436\u043D\u043E \u0432\u043A\u043B\u044E\u0447\u0438\u0442\u044C/\u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u0438 \u043D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E.
+        Автоматические сообщения по триггерам. Каждую воронку можно включить/выключить и настроить отдельно.
       </p>
 
       {funnels.map(funnel => (
@@ -1056,7 +1056,7 @@ function FunnelsTab() {
                     onChange={() => toggleChannel(funnel.id, ch)}
                     className="w-3.5 h-3.5 rounded accent-purple-500" />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {ch === 'telegram' ? 'TG' : ch === 'email' ? 'Email' : '\u041B\u041A'}
+                    {ch === 'telegram' ? 'TG' : ch === 'email' ? 'Email' : 'ЛК'}
                   </span>
                 </label>
               ))}
@@ -1076,13 +1076,13 @@ function FunnelsTab() {
               {/* Delay */}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                  \u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430 (\u0441\u0435\u043A\u0443\u043D\u0434\u044B)
+                  Задержка (секунды)
                 </label>
                 <input type="number" min={0} value={funnel.delay}
                   onChange={e => updateFunnel(funnel.id, { delay: parseInt(e.target.value) || 0 })}
                   className="glass-input w-full text-sm" />
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  0 = \u0441\u0440\u0430\u0437\u0443, 3600 = 1 \u0447\u0430\u0441, 86400 = 1 \u0434\u0435\u043D\u044C
+                  0 = сразу, 3600 = 1 час, 86400 = 1 день
                 </p>
               </div>
 
@@ -1090,11 +1090,11 @@ function FunnelsTab() {
               {funnel.channels.includes('telegram') && (
                 <div>
                   <label className="block text-xs font-medium mb-1.5 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-                    <MessageCircle className="w-3.5 h-3.5" /> Telegram \u0442\u0435\u043A\u0441\u0442
+                    <MessageCircle className="w-3.5 h-3.5" /> Telegram текст
                   </label>
                   <textarea value={funnel.tgText || ''} rows={3}
                     onChange={e => updateFunnel(funnel.id, { tgText: e.target.value })}
-                    className="glass-input w-full text-sm resize-y" placeholder="\u0422\u0435\u043A\u0441\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0434\u043B\u044F Telegram..." />
+                    className="glass-input w-full text-sm resize-y" placeholder="Текст сообщения для Telegram..." />
                 </div>
               )}
 
@@ -1106,10 +1106,10 @@ function FunnelsTab() {
                   </label>
                   <input value={funnel.emailSubject || ''}
                     onChange={e => updateFunnel(funnel.id, { emailSubject: e.target.value })}
-                    placeholder="\u0422\u0435\u043C\u0430 \u043F\u0438\u0441\u044C\u043C\u0430" className="glass-input w-full text-sm" />
+                    placeholder="Тема письма" className="glass-input w-full text-sm" />
                   <textarea value={funnel.emailHtml || ''} rows={4}
                     onChange={e => updateFunnel(funnel.id, { emailHtml: e.target.value })}
-                    placeholder="HTML-\u0442\u0435\u043B\u043E \u043F\u0438\u0441\u044C\u043C\u0430" className="glass-input w-full text-sm resize-y" />
+                    placeholder="HTML-тело письма" className="glass-input w-full text-sm resize-y" />
                 </div>
               )}
 
@@ -1117,7 +1117,7 @@ function FunnelsTab() {
               <button onClick={() => saveFunnel(funnel.id)} disabled={savingId === funnel.id}
                 className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
                 {savingId === funnel.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C
+                Сохранить
               </button>
             </div>
           )}
@@ -1169,9 +1169,9 @@ function BotSettingsTab() {
         body: JSON.stringify(settings),
       })
       if (!res.ok) throw new Error()
-      toast.success('\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0431\u043E\u0442\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B')
+      toast.success('Настройки бота сохранены')
       setDirty(false)
-    } catch { toast.error('\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F') }
+    } catch { toast.error('Ошибка сохранения') }
     finally { setSaving(false) }
   }
 
@@ -1202,12 +1202,12 @@ function BotSettingsTab() {
         <button onClick={reset}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition-all glass-card"
           style={{ color: 'var(--text-secondary)' }}>
-          <RefreshCw className="w-4 h-4" /> \u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C
+          <RefreshCw className="w-4 h-4" /> Сбросить
         </button>
         <button onClick={save} disabled={!dirty || saving}
           className="btn-primary flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C
+          Сохранить
         </button>
       </div>
 
@@ -1295,7 +1295,7 @@ function ChatHistoryTab() {
       const data = await res.json()
       setChats(data.chats)
       setChatsTotal(data.total)
-    } catch { toast.error('\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0447\u0430\u0442\u044B') }
+    } catch { toast.error('Не удалось загрузить чаты') }
     finally { setChatsLoading(false) }
   }, [chatsPage, search])
 
@@ -1317,7 +1317,7 @@ function ChatHistoryTab() {
       setMessages(prev => append ? [...data.messages.reverse(), ...prev] : data.messages)
       setMsgsTotal(data.total)
       setMsgsPage(pg)
-    } catch { toast.error('\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F') }
+    } catch { toast.error('Не удалось загрузить сообщения') }
     finally { setMsgsLoading(false) }
   }, [])
 
@@ -1343,7 +1343,7 @@ function ChatHistoryTab() {
       setDraft('')
       await loadMessages(activeUserId, 1)
       loadChats()
-    } catch { toast.error('\u041E\u0448\u0438\u0431\u043A\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438') }
+    } catch { toast.error('Ошибка отправки') }
     finally { setSending(false) }
   }
 
@@ -1380,12 +1380,12 @@ function ChatHistoryTab() {
         <div className="p-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
           <div className="flex items-center gap-2 mb-2">
             <MessageCircle className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-1)' }} />
-            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>\u0427\u0430\u0442\u044B \u0431\u043E\u0442\u0430</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Чаты бота</span>
             <span className="text-xs ml-auto" style={{ color: 'var(--text-tertiary)' }}>{chatsTotal}</span>
           </div>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-tertiary)' }} />
-            <input className="glass-input pl-8 py-1.5 text-xs w-full" placeholder="\u041F\u043E\u0438\u0441\u043A..."
+            <input className="glass-input pl-8 py-1.5 text-xs w-full" placeholder="Поиск..."
               value={search} onChange={e => onSearchChange(e.target.value)} />
           </div>
         </div>
@@ -1405,7 +1405,7 @@ function ChatHistoryTab() {
           ) : chats.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-2">
               <MessageCircle className="w-8 h-8" style={{ color: 'var(--text-tertiary)' }} />
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>\u041D\u0435\u0442 \u0447\u0430\u0442\u043E\u0432</p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Нет чатов</p>
             </div>
           ) : (
             chats.map(item => {
@@ -1437,7 +1437,7 @@ function ChatHistoryTab() {
           {chats.length < chatsTotal && (
             <button onClick={() => { const next = chatsPage + 1; setChatsPage(next); loadChats(next, search) }}
               className="w-full text-center py-2 text-xs transition-colors" style={{ color: 'var(--accent-1)' }}>
-              \u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0435\u0449\u0451...
+              Загрузить ещё...
             </button>
           )}
         </div>
@@ -1460,7 +1460,7 @@ function ChatHistoryTab() {
               <div className="flex-1 min-w-0">
                 <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}
                   onClick={() => setMobileProfileOpen(true)}>{chatDisplayName(activeUser)}</h2>
-                <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{msgsTotal} \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439</p>
+                <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{msgsTotal} сообщений</p>
               </div>
               <button className="md:hidden p-1.5 rounded-lg" style={{ color: 'var(--text-secondary)' }}
                 onClick={() => setMobileProfileOpen(o => !o)}>
@@ -1474,7 +1474,7 @@ function ChatHistoryTab() {
                   <button onClick={() => loadMessages(activeUserId!, msgsPage + 1, true)} disabled={msgsLoading}
                     className="text-xs px-3 py-1 rounded-lg transition-colors"
                     style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.08)' }}>
-                    {msgsLoading ? '\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...' : '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0440\u0430\u043D\u0435\u0435'}
+                    {msgsLoading ? 'Загрузка...' : 'Загрузить ранее'}
                   </button>
                 </div>
               )}
@@ -1489,7 +1489,7 @@ function ChatHistoryTab() {
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-2">
                   <MessageCircle className="w-10 h-10" style={{ color: 'var(--text-tertiary)' }} />
-                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>\u041D\u0435\u0442 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439</p>
+                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет сообщений</p>
                 </div>
               ) : (
                 messages.map(msg => {
@@ -1517,7 +1517,7 @@ function ChatHistoryTab() {
             </div>
 
             <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0" style={{ borderTop: '1px solid var(--glass-border)' }}>
-              <input className="glass-input flex-1 py-2 text-sm" placeholder="\u041D\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435..."
+              <input className="glass-input flex-1 py-2 text-sm" placeholder="Написать сообщение..."
                 value={draft} onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 disabled={sending} />
@@ -1534,8 +1534,8 @@ function ChatHistoryTab() {
               style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}>
               <MessageCircle className="w-7 h-7" style={{ color: '#a78bfa' }} />
             </div>
-            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0447\u0430\u0442</h3>
-            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0441\u043B\u0435\u0432\u0430 \u0434\u043B\u044F \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430 \u0438\u0441\u0442\u043E\u0440\u0438\u0438</p>
+            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Выберите чат</h3>
+            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Выберите пользователя слева для просмотра истории</p>
           </div>
         )}
       </div>
@@ -1553,7 +1553,7 @@ function ChatHistoryTab() {
               <div className="absolute right-0 top-0 h-full w-[300px] max-w-[85vw] overflow-y-auto"
                 style={{ background: 'var(--surface-2)', borderLeft: '1px solid var(--glass-border)' }}>
                 <div className="flex items-center justify-between p-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>\u041F\u0440\u043E\u0444\u0438\u043B\u044C</span>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Профиль</span>
                   <button onClick={() => setMobileProfileOpen(false)} className="p-1" style={{ color: 'var(--text-tertiary)' }}><X className="w-4 h-4" /></button>
                 </div>
                 <ChatProfilePanel user={activeUser} />
@@ -1580,11 +1580,11 @@ function ChatProfilePanel({ user }: { user: ChatUser }) {
       <div className="space-y-3">
         <ChatProfileRow icon={<User className="w-3.5 h-3.5" />} label="Telegram ID" value={user.telegramId || '---'} />
         {user.email && <ChatProfileRow icon={<MessageCircle className="w-3.5 h-3.5" />} label="Email" value={user.email} />}
-        <ChatProfileRow icon={<Wallet className="w-3.5 h-3.5" />} label="\u0411\u0430\u043B\u0430\u043D\u0441"
-          value={user.balance != null ? `${user.balance} \u20BD` : '---'} />
-        <ChatProfileRow icon={<Gift className="w-3.5 h-3.5" />} label="\u0411\u043E\u043D\u0443\u0441\u043D\u044B\u0435 \u0434\u043D\u0438"
+        <ChatProfileRow icon={<Wallet className="w-3.5 h-3.5" />} label="Баланс"
+          value={user.balance != null ? `${user.balance} ₽` : '---'} />
+        <ChatProfileRow icon={<Gift className="w-3.5 h-3.5" />} label="Бонусные дни"
           value={user.bonusDays != null ? `${user.bonusDays}` : '---'} />
-        <ChatProfileRow icon={<Calendar className="w-3.5 h-3.5" />} label="\u0420\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u044F"
+        <ChatProfileRow icon={<Calendar className="w-3.5 h-3.5" />} label="Регистрация"
           value={fmtDate(user.createdAt)} />
       </div>
       <Link href={`/admin/users/${user.id}`}
@@ -1592,7 +1592,7 @@ function ChatProfilePanel({ user }: { user: ChatUser }) {
         style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.15)' }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}>
-        <ExternalLink className="w-3.5 h-3.5" /> \u041F\u043E\u043B\u043D\u044B\u0439 \u043F\u0440\u043E\u0444\u0438\u043B\u044C
+        <ExternalLink className="w-3.5 h-3.5" /> Полный профиль
       </Link>
     </div>
   )
