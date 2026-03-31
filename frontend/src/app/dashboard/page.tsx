@@ -39,6 +39,10 @@ export default function DashboardPage() {
   const [revoking, setRevoking]         = useState(false)
   const [devices, setDevices]           = useState<any[]>([])
 
+  /* ── variant / configurator state ── */
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0)
+  const [cfgValues, setCfgValues] = useState<{ trafficGb: number; days: number; devices: number }>({ trafficGb: 50, days: 30, devices: 3 })
+
   /* ── gift modal ── */
   const [giftTariff, setGiftTariff]           = useState<any>(null)
   const [giftProvider, setGiftProvider]       = useState<'YUKASSA' | 'CRYPTOPAY' | 'BALANCE'>('YUKASSA')
@@ -118,11 +122,20 @@ export default function DashboardPage() {
     if (!payTariff) return
     setPaying(true)
     try {
+      // Build extra params for variants/configurator
+      const extra: any = {}
+      if (payTariff.mode === 'variants') {
+        extra.variantIndex = selectedVariantIdx
+      }
+      if (payTariff.mode === 'configurator') {
+        extra.config = { ...cfgValues }
+      }
+
       if (provider === 'BALANCE') {
         const res = await fetch('/api/user/balance/purchase', {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tariffId: payTariff.id }),
+          body: JSON.stringify({ tariffId: payTariff.id, ...extra }),
         })
         const d = await res.json()
         if (!res.ok) {
@@ -135,7 +148,7 @@ export default function DashboardPage() {
         const res = await fetch('/api/payments/create', {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tariffId: payTariff.id, provider }),
+          body: JSON.stringify({ tariffId: payTariff.id, provider, ...extra }),
         })
         const d = await res.json()
         if (d.paymentUrl) window.location.href = d.paymentUrl
@@ -809,7 +822,9 @@ export default function DashboardPage() {
               </h3>
               {tariffs.length > 0 ? (
                 <div className="grid sm:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto">
-                  {tariffs.map((t: any) => (
+                  {tariffs.map((t: any) => {
+                    const tMode = t.mode || 'simple'
+                    return (
                     <div key={t.id} className="rounded-xl p-4 flex flex-col transition-all duration-300"
                          style={{
                            background: 'var(--glass-bg)',
@@ -822,19 +837,131 @@ export default function DashboardPage() {
                         </span>
                       )}
                       <p className="font-semibold text-base">{t.name}</p>
-                      <p className="text-2xl font-extrabold mt-1 tracking-tight">
-                        {t.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                      </p>
-                      {t.priceUsdt && (
-                        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>~ {t.priceUsdt} USDT</p>
+
+                      {/* ── SIMPLE mode ── */}
+                      {tMode === 'simple' && (
+                        <>
+                          <p className="text-2xl font-extrabold mt-1 tracking-tight">
+                            {t.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                          </p>
+                          {t.priceUsdt && (
+                            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>~ {t.priceUsdt} USDT</p>
+                          )}
+                          <div className="text-xs mt-3 space-y-1.5 flex-1" style={{ color: 'var(--text-secondary)' }}>
+                            <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.durationDays} дней</div>
+                            <div className="flex items-center gap-2"><Smartphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.deviceLimit === 0 ? 'Безлимит' : t.deviceLimit} устр.</div>
+                            <div className="flex items-center gap-2"><Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.trafficGb ? `${t.trafficGb} ГБ` : 'Безлимит'}</div>
+                          </div>
+                        </>
                       )}
-                      <div className="text-xs mt-3 space-y-1.5 flex-1" style={{ color: 'var(--text-secondary)' }}>
-                        <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.durationDays} дней</div>
-                        <div className="flex items-center gap-2"><Smartphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.deviceLimit === 0 ? 'Безлимит' : t.deviceLimit} устр.</div>
-                        <div className="flex items-center gap-2"><Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.trafficGb ? `${t.trafficGb} ГБ` : 'Безлимит'}</div>
-                      </div>
+
+                      {/* ── VARIANTS mode ── */}
+                      {tMode === 'variants' && t.variants?.length > 0 && (() => {
+                        const vi = payTariff?.id === t.id ? selectedVariantIdx : 0
+                        const v = t.variants[vi] || t.variants[0]
+                        return (
+                          <>
+                            <div className="flex gap-1 mt-2 flex-wrap">
+                              {t.variants.map((vr: any, idx: number) => (
+                                <button key={idx} onClick={(e) => { e.stopPropagation(); setSelectedVariantIdx(idx) }}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all
+                                    ${(payTariff?.id === t.id ? selectedVariantIdx : 0) === idx
+                                      ? 'bg-[rgba(6,182,212,0.12)] border-[rgba(6,182,212,0.3)]'
+                                      : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06]'}`}
+                                  style={{ color: (payTariff?.id === t.id ? selectedVariantIdx : 0) === idx ? 'var(--accent-1)' : 'var(--text-tertiary)' }}>
+                                  {vr.label}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-2xl font-extrabold mt-2 tracking-tight">
+                              {v.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                            </p>
+                            {v.priceUsdt && (
+                              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>~ {v.priceUsdt} USDT</p>
+                            )}
+                            <div className="text-xs mt-2 space-y-1.5 flex-1" style={{ color: 'var(--text-secondary)' }}>
+                              <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {v.days} дней</div>
+                              <div className="flex items-center gap-2"><Smartphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {v.deviceLimit ?? t.deviceLimit ?? 3} устр.</div>
+                              <div className="flex items-center gap-2"><Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {(v.trafficGb ?? t.trafficGb) ? `${v.trafficGb ?? t.trafficGb} ГБ` : 'Безлимит'}</div>
+                            </div>
+                          </>
+                        )
+                      })()}
+
+                      {/* ── CONFIGURATOR mode ── */}
+                      {tMode === 'configurator' && t.configurator && (() => {
+                        const cfg = t.configurator
+                        const cv = payTariff?.id === t.id ? cfgValues : {
+                          trafficGb: cfg.traffic?.default ?? 50,
+                          days: cfg.days?.default ?? 30,
+                          devices: cfg.devices?.default ?? 3,
+                        }
+                        let calcPrice = 0
+                        if (cfg.traffic) calcPrice += cv.trafficGb * (cfg.traffic.pricePerUnit || 0)
+                        if (cfg.days) calcPrice += cv.days * (cfg.days.pricePerUnit || 0)
+                        if (cfg.devices) calcPrice += cv.devices * (cfg.devices.pricePerUnit || 0)
+                        return (
+                          <>
+                            <div className="mt-3 space-y-3">
+                              {cfg.traffic && (
+                                <div>
+                                  <div className="flex justify-between text-[11px] mb-1">
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Трафик</span>
+                                    <span className="font-medium">{cv.trafficGb} ГБ</span>
+                                  </div>
+                                  <input type="range" min={cfg.traffic.min} max={cfg.traffic.max} step={cfg.traffic.step}
+                                    value={cv.trafficGb}
+                                    onChange={e => { setSelectedVariantIdx(0); setCfgValues(prev => ({ ...prev, trafficGb: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
+                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
+                                </div>
+                              )}
+                              {cfg.days && (
+                                <div>
+                                  <div className="flex justify-between text-[11px] mb-1">
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Период</span>
+                                    <span className="font-medium">{cv.days} дн.</span>
+                                  </div>
+                                  <input type="range" min={cfg.days.min} max={cfg.days.max} step={cfg.days.step}
+                                    value={cv.days}
+                                    onChange={e => { setCfgValues(prev => ({ ...prev, days: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
+                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
+                                </div>
+                              )}
+                              {cfg.devices && (
+                                <div>
+                                  <div className="flex justify-between text-[11px] mb-1">
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Устройства</span>
+                                    <span className="font-medium">{cv.devices}</span>
+                                  </div>
+                                  <input type="range" min={cfg.devices.min} max={cfg.devices.max} step={cfg.devices.step}
+                                    value={cv.devices}
+                                    onChange={e => { setCfgValues(prev => ({ ...prev, devices: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
+                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-2xl font-extrabold mt-3 tracking-tight">
+                              {Math.round(calcPrice).toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                            </p>
+                          </>
+                        )
+                      })()}
+
                       <div className="flex gap-2 mt-4">
-                        <button onClick={() => { setPayTariff(t); setProvider('YUKASSA') }}
+                        <button onClick={() => {
+                          setPayTariff(t); setProvider('YUKASSA')
+                          if (tMode === 'variants') setSelectedVariantIdx(0)
+                          if (tMode === 'configurator' && t.configurator) {
+                            setCfgValues({
+                              trafficGb: t.configurator.traffic?.default ?? 50,
+                              days: t.configurator.days?.default ?? 30,
+                              devices: t.configurator.devices?.default ?? 3,
+                            })
+                          }
+                        }}
                                 className={`${t.isFeatured ? 'btn-primary' : 'btn-secondary'} text-xs py-2.5 flex-1 justify-center`}>
                           Оплатить
                         </button>
@@ -846,7 +973,8 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <p className="text-sm py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>Тарифы загружаются...</p>
@@ -865,9 +993,34 @@ export default function DashboardPage() {
 
               <div className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                 <p className="text-sm font-medium">{payTariff.name}</p>
-                <p className="text-xl font-extrabold mt-0.5">
-                  {payTariff.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                </p>
+                {payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx] ? (
+                  <>
+                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{payTariff.variants[selectedVariantIdx].label} -- {payTariff.variants[selectedVariantIdx].days} дн.</p>
+                    <p className="text-xl font-extrabold mt-0.5">
+                      {payTariff.variants[selectedVariantIdx].priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                    </p>
+                  </>
+                ) : payTariff.mode === 'configurator' && payTariff.configurator ? (() => {
+                  const cfg = payTariff.configurator
+                  let p = 0
+                  if (cfg.traffic) p += cfgValues.trafficGb * (cfg.traffic.pricePerUnit || 0)
+                  if (cfg.days) p += cfgValues.days * (cfg.days.pricePerUnit || 0)
+                  if (cfg.devices) p += cfgValues.devices * (cfg.devices.pricePerUnit || 0)
+                  return (
+                    <>
+                      <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        {cfgValues.days} дн. / {cfgValues.trafficGb} ГБ / {cfgValues.devices} устр.
+                      </p>
+                      <p className="text-xl font-extrabold mt-0.5">
+                        {Math.round(p).toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                      </p>
+                    </>
+                  )
+                })() : (
+                  <p className="text-xl font-extrabold mt-0.5">
+                    {payTariff.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                  </p>
+                )}
               </div>
 
               <div>
