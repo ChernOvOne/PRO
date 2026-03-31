@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [news, setNews]       = useState<any[]>([])
   const [proxies, setProxies] = useState<any[]>([])
   const [myGifts, setMyGifts] = useState<any[]>([])
+  const [activeDiscount, setActiveDiscount] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied]   = useState<string | null>(null)
 
@@ -109,8 +110,9 @@ export default function DashboardPage() {
       fetch('/api/user/devices', { credentials: 'include' }).then(r => r.json()).then(d => d.devices || []).catch(() => []),
       fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json()).catch(() => []),
       fetch('/api/public/config').then(r => r.json()).catch(() => ({})),
-    ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg]) => {
-      setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setMyGifts(Array.isArray(gifts) ? gifts : []); setConfig(cfg || {})
+      fetch('/api/user/promo/active-discount', { credentials: 'include' }).then(r => r.json()).catch(() => null),
+    ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg, disc]) => {
+      setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setMyGifts(Array.isArray(gifts) ? gifts : []); setConfig(cfg || {}); if (disc?.active) setActiveDiscount(disc)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -900,7 +902,7 @@ export default function DashboardPage() {
 
       {/* ── TARIFFS MODAL ── */}
       {showTariffs && (() => {
-        const getCurrentPrice = () => {
+        const getBasePrice = () => {
           if (!payTariff) return 0
           if (payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx]) {
             return payTariff.variants[selectedVariantIdx].priceRub
@@ -914,6 +916,13 @@ export default function DashboardPage() {
             return Math.round(p)
           }
           return payTariff.priceRub
+        }
+        const hasPayDiscount = activeDiscount && activeDiscount.discountPct &&
+          payTariff && (activeDiscount.tariffIds.length === 0 || activeDiscount.tariffIds.includes(payTariff.id))
+        const getCurrentPrice = () => {
+          const base = getBasePrice()
+          if (hasPayDiscount) return Math.round(base * (1 - activeDiscount.discountPct / 100))
+          return base
         }
 
         const pillClass = "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px]"
@@ -949,13 +958,35 @@ export default function DashboardPage() {
                           </span>
                         )}
 
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>{t.name}</h4>
-                          <p className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                            {tMode === 'variants' ? 'от ' : ''}{startPrice.toLocaleString('ru')}
-                            <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                          </p>
-                        </div>
+                        {(() => {
+                          const hasDiscount = activeDiscount && activeDiscount.discountPct &&
+                            (activeDiscount.tariffIds.length === 0 || activeDiscount.tariffIds.includes(t.id))
+                          const discountedPrice = hasDiscount ? Math.round(startPrice * (1 - activeDiscount.discountPct / 100)) : startPrice
+                          return (
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>{t.name}</h4>
+                                {hasDiscount && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+                                        style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                    -{activeDiscount.discountPct}%
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                {hasDiscount && (
+                                  <p className="text-xs line-through" style={{ color: 'var(--text-tertiary)' }}>
+                                    {startPrice.toLocaleString('ru')} ₽
+                                  </p>
+                                )}
+                                <p className="text-xl font-extrabold" style={{ color: hasDiscount ? 'var(--success)' : 'var(--text-primary)' }}>
+                                  {tMode === 'variants' ? 'от ' : ''}{discountedPrice.toLocaleString('ru')}
+                                  <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {t.description && (
                           <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>{t.description}</p>
@@ -1073,12 +1104,26 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-lg">{payTariff.name}</h3>
                 <div className="text-right">
-                  <p className="text-2xl font-extrabold" style={{ color: 'var(--accent-1)' }}>
+                  {hasPayDiscount && (
+                    <p className="text-xs line-through" style={{ color: 'var(--text-tertiary)' }}>
+                      {getBasePrice().toLocaleString('ru')} ₽
+                    </p>
+                  )}
+                  <p className="text-2xl font-extrabold" style={{ color: hasPayDiscount ? 'var(--success)' : 'var(--accent-1)' }}>
                     {getCurrentPrice().toLocaleString('ru')}
                     <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
                   </p>
                 </div>
               </div>
+              {hasPayDiscount && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                     style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                  <Tag className="w-3.5 h-3.5" style={{ color: 'var(--success)' }} />
+                  <span className="text-xs" style={{ color: 'var(--success)' }}>
+                    Промокод <strong>{activeDiscount.code}</strong> · скидка {activeDiscount.discountPct}%
+                  </span>
+                </div>
+              )}
 
               {/* Description + details */}
               {(payTariff.description || payTariff.countries || payTariff.protocol || payTariff.speed) && (

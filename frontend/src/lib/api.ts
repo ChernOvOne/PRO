@@ -155,6 +155,7 @@ export const publicApi = {
 export const promoApi = {
   check: (code: string) => apiFetch<any>('/user/promo/check', { method: 'POST', body: JSON.stringify({ code }) }),
   activate: (code: string) => apiFetch<any>('/user/promo/activate', { method: 'POST', body: JSON.stringify({ code }) }),
+  activeDiscount: () => apiFetch<any>('/user/promo/active-discount'),
 }
 
 // ── Payments ──────────────────────────────────────────────────
