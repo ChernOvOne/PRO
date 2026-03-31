@@ -517,6 +517,59 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ok: true }
   })
 
+  // ── Partial delete: REMNAWAVE only ──
+  app.post('/users/:id/delete-remnawave', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    if (!user.remnawaveUuid) return reply.status(400).send({ error: 'Нет подписки REMNAWAVE' })
+
+    await remnawave.deleteUser(user.remnawaveUuid).catch(err =>
+      logger.warn(`Failed to delete REMNAWAVE user: ${err.message}`)
+    )
+    await prisma.user.update({
+      where: { id },
+      data: { remnawaveUuid: null, subStatus: 'INACTIVE', subExpireAt: null, subLink: null },
+    })
+    logger.info(`Admin deleted REMNAWAVE subscription for user ${id}`)
+    return { ok: true }
+  })
+
+  // ── Partial delete: web account only (keep REMNAWAVE) ──
+  app.post('/users/:id/delete-web', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Delete all DB records but don't touch REMNAWAVE
+    await prisma.referralBonus.deleteMany({ where: { referrerId: id } })
+    await prisma.giftSubscription.deleteMany({ where: { OR: [{ fromUserId: id }, { recipientUserId: id }] } })
+    await prisma.promoUsage.deleteMany({ where: { userId: id } })
+    await prisma.botMessage.deleteMany({ where: { userId: id } })
+    await prisma.balanceTransaction.deleteMany({ where: { userId: id } })
+    await prisma.payment.deleteMany({ where: { userId: id } })
+    await prisma.user.updateMany({ where: { referredById: id }, data: { referredById: null } })
+    await prisma.user.delete({ where: { id } })
+
+    logger.info(`Admin deleted web account for user ${id} (REMNAWAVE kept)`)
+    return { ok: true }
+  })
+
+  // ── Partial delete: remove from bot (unlink TG + clear history) ──
+  app.post('/users/:id/delete-bot', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    await prisma.botMessage.deleteMany({ where: { userId: id } })
+    await prisma.user.update({
+      where: { id },
+      data: { telegramId: null, telegramName: null },
+    })
+    logger.info(`Admin removed user ${id} from bot (TG unlinked + history cleared)`)
+    return { ok: true }
+  })
+
   // Send notification to user
   app.post('/users/:id/notify', admin, async (req, reply) => {
     const { id } = req.params as { id: string }

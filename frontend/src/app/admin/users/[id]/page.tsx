@@ -761,19 +761,78 @@ export default function AdminUserDetail() {
         </ModalOverlay>
       )}
 
-      {/* Delete confirmation */}
+      {/* Delete options */}
       {showDelete && (
-        <ModalOverlay onClose={() => setShowDelete(false)} title="Удалить пользователя">
-          <p className="text-sm" style={{ color: 'var(--danger)' }}>
-            Это действие необратимо. Пользователь будет удалён из системы и из REMNAWAVE.
-          </p>
-          <div className="flex gap-2">
-            <button onClick={() => setShowDelete(false)} className="btn-secondary flex-1">Отмена</button>
+        <ModalOverlay onClose={() => setShowDelete(false)} title="Удаление пользователя">
+          <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Выберите что удалить:</p>
+          <div className="space-y-2">
+            {/* Full delete */}
             <button onClick={() => {
-              action(() => adminApi.deleteUser(id), 'Пользователь удалён').then(() => router.push('/admin/users'))
+              action(() => adminApi.deleteUser(id), 'Пользователь полностью удалён').then(() => router.push('/admin/users'))
               setShowDelete(false)
-            }} className="btn-danger flex-1" disabled={acting}>
-              Удалить навсегда
+            }} disabled={acting}
+              className="w-full text-left p-3 rounded-xl transition-all hover:brightness-110"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <p className="text-sm font-medium" style={{ color: '#f87171' }}>Удалить полностью</p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                Из БД + REMNAWAVE + бот. Необратимо.
+              </p>
+            </button>
+
+            {/* REMNAWAVE only */}
+            {user.remnawaveUuid && (
+              <button onClick={() => {
+                action(
+                  () => fetch(`/api/admin/users/${id}/delete-remnawave`, { method: 'POST', credentials: 'include' }).then(r => { if (!r.ok) throw new Error(); return r.json() }),
+                  'Подписка REMNAWAVE удалена'
+                )
+                setShowDelete(false)
+              }} disabled={acting}
+                className="w-full text-left p-3 rounded-xl transition-all hover:brightness-110"
+                style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                <p className="text-sm font-medium" style={{ color: '#fbbf24' }}>Только подписку REMNAWAVE</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  Удалит из VPN-панели, аккаунт в системе останется.
+                </p>
+              </button>
+            )}
+
+            {/* Web account only */}
+            <button onClick={() => {
+              action(
+                () => fetch(`/api/admin/users/${id}/delete-web`, { method: 'POST', credentials: 'include' }).then(r => { if (!r.ok) throw new Error(); return r.json() }),
+                'Веб-аккаунт удалён'
+              ).then(() => router.push('/admin/users'))
+              setShowDelete(false)
+            }} disabled={acting}
+              className="w-full text-left p-3 rounded-xl transition-all hover:brightness-110"
+              style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+              <p className="text-sm font-medium" style={{ color: '#a78bfa' }}>Только из веб-системы</p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                Удалит из БД, REMNAWAVE не затронет.
+              </p>
+            </button>
+
+            {/* Remove from bot */}
+            {user.telegramId && (
+              <button onClick={() => {
+                action(
+                  () => fetch(`/api/admin/users/${id}/delete-bot`, { method: 'POST', credentials: 'include' }).then(r => { if (!r.ok) throw new Error(); return r.json() }),
+                  'Пользователь удалён из бота'
+                )
+                setShowDelete(false)
+              }} disabled={acting}
+                className="w-full text-left p-3 rounded-xl transition-all hover:brightness-110"
+                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Только из бота</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  Удалит историю чата и отвяжет Telegram. Веб-аккаунт и подписка останутся.
+                </p>
+              </button>
+            )}
+
+            <button onClick={() => setShowDelete(false)} className="btn-secondary w-full justify-center mt-1">
+              Отмена
             </button>
           </div>
         </ModalOverlay>
