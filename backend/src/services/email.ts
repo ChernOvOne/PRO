@@ -202,30 +202,79 @@ class EmailService {
     return this.send({ to: email, subject: 'Сброс пароля — HIDEYOU VPN', html: this.wrap(content) })
   }
 
-  private wrap(content: string): string {
-    return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body { font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
-    .container { max-width: 520px; margin: 40px auto; background: #1e293b; border-radius: 16px; padding: 40px; border: 1px solid #334155; }
-    h2 { color: #f1f5f9; margin-top: 0; }
-    p { color: #94a3b8; line-height: 1.6; }
-    .btn { display: inline-block; background: #5569ff; color: #fff !important; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px; }
-    .footer { text-align: center; margin-top: 32px; color: #475569; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    ${content}
-    <div class="footer">
-      <p>HIDEYOU VPN · <a href="${config.appUrl}" style="color:#5569ff">hideyou.app</a></p>
-    </div>
-  </div>
-</body>
-</html>`
+  // Send broadcast email with optional template and CTA button
+  async sendBroadcastEmail(params: {
+    to: string; subject: string; html: string;
+    btnText?: string; btnUrl?: string; template?: string;
+  }) {
+    let content = params.html
+    if (params.btnText && params.btnUrl) {
+      content += `\n<a href="${params.btnUrl}" class="btn">${params.btnText}</a>`
+    }
+    return this.send({
+      to: params.to,
+      subject: params.subject,
+      html: this.wrap(content, params.template),
+    })
+  }
+
+  private wrap(content: string, template?: string): string {
+    const tpl = EMAIL_TEMPLATES[template || 'dark'] || EMAIL_TEMPLATES.dark
+    return tpl(content, config.appUrl)
   }
 }
+
+// ── Email design templates ──────────────────────────────────
+const EMAIL_TEMPLATES: Record<string, (content: string, appUrl: string) => string> = {
+  dark: (content, appUrl) => `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><style>
+  body { font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+  .container { max-width: 520px; margin: 40px auto; background: #1e293b; border-radius: 16px; padding: 40px; border: 1px solid #334155; }
+  h2 { color: #f1f5f9; margin-top: 0; }
+  p { color: #94a3b8; line-height: 1.6; }
+  .btn { display: inline-block; background: #5569ff; color: #fff !important; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px; }
+  .footer { text-align: center; margin-top: 32px; color: #475569; font-size: 12px; }
+</style></head><body>
+  <div class="container">${content}<div class="footer"><p>HIDEYOU VPN · <a href="${appUrl}" style="color:#5569ff">${appUrl}</a></p></div></div>
+</body></html>`,
+
+  gradient: (content, appUrl) => `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 0; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); }
+  .container { max-width: 520px; margin: 40px auto; background: rgba(30,41,59,0.9); border-radius: 20px; padding: 40px; border: 1px solid rgba(139,92,246,0.2); backdrop-filter: blur(20px); }
+  h2 { color: #f1f5f9; margin-top: 0; background: linear-gradient(135deg, #a78bfa, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  p { color: #94a3b8; line-height: 1.7; }
+  .btn { display: inline-block; background: linear-gradient(135deg, #8b5cf6, #06b6d4); color: #fff !important; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 700; margin-top: 16px; box-shadow: 0 4px 20px rgba(139,92,246,0.3); }
+  .footer { text-align: center; margin-top: 32px; color: #475569; font-size: 12px; }
+</style></head><body>
+  <div class="container">${content}<div class="footer"><p>HIDEYOU VPN · <a href="${appUrl}" style="color:#a78bfa">${appUrl}</a></p></div></div>
+</body></html>`,
+
+  minimal: (content, appUrl) => `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 0; background: #f8fafc; }
+  .container { max-width: 520px; margin: 40px auto; background: #ffffff; border-radius: 12px; padding: 40px; border: 1px solid #e2e8f0; }
+  h2 { color: #1e293b; margin-top: 0; }
+  p { color: #64748b; line-height: 1.6; }
+  .btn { display: inline-block; background: #3b82f6; color: #fff !important; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px; }
+  .footer { text-align: center; margin-top: 32px; color: #94a3b8; font-size: 12px; }
+</style></head><body>
+  <div class="container">${content}<div class="footer"><p>HIDEYOU VPN · <a href="${appUrl}" style="color:#3b82f6">${appUrl}</a></p></div></div>
+</body></html>`,
+
+  neon: (content, appUrl) => `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 0; background: #000000; }
+  .container { max-width: 520px; margin: 40px auto; background: #0a0a0a; border-radius: 16px; padding: 40px; border: 1px solid #22d3ee33; box-shadow: 0 0 40px rgba(34,211,238,0.05); }
+  h2 { color: #22d3ee; margin-top: 0; text-shadow: 0 0 20px rgba(34,211,238,0.3); }
+  p { color: #94a3b8; line-height: 1.6; }
+  .btn { display: inline-block; background: transparent; color: #22d3ee !important; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px; border: 1px solid #22d3ee; box-shadow: 0 0 15px rgba(34,211,238,0.2); }
+  .footer { text-align: center; margin-top: 32px; color: #334155; font-size: 12px; }
+</style></head><body>
+  <div class="container">${content}<div class="footer"><p>HIDEYOU VPN · <a href="${appUrl}" style="color:#22d3ee">${appUrl}</a></p></div></div>
+</body></html>`,
+}
+
+export const EMAIL_TEMPLATE_NAMES = Object.keys(EMAIL_TEMPLATES)
 
 export const emailService = new EmailService()
