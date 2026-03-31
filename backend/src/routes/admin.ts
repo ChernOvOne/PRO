@@ -7,6 +7,7 @@ import { balanceService } from '../services/balance'
 import { inAppNotifications } from '../services/notification-service'
 import { notifications } from '../services/notifications'
 import { logger }   from '../utils/logger'
+import { config }   from '../config'
 import { parseYukassaStatus, buildActivityLog } from './users'
 
 // GeoIP cache (in-memory, TTL 1 hour)
@@ -382,6 +383,85 @@ export async function adminRoutes(app: FastifyInstance) {
     }))
 
     return { payments: enriched, total }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  ADMIN MANAGEMENT
+  // ─────────────────────────────────────────────────────────
+
+  // List admins
+  app.get('/admins', admin, async () => {
+    return prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true, email: true, telegramId: true, telegramName: true, createdAt: true, lastLoginAt: true },
+      orderBy: { createdAt: 'asc' },
+    })
+  })
+
+  // Invite admin by email
+  app.post('/admins/invite-email', admin, async (req, reply) => {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body)
+
+    let user = await prisma.user.findUnique({ where: { email } })
+    if (user) {
+      // Existing user → promote to admin
+      await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })
+    } else {
+      // Create new user with temp password
+      const bcrypt = await import('bcryptjs')
+      const tempPw = Math.random().toString(36).slice(2, 10)
+      const hash = await bcrypt.hash(tempPw, 12)
+      user = await prisma.user.create({
+        data: { email, passwordHash: hash, role: 'ADMIN', emailVerified: true },
+      })
+    }
+
+    // Send invitation email
+    const { emailService } = await import('../services/email')
+    await emailService.send({
+      to: email,
+      subject: 'Вы приглашены как администратор — HIDEYOU VPN',
+      html: `<h2>Приглашение в администраторы</h2>
+        <p>Вас пригласили в панель администратора <strong>HIDEYOU VPN</strong>.</p>
+        <p>Войдите по ссылке и установите пароль через "Сбросить пароль":</p>
+        <a href="${config.appUrl}/login" style="display:inline-block;padding:12px 24px;background:#5569ff;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;margin-top:12px;">Войти в панель</a>`,
+    }).catch(() => {})
+
+    logger.info(`Admin invited by email: ${email}`)
+    return { ok: true, userId: user.id }
+  })
+
+  // Invite admin by Telegram ID
+  app.post('/admins/invite-telegram', admin, async (req, reply) => {
+    const { telegramId } = z.object({ telegramId: z.string().min(1) }).parse(req.body)
+
+    let user = await prisma.user.findUnique({ where: { telegramId } })
+    if (user) {
+      await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })
+    } else {
+      user = await prisma.user.create({
+        data: { telegramId, role: 'ADMIN' },
+      })
+    }
+
+    // Notify via bot
+    try {
+      const { bot } = await import('../bot')
+      await bot.api.sendMessage(telegramId, '🔑 Вы назначены *администратором* HIDEYOU VPN.', { parse_mode: 'Markdown' })
+    } catch {}
+
+    logger.info(`Admin invited by TG: ${telegramId}`)
+    return { ok: true, userId: user.id }
+  })
+
+  // Remove admin role
+  app.post('/admins/:id/revoke', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const adminId = (req.user as any).sub
+    if (id === adminId) return reply.status(400).send({ error: 'Нельзя снять админа с себя' })
+
+    await prisma.user.update({ where: { id }, data: { role: 'USER' } })
+    return { ok: true }
   })
 
   // ─────────────────────────────────────────────────────────
