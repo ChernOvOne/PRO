@@ -326,6 +326,54 @@ bot.callbackQuery('menu:main', async (ctx) => {
   })
 })
 
+// ── Helpers: Russian date formatting & day declension ────────
+function pluralDays(n: number): string {
+  const abs = Math.abs(n)
+  if (abs % 10 === 1 && abs % 100 !== 11) return `${n} день`
+  if (abs % 10 >= 2 && abs % 10 <= 4 && (abs % 100 < 10 || abs % 100 >= 20)) return `${n} дня`
+  return `${n} дней`
+}
+
+const RUSSIAN_MONTHS = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+]
+
+function formatDateRu(d: Date): string {
+  return `${d.getDate()} ${RUSSIAN_MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function formatOnlineAt(dateStr: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMins = Math.floor(diffMs / 60_000)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+
+  if (diffMins < 1) return 'только что'
+  if (diffMins < 60) return `${diffMins} мин. назад`
+
+  const isToday = d.toDateString() === now.toDateString()
+  if (isToday) return `сегодня, ${hh}:${mm}`
+
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return `вчера, ${hh}:${mm}`
+
+  return `${formatDateRu(d)}, ${hh}:${mm}`
+}
+
+function trafficBar(usedBytes: number, limitBytes: number, width = 16): string {
+  if (limitBytes <= 0) return ''
+  const pct = Math.min(1, usedBytes / limitBytes)
+  const filled = Math.round(pct * width)
+  const empty = width - filled
+  return '█'.repeat(filled) + '░'.repeat(empty)
+}
+
 // ══════════════════════════════════════════════════════════════
 //  SUBSCRIPTION
 // ══════════════════════════════════════════════════════════════
@@ -352,24 +400,65 @@ bot.callbackQuery('menu:subscription', async (ctx) => {
       ? Math.max(0, Math.ceil((expireAt.getTime() - Date.now()) / 86400_000))
       : null
 
-    const usedGb  = ((rmUser.userTraffic?.usedTrafficBytes ?? 0) / 1e9).toFixed(2)
-    const limitGb = rmUser.trafficLimitBytes
-      ? `/ ${(rmUser.trafficLimitBytes / 1e9).toFixed(0)} ГБ`
-      : '(безлимит)'
+    const usedBytes = rmUser.userTraffic?.usedTrafficBytes ?? 0
+    const limitBytes = rmUser.trafficLimitBytes ?? 0
+    const usedGb = (usedBytes / 1e9).toFixed(1)
+    const limitGb = limitBytes > 0 ? (limitBytes / 1e9).toFixed(0) : null
 
-    const statusIcon = rmUser.status === 'ACTIVE' ? '✅' : '❌'
-    const statusText = rmUser.status === 'ACTIVE' ? 'Активна' : rmUser.status
+    const statusIcon = rmUser.status === 'ACTIVE' ? '✅' : rmUser.status === 'EXPIRED' ? '⏰' : '❌'
+    const statusLabel = rmUser.status === 'ACTIVE' ? 'Активна'
+      : rmUser.status === 'EXPIRED' ? 'Истекла'
+      : rmUser.status === 'LIMITED' ? 'Лимит трафика'
+      : 'Неактивна'
+
+    // Find current tariff name from squads or tag
+    const squadNames = (rmUser.activeInternalSquads ?? []).map(s => s.name).join(', ')
+    const tariffLabel = rmUser.tag || squadNames || '—'
+
+    // Build traffic line
+    let trafficLine = `📊 Трафик: ${usedGb}`
+    if (limitGb) {
+      trafficLine += ` / ${limitGb} ГБ`
+    } else {
+      trafficLine += ` ГБ (безлимит)`
+    }
+
+    // Build progress bar
+    let progressLine = ''
+    if (limitBytes > 0) {
+      const pct = Math.min(100, Math.round(usedBytes / limitBytes * 100))
+      progressLine = `\n[${trafficBar(usedBytes, limitBytes)}] ${pct}%`
+    }
+
+    // Device info
+    const deviceLimit = rmUser.hwidDeviceLimit ?? 0
+    let deviceCount = 0
+    try {
+      const devData = await remnawave.getDevices(user.remnawaveUuid)
+      deviceCount = devData.devices?.length ?? 0
+    } catch { /* ignore */ }
+
+    // Online info
+    const onlineAt = formatOnlineAt(rmUser.userTraffic?.onlineAt ?? null)
+
+    // Subscription link
+    const subLink = user.subLink || remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl)
 
     const text =
-      `📊 *Статус подписки*\n\n` +
-      `Статус: ${statusIcon} ${statusText}\n` +
-      `Истекает: ${expireAt ? expireAt.toLocaleDateString('ru') : '—'}\n` +
-      `Осталось: ${daysLeft !== null ? `${daysLeft} дн.` : '—'}\n` +
-      `Трафик: ${usedGb} ГБ ${limitGb}`
+      `🔑 *Подписка*\n\n` +
+      `Статус: ${statusIcon} ${statusLabel}\n` +
+      `Тариф: ${tariffLabel}` + (expireAt && daysLeft !== null ? ` · ${pluralDays(Math.ceil((expireAt.getTime() - new Date(rmUser.createdAt).getTime()) / 86400_000))}` : '') + `\n` +
+      (expireAt ? `Истекает: ${formatDateRu(expireAt)}\n` : '') +
+      (daysLeft !== null ? `Осталось: ${pluralDays(daysLeft)}\n` : '') +
+      `\n${trafficLine}${progressLine}\n` +
+      `\n📱 Устройства: ${deviceCount}` + (deviceLimit > 0 ? ` / ${deviceLimit}` : '') + `\n` +
+      `🌍 Последнее подключение: ${onlineAt}\n` +
+      `\n🔗 Ссылка подписки:\n\`${subLink}\``
 
     const kb = new InlineKeyboard()
-      .text('📋 Скопировать ссылку', 'sub:copy_link')
+      .text('📋 Копировать', 'sub:copy_link')
       .text('🔄 Обновить ссылку', 'sub:refresh_link').row()
+      .text('📖 Инструкции', 'menu:instructions')
       .text('◀️ Назад', 'menu:main')
 
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb })
@@ -775,6 +864,45 @@ bot.callbackQuery(/^promo:activate:(.+)$/, async (ctx) => {
 // ══════════════════════════════════════════════════════════════
 //  DEVICES
 // ══════════════════════════════════════════════════════════════
+
+function buildDevicesView(devices: any[], deviceLimit: number) {
+  const total = devices.length
+  const limitStr = deviceLimit > 0 ? `${total}/${deviceLimit}` : `${total}`
+
+  if (!total) {
+    return {
+      text: msg('bot_no_devices', `📱 *Устройства (0${deviceLimit > 0 ? `/${deviceLimit}` : ''})*\n\nНет подключённых устройств.`),
+      kb: backButton(),
+    }
+  }
+
+  let text = `📱 *Устройства (${limitStr})*\n\n`
+  const kb = new InlineKeyboard()
+
+  for (let i = 0; i < devices.length; i++) {
+    const d = devices[i]
+    const model = d.deviceModel || 'Неизвестное устройство'
+    const platform = d.platform || ''
+    const osVer = d.osVersion || ''
+    const agent = d.userAgent || ''
+    const connected = formatOnlineAt(d.updatedAt || d.createdAt || null)
+
+    text += `${i + 1}. *${model}*\n`
+    if (platform || osVer) {
+      text += `   ${platform}${osVer ? ` ${osVer}` : ''}${agent ? ` · ${agent}` : ''}\n`
+    }
+    text += `   Подключено: ${connected}\n\n`
+
+    // Truncate button label to avoid TG 64-byte limit
+    const btnLabel = model.length > 18 ? model.slice(0, 18) + '…' : model
+    kb.text(`🗑 ${btnLabel}`, `device:delete:${d.hwid}`).row()
+  }
+
+  kb.text('◀️ Назад', 'menu:main')
+
+  return { text, kb }
+}
+
 bot.callbackQuery('menu:devices', async (ctx) => {
   await ctx.answerCallbackQuery()
   const telegramId = String(ctx.from.id)
@@ -790,28 +918,14 @@ bot.callbackQuery('menu:devices', async (ctx) => {
 
   try {
     const { devices } = await remnawave.getDevices(user.remnawaveUuid)
+    // Get device limit from remnawave
+    let deviceLimit = 0
+    try {
+      const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+      deviceLimit = rmUser.hwidDeviceLimit ?? 0
+    } catch { /* ignore */ }
 
-    if (!devices.length) {
-      await ctx.editMessageText(
-        '📱 Устройств не найдено.',
-        { reply_markup: backButton() },
-      )
-      return
-    }
-
-    let text = `📱 *Ваши устройства (${devices.length}):*\n\n`
-    const kb = new InlineKeyboard()
-
-    for (let i = 0; i < devices.length; i++) {
-      const d = devices[i]
-      const model = d.deviceModel || 'Неизвестное'
-      const platform = d.platform || '—'
-      text += `${i + 1}. *${model}* (${platform})\n`
-      kb.text(`🗑 ${model}`, `device:delete:${d.hwid}`).row()
-    }
-
-    kb.text('◀️ Назад', 'menu:main')
-
+    const { text, kb } = buildDevicesView(devices, deviceLimit)
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb })
   } catch {
     await ctx.editMessageText('⚠️ Не удалось загрузить устройства.', { reply_markup: backButton() })
@@ -832,28 +946,14 @@ bot.callbackQuery(/^device:delete:(.+)$/, async (ctx) => {
     await remnawave.deleteDevice(user.remnawaveUuid, hwid)
     await ctx.answerCallbackQuery({ text: '✅ Устройство удалено', show_alert: true })
 
-    // Re-render devices list by triggering callback
-    // Simulate pressing menu:devices
-    const fakeCtx = { ...ctx, match: ['menu:devices'] }
-    // Simply reload the devices view
     const { devices } = await remnawave.getDevices(user.remnawaveUuid)
+    let deviceLimit = 0
+    try {
+      const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+      deviceLimit = rmUser.hwidDeviceLimit ?? 0
+    } catch { /* ignore */ }
 
-    if (!devices.length) {
-      await ctx.editMessageText('📱 Устройств не найдено.', { reply_markup: backButton() })
-      return
-    }
-
-    let text = `📱 *Ваши устройства (${devices.length}):*\n\n`
-    const kb = new InlineKeyboard()
-    for (let i = 0; i < devices.length; i++) {
-      const d = devices[i]
-      const model = d.deviceModel || 'Неизвестное'
-      const platform = d.platform || '—'
-      text += `${i + 1}. *${model}* (${platform})\n`
-      kb.text(`🗑 ${model}`, `device:delete:${d.hwid}`).row()
-    }
-    kb.text('◀️ Назад', 'menu:main')
-
+    const { text, kb } = buildDevicesView(devices, deviceLimit)
     await ctx.editMessageText(text, { parse_mode: 'Markdown', reply_markup: kb })
   } catch {
     await ctx.answerCallbackQuery({ text: '⚠️ Ошибка удаления', show_alert: true })
@@ -863,6 +963,15 @@ bot.callbackQuery(/^device:delete:(.+)$/, async (ctx) => {
 // ══════════════════════════════════════════════════════════════
 //  INSTRUCTIONS
 // ══════════════════════════════════════════════════════════════
+
+// Helper: strip markdown bold/italic for cleaner Telegram display
+function stripMd(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+}
 
 // Step 1: list platforms
 bot.callbackQuery('menu:instructions', async (ctx) => {
@@ -882,13 +991,20 @@ bot.callbackQuery('menu:instructions', async (ctx) => {
   }
 
   const kb = new InlineKeyboard()
-  for (const p of platforms) {
-    kb.text(`${p.icon} ${p.name}`, `instr:platform:${p.id}`).row()
+  // Group platforms in rows of 2 where possible
+  for (let i = 0; i < platforms.length; i += 2) {
+    const p1 = platforms[i]
+    kb.text(`${p1.icon} ${p1.name}`, `instr:platform:${p1.id}`)
+    if (i + 1 < platforms.length) {
+      const p2 = platforms[i + 1]
+      kb.text(`${p2.icon} ${p2.name}`, `instr:platform:${p2.id}`)
+    }
+    kb.row()
   }
   kb.text('◀️ Назад', 'menu:main')
 
   await ctx.editMessageText(
-    msg('bot_instructions_title', '📖 *Выберите платформу:*'),
+    msg('bot_instructions_title', '📖 *Инструкции по подключению*\n\nВыберите вашу платформу:'),
     { parse_mode: 'Markdown', reply_markup: kb },
   )
 })
@@ -903,7 +1019,7 @@ bot.callbackQuery(/^instr:platform:(.+)$/, async (ctx) => {
     include: {
       apps: {
         where:   { isActive: true },
-        orderBy: { sortOrder: 'asc' },
+        orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }],
       },
     },
   })
@@ -918,19 +1034,89 @@ bot.callbackQuery(/^instr:platform:(.+)$/, async (ctx) => {
 
   const kb = new InlineKeyboard()
   for (const app of platform.apps) {
-    const featured = app.isFeatured ? ' ⭐' : ''
-    kb.text(`${app.icon} ${app.name}${featured}`, `instr:app:${app.id}`).row()
+    const label = app.isFeatured
+      ? `⭐ ${app.name} (рекомендуем)`
+      : `${app.icon} ${app.name}`
+    kb.text(label, `instr:app:${app.id}:1`).row()
   }
   kb.text('◀️ Назад', 'menu:instructions')
 
   await ctx.editMessageText(
-    `📖 *${platform.icon} ${platform.name}*\n\nВыберите приложение:`,
+    `${platform.icon} *${platform.name}*\n\nВыберите приложение:`,
     { parse_mode: 'Markdown', reply_markup: kb },
   )
 })
 
-// Step 3: show instruction steps
-bot.callbackQuery(/^instr:app:(.+)$/, async (ctx) => {
+// Step 3: show instruction steps with pagination — instr:app:{appId}:{stepNum}
+bot.callbackQuery(/^instr:app:(.+?):(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const appId = ctx.match[1]
+  const stepNum = parseInt(ctx.match[2], 10)
+
+  const app = await prisma.instructionApp.findUnique({
+    where:   { id: appId },
+    include: {
+      platform: true,
+      steps:    { orderBy: { order: 'asc' } },
+    },
+  })
+
+  if (!app || !app.steps.length) {
+    await ctx.editMessageText(
+      'Инструкция не найдена.',
+      { reply_markup: backButton('menu:instructions') },
+    )
+    return
+  }
+
+  const totalSteps = app.steps.length
+  const stepIdx = Math.max(0, Math.min(stepNum - 1, totalSteps - 1))
+  const step = app.steps[stepIdx]
+  const currentStep = stepIdx + 1
+
+  // Build step text
+  const stepText = stripMd(step.text)
+  let text = `📖 *${app.name}* — Шаг ${currentStep}/${totalSteps}\n\n`
+  text += `${currentStep}. ${stepText}`
+
+  // Build keyboard
+  const kb = new InlineKeyboard()
+
+  // App-specific action buttons (store/deeplink)
+  if (app.storeUrl && currentStep === 1) {
+    kb.url('📥 Скачать', app.storeUrl).row()
+  }
+  if (app.deeplink && currentStep === totalSteps) {
+    // Replace {url} placeholder with user's subscription link
+    const telegramId = String(ctx.from.id)
+    const user = await ensureUser(telegramId)
+    const subLink = user?.subLink || ''
+    const deeplink = app.deeplink.replace(/\{url\}/g, encodeURIComponent(subLink))
+    if (deeplink) {
+      kb.url('🔗 Открыть в приложении', deeplink).row()
+    }
+  }
+
+  // Navigation row
+  if (currentStep > 1) {
+    kb.text('◀️ Назад', `instr:app:${appId}:${currentStep - 1}`)
+  } else {
+    kb.text('◀️ Назад', `instr:platform:${app.platformId}`)
+  }
+  if (currentStep < totalSteps) {
+    kb.text(`Шаг ${currentStep + 1} ▶️`, `instr:app:${appId}:${currentStep + 1}`)
+  }
+
+  await ctx.editMessageText(text, {
+    parse_mode:              'Markdown',
+    reply_markup:            kb,
+    // @ts-ignore — grammy supports this
+    disable_web_page_preview: true,
+  })
+})
+
+// Legacy: instr:app:{id} without step number — redirect to step 1
+bot.callbackQuery(/^instr:app:([^:]+)$/, async (ctx) => {
   await ctx.answerCallbackQuery()
   const appId = ctx.match[1]
 
@@ -950,21 +1136,22 @@ bot.callbackQuery(/^instr:app:(.+)$/, async (ctx) => {
     return
   }
 
-  let text = `📖 *${app.icon} ${app.name}*\n`
-  if (app.storeUrl) {
-    text += `[Скачать приложение](${app.storeUrl})\n`
-  }
-  text += '\n'
+  const totalSteps = app.steps.length
+  const step = app.steps[0]
+  const stepText = stripMd(step.text)
 
-  for (const step of app.steps) {
-    text += `*Шаг ${step.order}.* ${step.text}\n\n`
-  }
+  let text = `📖 *${app.name}* — Шаг 1/${totalSteps}\n\n`
+  text += `1. ${stepText}`
 
   const kb = new InlineKeyboard()
   if (app.storeUrl) {
     kb.url('📥 Скачать', app.storeUrl).row()
   }
+
   kb.text('◀️ Назад', `instr:platform:${app.platformId}`)
+  if (totalSteps > 1) {
+    kb.text('Шаг 2 ▶️', `instr:app:${appId}:2`)
+  }
 
   await ctx.editMessageText(text, {
     parse_mode:              'Markdown',
