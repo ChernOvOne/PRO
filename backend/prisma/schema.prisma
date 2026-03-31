@@ -470,6 +470,41 @@ model BotMessage {
   @@map("bot_messages")
 }
 
+// ── Broadcasts ──────────────────────────────────────────────
+model Broadcast {
+  id            String          @id @default(uuid())
+  channel       String          // telegram | email | both
+  audience      String          // all | active | inactive | expiring | with_email | with_telegram
+
+  // Telegram message
+  tgText        String?         @map("tg_text")
+  tgButtons     Json?           @map("tg_buttons")     // [{label, url}]
+
+  // Email message
+  emailSubject  String?         @map("email_subject")
+  emailHtml     String?         @map("email_html")
+  emailBtnText  String?         @map("email_btn_text")
+  emailBtnUrl   String?         @map("email_btn_url")
+
+  // Status
+  status        BroadcastStatus @default(DRAFT)
+  scheduledAt   DateTime?       @map("scheduled_at")
+  startedAt     DateTime?       @map("started_at")
+  completedAt   DateTime?       @map("completed_at")
+
+  // Stats
+  totalRecipients Int           @default(0) @map("total_recipients")
+  sentCount       Int           @default(0) @map("sent_count")
+  failedCount     Int           @default(0) @map("failed_count")
+
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("broadcasts")
+}
+
 // ── Enums ────────────────────────────────────────────────────
 enum Role {
   USER
@@ -555,4 +590,12 @@ enum EmailVerificationType {
   REGISTRATION
   EMAIL_CHANGE
   PASSWORD_RESET
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
 }
