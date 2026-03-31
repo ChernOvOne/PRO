@@ -6,6 +6,7 @@ import { remnawave } from '../services/remnawave'
 import { balanceService }  from '../services/balance'
 import { paymentService }  from '../services/payment'
 import { config }    from '../config'
+import { logger }    from '../utils/logger'
 
 function getClientIp(req: any): string | null {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim()
@@ -609,6 +610,73 @@ export async function userRoutes(app: FastifyInstance) {
     })
 
     return { ok: true, redeemedDays: days, remainingDays: user.bonusDays - days }
+  })
+
+  // ── Activate trial subscription ────────────────────────────
+  app.post('/trial/activate', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+
+    if (!config.features.trial) {
+      return reply.status(400).send({ error: 'Пробный период недоступен' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    if (user.remnawaveUuid) return reply.status(400).send({ error: 'У вас уже есть подписка' })
+
+    const trialDays = config.features.trialDays || 3
+    // First look for a tariff marked as trial, otherwise fallback to cheapest
+    const trialTariff = await prisma.tariff.findFirst({
+      where: { isTrial: true },
+    })
+    const cheapestTariff = trialTariff || await prisma.tariff.findFirst({
+      where: { isActive: true, type: 'SUBSCRIPTION' },
+      orderBy: { priceRub: 'asc' },
+    })
+    if (!cheapestTariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
+
+    const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+    const expireAt = new Date(Date.now() + trialDays * 86400_000).toISOString()
+
+    const rmUser = await remnawave.createUser({
+      username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+      email: user.email ?? undefined,
+      telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
+      expireAt,
+      trafficLimitBytes,
+      trafficLimitStrategy: cheapestTariff.trafficStrategy || 'MONTH',
+      hwidDeviceLimit: cheapestTariff.deviceLimit ?? 3,
+      tag: cheapestTariff.remnawaveTag ?? undefined,
+      activeInternalSquads: cheapestTariff.remnawaveSquads.length > 0 ? cheapestTariff.remnawaveSquads : undefined,
+    })
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        remnawaveUuid: rmUser.uuid,
+        subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
+        subStatus: 'ACTIVE',
+        subExpireAt: new Date(expireAt),
+      },
+    })
+
+    // Log as payment
+    await prisma.payment.create({
+      data: {
+        userId,
+        tariffId: cheapestTariff.id,
+        provider: 'MANUAL',
+        amount: 0,
+        currency: 'RUB',
+        status: 'PAID',
+        purpose: 'SUBSCRIPTION',
+        confirmedAt: new Date(),
+        yukassaStatus: JSON.stringify({ _type: 'trial', days: trialDays }),
+      },
+    })
+
+    logger.info(`Trial activated for user ${userId}: ${trialDays} days`)
+    return { ok: true, days: trialDays, tariffName: cheapestTariff.name }
   })
 }
 

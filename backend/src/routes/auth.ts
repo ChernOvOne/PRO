@@ -211,7 +211,15 @@ export async function authRoutes(app: FastifyInstance) {
     })
 
     logger.info(`New user registered via email: ${email}`)
-    await emailService.sendWelcome(email).catch(() => {})
+
+    // Send appropriate welcome email
+    const hasSubscription = !!rmUser
+    const trialAvailable = !hasSubscription && config.features.trial
+    if (trialAvailable) {
+      await emailService.sendTrialOffer(email, config.features.trialDays).catch(() => {})
+    } else {
+      await emailService.sendWelcome(email).catch(() => {})
+    }
 
     const token = app.jwt.sign({ sub: user.id, role: user.role })
     const { passwordHash: _, ...safeUser } = user as any
@@ -219,7 +227,7 @@ export async function authRoutes(app: FastifyInstance) {
     return reply
       .setCookie('token', token, cookieOpts())
       .status(201)
-      .send({ token, user: safeUser })
+      .send({ token, user: { ...safeUser, trialAvailable } })
   })
 
   // ── Change password ────────────────────────────────────────

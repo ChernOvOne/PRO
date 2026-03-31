@@ -412,6 +412,21 @@ export default function DashboardPage() {
             </div>
             <p className="text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Нет подписки</p>
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Выберите тариф, чтобы начать</p>
+            {config.features?.trial && (
+              <button onClick={async () => {
+                try {
+                  const res = await fetch('/api/user/trial/activate', { method: 'POST', credentials: 'include' })
+                  const d = await res.json()
+                  if (!res.ok) throw new Error(d.error || 'Ошибка')
+                  toast.success(`Пробный период активирован! ${d.days} дней`)
+                  window.location.reload()
+                } catch (e: any) { toast.error(e.message) }
+              }}
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.15))', border: '1px solid rgba(139,92,246,0.25)', color: '#a78bfa' }}>
+                <Gift className="w-4 h-4" /> Пробный период ({config.features?.trialDays || 3} дней бесплатно)
+              </button>
+            )}
             <button onClick={() => setShowTariffs(true)} className="btn-primary px-8 py-3">
               <CreditCard className="w-4 h-4" /> Выбрать тариф
             </button>

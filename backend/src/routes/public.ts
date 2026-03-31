@@ -6,7 +6,7 @@ export async function publicRoutes(app: FastifyInstance) {
   // Tariffs for landing page
   app.get('/tariffs', async () =>
     prisma.tariff.findMany({
-      where:   { isActive: true },
+      where:   { isActive: true, isVisible: true },
       orderBy: [{ sortOrder: 'asc' }],
       select: {
         id: true, name: true, description: true,

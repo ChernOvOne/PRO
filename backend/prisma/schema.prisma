@@ -99,7 +99,9 @@ model Tariff {
 
   // Status
   isActive        Boolean     @default(true) @map("is_active")
+  isVisible       Boolean     @default(true) @map("is_visible")   // show in user tariff list
   isFeatured      Boolean     @default(false) @map("is_featured")
+  isTrial         Boolean     @default(false) @map("is_trial")    // used for trial subscriptions
   sortOrder       Int         @default(0) @map("sort_order")
 
   // Tariff mode: simple (legacy), variants (multiple durations), configurator (user builds)

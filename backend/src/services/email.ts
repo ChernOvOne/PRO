@@ -171,6 +171,26 @@ class EmailService {
     return this.send({ to: email, subject: '🎁 Вам подарили VPN-подписку — HIDEYOU', html: this.wrap(content) })
   }
 
+  async sendTrialOffer(email: string, trialDays: number) {
+    const defaultHtml = `
+      <h2>🎁 Попробуйте бесплатно!</h2>
+      <p>Вы зарегистрировались в <strong>HIDEYOU VPN</strong>.</p>
+      <p>Специально для вас — <strong>бесплатный пробный период на ${trialDays} дней</strong>!</p>
+      <p>Активируйте пробный период в личном кабинете одним нажатием:</p>
+      <a href="${config.appUrl}/dashboard" class="btn">Активировать пробный период</a>
+      <p style="margin-top: 20px; font-size: 13px; color: #64748b;">Полный доступ к VPN без ограничений. Никаких обязательств — просто попробуйте.</p>
+    `
+    const content = await this.getTemplate('trial_offer', {
+      trialDays: String(trialDays),
+      appUrl: config.appUrl,
+    }, defaultHtml)
+    return this.send({
+      to: email,
+      subject: `🎁 ${trialDays} дней бесплатного VPN — HIDEYOU`,
+      html: this.wrap(content),
+    })
+  }
+
   async sendPasswordReset(email: string, code: string) {
     const defaultHtml = `
       <h2>Сброс пароля</h2>
