@@ -162,6 +162,12 @@ const FunnelUpdateSchema = z.object({
 export async function adminFunnelRoutes(app: FastifyInstance) {
   const admin = { preHandler: [app.adminOnly] }
 
+  // Variable documentation for message editor
+  app.get('/variables', admin, async () => {
+    const { VARIABLE_DOCS } = await import('../services/funnel-engine')
+    return VARIABLE_DOCS
+  })
+
   // List
   app.get('/funnels', admin, async () =>
     prisma.funnel.findMany({
