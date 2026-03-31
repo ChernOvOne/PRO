@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Save, RefreshCw, Bot, CreditCard, Users,
   Globe, Bell, Shield, Loader2, ChevronDown, Mail,
+  Trash2, Plus, UserPlus, MessageCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -409,6 +410,114 @@ function EmailTemplatesBlock({ settings, update }: { settings: Settings; update:
           )
         })}
       </div>
+
+      {/* ── Admin Management ── */}
+      <AdminManagement />
+    </div>
+  )
+}
+
+function AdminManagement() {
+  const [admins, setAdmins] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [inviteMode, setInviteMode] = useState<'email' | 'telegram' | null>(null)
+  const [inviteValue, setInviteValue] = useState('')
+  const [inviting, setInviting] = useState(false)
+
+  const load = async () => {
+    try {
+      const res = await fetch('/api/admin/admins', { credentials: 'include' })
+      if (res.ok) setAdmins(await res.json())
+    } catch {} finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const invite = async () => {
+    if (!inviteValue.trim()) return
+    setInviting(true)
+    try {
+      const endpoint = inviteMode === 'email' ? '/api/admin/admins/invite-email' : '/api/admin/admins/invite-telegram'
+      const body = inviteMode === 'email' ? { email: inviteValue } : { telegramId: inviteValue }
+      const res = await fetch(endpoint, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success(inviteMode === 'email' ? 'Приглашение отправлено на email' : 'Администратор добавлен')
+      setInviteMode(null); setInviteValue(''); load()
+    } catch (e: any) { toast.error(e.message) }
+    finally { setInviting(false) }
+  }
+
+  const revoke = async (id: string) => {
+    if (!confirm('Снять права администратора?')) return
+    try {
+      const res = await fetch(`/api/admin/admins/${id}/revoke`, { method: 'POST', credentials: 'include' })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success('Права сняты'); load()
+    } catch (e: any) { toast.error(e.message) }
+  }
+
+  return (
+    <div className="glass-card space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold flex items-center gap-2">
+          <Shield className="w-5 h-5" style={{ color: 'var(--accent-1)' }} /> Администраторы
+        </h2>
+        <div className="flex gap-2">
+          <button onClick={() => setInviteMode('email')}
+            className="btn-secondary text-xs py-1.5 px-3"><Mail className="w-3.5 h-3.5" /> По Email</button>
+          <button onClick={() => setInviteMode('telegram')}
+            className="btn-secondary text-xs py-1.5 px-3"><MessageCircle className="w-3.5 h-3.5" /> По TG ID</button>
+        </div>
+      </div>
+
+      {/* Invite form */}
+      {inviteMode && (
+        <div className="flex gap-2 p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <input value={inviteValue} onChange={e => setInviteValue(e.target.value)}
+            placeholder={inviteMode === 'email' ? 'Email нового администратора' : 'Telegram ID (цифры)'}
+            className="glass-input flex-1 text-sm" />
+          <button onClick={invite} disabled={inviting} className="btn-primary text-xs px-4">
+            {inviting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+            {inviteMode === 'email' ? 'Пригласить' : 'Добавить'}
+          </button>
+          <button onClick={() => { setInviteMode(null); setInviteValue('') }}
+            className="btn-secondary text-xs px-2">✕</button>
+        </div>
+      )}
+
+      {/* Admin list */}
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-tertiary)' }} /></div>
+      ) : (
+        <div className="space-y-2">
+          {admins.map(a => (
+            <div key={a.id} className="flex items-center justify-between p-3 rounded-xl"
+                 style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold"
+                     style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
+                  {(a.telegramName || a.email || 'A')[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{a.telegramName || a.email?.split('@')[0] || 'Admin'}</p>
+                  <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                    {a.email && <span>{a.email}</span>}
+                    {a.telegramId && <span>TG: {a.telegramId}</span>}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => revoke(a.id)} title="Снять права"
+                className="p-2 rounded-lg hover:bg-red-500/10 transition-all">
+                <Trash2 className="w-4 h-4 text-red-400" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
