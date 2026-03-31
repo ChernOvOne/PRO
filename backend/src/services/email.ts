@@ -6,6 +6,8 @@ import { prisma }  from '../db'
 class EmailService {
   private transporter: nodemailer.Transporter | null = null
   private enabled: boolean
+  private fromAddress: string = ''
+  private dbChecked = false
 
   constructor() {
     this.enabled = !!(config.smtp.host && config.smtp.user && config.smtp.pass)
@@ -20,9 +22,50 @@ class EmailService {
           pass: config.smtp.pass!,
         },
       })
+      this.fromAddress = config.smtp.from || config.smtp.user!
     } else {
-      logger.warn('Email service disabled — SMTP not configured')
+      logger.warn('Email service disabled via env — will try DB settings on first send')
     }
+  }
+
+  // Load SMTP settings from DB (admin saves them there)
+  private async ensureTransporter(): Promise<boolean> {
+    if (this.enabled && this.transporter) return true
+    if (this.dbChecked) return false
+
+    this.dbChecked = true
+    try {
+      const rows = await prisma.setting.findMany({
+        where: { key: { in: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from'] } },
+      })
+      const s: Record<string, string> = {}
+      for (const r of rows) s[r.key] = r.value
+
+      if (s.smtp_host && s.smtp_user && s.smtp_pass) {
+        const port = Number(s.smtp_port || 587)
+        this.transporter = nodemailer.createTransport({
+          host:   s.smtp_host,
+          port,
+          secure: port === 465,
+          auth: { user: s.smtp_user, pass: s.smtp_pass },
+        })
+        this.fromAddress = s.smtp_from || s.smtp_user
+        this.enabled = true
+        logger.info(`Email service configured from DB: ${s.smtp_host} (${s.smtp_user})`)
+        return true
+      }
+    } catch (err) {
+      logger.warn('Failed to load SMTP settings from DB:', err)
+    }
+    return false
+  }
+
+  // Force reload (call after admin changes settings)
+  async reload() {
+    this.dbChecked = false
+    this.enabled = false
+    this.transporter = null
+    await this.ensureTransporter()
   }
 
   async send(params: {
@@ -31,13 +74,15 @@ class EmailService {
     html:    string
     text?:   string
   }): Promise<boolean> {
+    await this.ensureTransporter()
+
     if (!this.enabled || !this.transporter) {
       logger.warn(`Email skipped (SMTP not configured): ${params.to} — ${params.subject}`)
       return false
     }
     try {
       await this.transporter.sendMail({
-        from:    `HIDEYOU VPN <${config.smtp.from}>`,
+        from:    `HIDEYOU VPN <${this.fromAddress}>`,
         to:      params.to,
         subject: params.subject,
         html:    params.html,
