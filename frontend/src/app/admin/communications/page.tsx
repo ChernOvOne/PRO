@@ -1714,7 +1714,28 @@ function FunnelsTab() {
                     <MessageCircle className="w-3.5 h-3.5" /> Telegram
                   </p>
                   <textarea value={f.tgText || ''} rows={3} onChange={e => upd(f.id, { tgText: e.target.value })}
-                    className="glass-input w-full text-sm resize-y font-mono" placeholder="*жирный*, _курсив_" />
+                    className="glass-input w-full text-sm resize-y font-mono" placeholder="*жирный*, _курсив_, {name} — имя пользователя" />
+                  <details className="mt-1">
+                    <summary className="text-[10px] cursor-pointer" style={{ color: 'var(--accent-1)' }}>📖 Переменные для подстановки</summary>
+                    <div className="mt-1 p-2 rounded-lg text-[10px] grid grid-cols-2 gap-x-4 gap-y-0.5" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)' }}>
+                      <span><code>{'{name}'}</code> — имя</span>
+                      <span><code>{'{email}'}</code> — email</span>
+                      <span><code>{'{telegramName}'}</code> — TG username</span>
+                      <span><code>{'{referralUrl}'}</code> — реф. ссылка</span>
+                      <span><code>{'{referralCount}'}</code> — кол-во рефералов</span>
+                      <span><code>{'{balance}'}</code> — баланс</span>
+                      <span><code>{'{bonusDays}'}</code> — бонусные дни</span>
+                      <span><code>{'{daysLeft}'}</code> — дней до конца</span>
+                      <span><code>{'{subExpireDate}'}</code> — дата окончания</span>
+                      <span><code>{'{tariffName}'}</code> — тариф</span>
+                      <span><code>{'{amount}'}</code> — сумма</span>
+                      <span><code>{'{refName}'}</code> — имя реферала</span>
+                      <span><code>{'{refBonusDays}'}</code> — реф. дни</span>
+                      <span><code>{'{promoCode}'}</code> — промокод</span>
+                      <span><code>{'{trialDays}'}</code> — дней триала</span>
+                      <span><code>{'{appUrl}'}</code> — URL сервиса</span>
+                    </div>
+                  </details>
                   {/* Bot buttons */}
                   <div className="space-y-1.5">
                     <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Кнопки</p>

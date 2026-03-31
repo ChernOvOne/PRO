@@ -372,6 +372,11 @@ export class PaymentService {
     await notifications.paymentConfirmed(user.id, tariff.name, newExpireAt).catch(err =>
       logger.warn('Payment notification failed:', err)
     )
+
+    // Trigger payment funnel
+    import('./funnel-engine').then(({ triggerEvent }) =>
+      triggerEvent('payment_success', user.id, { tariffName: tariff.name, amount: String(payment.amount) }).catch(() => {})
+    )
   }
 
   // ── Referral bonus ─────────────────────────────────────────
@@ -402,6 +407,11 @@ export class PaymentService {
 
         await notifications.referralBonus(referrerId, config.referral.bonusDays).catch(err =>
           logger.warn('Referral bonus notification failed:', err)
+        )
+
+        // Trigger referral_paid funnel
+        import('./funnel-engine').then(({ triggerEvent }) =>
+          triggerEvent('referral_paid', referrerId, { refBonusDays: String(config.referral.bonusDays) }).catch(() => {})
         )
 
         logger.info(`Referral days accumulated: +${config.referral.bonusDays} days for ${referrerId}`)

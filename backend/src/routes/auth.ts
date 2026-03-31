@@ -212,6 +212,11 @@ export async function authRoutes(app: FastifyInstance) {
 
     logger.info(`New user registered via email: ${email}`)
 
+    // Trigger registration funnel
+    import('../services/funnel-engine').then(({ triggerEvent }) =>
+      triggerEvent('registration', user.id).catch(() => {})
+    )
+
     // Send appropriate welcome email
     const hasSubscription = !!rmUser
     const trialAvailable = !hasSubscription && config.features.trial

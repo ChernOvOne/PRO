@@ -93,5 +93,15 @@ export async function setupCronJobs() {
     },
   })
 
+  // Auto-funnels every 15 minutes
+  scheduler.register({
+    name:     'auto-funnels',
+    interval: 15 * 60_000,
+    fn:       async () => {
+      const { runCronFunnels } = await import('../services/funnel-engine')
+      await runCronFunnels()
+    },
+  })
+
   scheduler.start()
 }
