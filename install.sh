@@ -159,6 +159,7 @@ FEATURE_TRIAL=false
 TRIAL_DAYS=3
 FEATURE_GIFTS=true
 FEATURE_BALANCE=true
+FEATURE_BOT=true
 
 GIFT_CODE_EXPIRY_DAYS=30
 VERIFICATION_CODE_TTL=600
@@ -251,6 +252,21 @@ setup_env() {
   echo ""
   put "TELEGRAM_BOT_TOKEN" "Токен Telegram-бота: "  "" "true"
   put "TELEGRAM_BOT_NAME"  "Username бота (без @): " ""
+
+  echo ""
+  ask "Запустить Telegram-бот для VPN? [Д/н]"
+  read -r INSTALL_BOT
+  if [[ "$INSTALL_BOT" =~ ^[нНnN]$ ]]; then
+    sed -i "s|^FEATURE_BOT=.*|FEATURE_BOT=false|" "$ENV_FILE"
+    if ! grep -q "^FEATURE_BOT=" "$ENV_FILE"; then
+      echo "FEATURE_BOT=false" >> "$ENV_FILE"
+    fi
+  else
+    sed -i "s|^FEATURE_BOT=.*|FEATURE_BOT=true|" "$ENV_FILE"
+    if ! grep -q "^FEATURE_BOT=" "$ENV_FILE"; then
+      echo "FEATURE_BOT=true" >> "$ENV_FILE"
+    fi
+  fi
 
   echo ""
   echo -e "  ${BOLD}База данных и безопасность${RESET}"
@@ -651,7 +667,12 @@ apply_nginx_conf() {
 start_all() {
   step "Запуск сервисов"
   apply_nginx_conf
-  docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+  local bot_flag=""
+  local feat_bot; feat_bot=$(grep "^FEATURE_BOT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  if [[ "$feat_bot" == "false" ]]; then
+    bot_flag="--scale bot=0"
+  fi
+  docker compose up -d $bot_flag 2>&1 | tee -a "$LOG_FILE"
   ok "Запущено"
 }
 stop_all()       { step "Остановка сервисов";   docker compose down 2>&1 | tee -a "$LOG_FILE"; ok "Остановлено"; }
@@ -1029,7 +1050,12 @@ full_install() {
 
   step "Запуск всех сервисов"
   apply_nginx_conf
-  docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+  local bot_flag=""
+  local feat_bot; feat_bot=$(grep "^FEATURE_BOT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  if [[ "$feat_bot" == "false" ]]; then
+    bot_flag="--scale bot=0"
+  fi
+  docker compose up -d $bot_flag 2>&1 | tee -a "$LOG_FILE"
   sleep 10
 
   install_lk_command
@@ -1061,6 +1087,40 @@ full_install() {
   [[ ! "$ans" =~ ^[нНnN]$ ]] && create_admin
 }
 
+# ── Включить/выключить Telegram-бот ──────────────────────────
+toggle_bot() {
+  step "Telegram-бот"
+  if [[ ! -f "$ENV_FILE" ]]; then
+    err ".env не найден"; return 1
+  fi
+  local cur; cur=$(grep "^FEATURE_BOT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  if [[ "$cur" == "false" ]]; then
+    info "Telegram-бот сейчас: ${RED}выключен${RESET}"
+    ask "Включить? [Д/н]"; read -r ans
+    if [[ ! "$ans" =~ ^[нНnN]$ ]]; then
+      sed -i "s|^FEATURE_BOT=.*|FEATURE_BOT=true|" "$ENV_FILE"
+      if ! grep -q "^FEATURE_BOT=" "$ENV_FILE"; then
+        echo "FEATURE_BOT=true" >> "$ENV_FILE"
+      fi
+      ok "Telegram-бот включён"
+      docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+      ok "Сервисы перезапущены"
+    fi
+  else
+    info "Telegram-бот сейчас: ${GREEN}включён${RESET}"
+    ask "Выключить? [д/Н]"; read -r ans
+    if [[ "$ans" =~ ^[дДyY]$ ]]; then
+      sed -i "s|^FEATURE_BOT=.*|FEATURE_BOT=false|" "$ENV_FILE"
+      if ! grep -q "^FEATURE_BOT=" "$ENV_FILE"; then
+        echo "FEATURE_BOT=false" >> "$ENV_FILE"
+      fi
+      ok "Telegram-бот выключен"
+      docker compose up -d --scale bot=0 2>&1 | tee -a "$LOG_FILE"
+      ok "Сервисы перезапущены"
+    fi
+  fi
+}
+
 # ── Главное меню ──────────────────────────────────────────────
 main_menu() {
   if [[ ! -f "/usr/local/bin/lk" ]] && [[ $EUID -eq 0 ]]; then
@@ -1090,6 +1150,7 @@ main_menu() {
     echo ""
     echo -e "  ${CYAN}${BOLD}── Токены / Интеграции ───────────────${RESET}"
     echo -e "  ${BOLD}[18]${RESET} ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, CryptoPay, SMTP...)${RESET}"
+    echo -e "  ${BOLD}[19]${RESET} Включить/выключить Telegram-бот"
     echo ""
     echo -e "  ${CYAN}${BOLD}── Обслуживание ──────────────────────${RESET}"
     echo -e "  ${BOLD}[14]${RESET} Обновить HIDEYOU"
@@ -1119,6 +1180,7 @@ main_menu() {
       16) full_reset ;;
       17) install_lk_command ;;
       18) configure_tokens ;;
+      19) toggle_bot ;;
       0)  echo ""; info "До свидания!"; echo ""; exit 0 ;;
       *)  warn "Неизвестный пункт: $choice" ;;
     esac

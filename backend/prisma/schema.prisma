@@ -55,6 +55,7 @@ model User {
   balanceTransactions BalanceTransaction[]
   emailVerifications EmailVerification[]
   promoUsages        PromoUsage[]
+  botMessages        BotMessage[]
 
   @@map("users")
 }
@@ -444,6 +445,29 @@ model PromoUsage {
   usedAt    DateTime  @default(now()) @map("used_at")
   @@unique([promoId, userId])
   @@map("promo_usages")
+}
+
+// ── Bot Messages ─────────────────────────────────────────────
+
+enum BotMsgDirection {
+  IN
+  OUT
+}
+
+model BotMessage {
+  id           String          @id @default(uuid())
+  chatId       String          @map("chat_id")
+  userId       String?         @map("user_id")
+  user         User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  direction    BotMsgDirection
+  text         String
+  buttonsJson  Json?           @map("buttons_json")
+  callbackData String?         @map("callback_data")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@index([chatId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("bot_messages")
 }
 
 // ── Enums ────────────────────────────────────────────────────
