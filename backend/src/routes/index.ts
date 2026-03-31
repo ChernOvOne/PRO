@@ -15,6 +15,7 @@ import { proxyRoutes, adminProxyRoutes }             from './proxies'
 import { giftRoutes }             from './gifts'
 import { verificationRoutes }     from './verification'
 import { adminLandingRoutes }     from './admin-landing'
+import { uploadRoutes }           from './upload'
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -53,4 +54,8 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminNotificationRoutes,  { prefix: '/api/admin/notifications' })
   await app.register(adminProxyRoutes,         { prefix: '/api/admin/proxies'       })
   await app.register(adminLandingRoutes,       { prefix: '/api/admin/landing'       })
+  await app.register(uploadRoutes,             { prefix: '/api/admin'               })
+
+  // Serve uploaded files
+  app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })
 }
