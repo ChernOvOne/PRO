@@ -50,7 +50,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     fetch('/api/auth/me', { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(setUser)
-      .catch(() => router.push('/login'))
+      .catch(async () => {
+        // Try Telegram MiniApp auto-login before redirecting to /login
+        const tg = (window as any).Telegram?.WebApp
+        if (tg?.initData) {
+          try {
+            const res = await fetch('/api/auth/telegram-mini-app', {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ initData: tg.initData }),
+            })
+            if (res.ok) {
+              const data = await res.json()
+              tg.expand?.()
+              setUser(data.user)
+              return
+            }
+          } catch {}
+        }
+        router.push('/login')
+      })
       .finally(() => setLoading(false))
 
     fetch('/api/notifications/unread-count', { credentials: 'include' })

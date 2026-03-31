@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Shield, Zap, Globe2, Lock, ChevronRight, ChevronDown,
   CheckCircle2, Star, Menu, X, Wifi, Smartphone, Server,
@@ -11,11 +12,47 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import type { Tariff, TelegramProxy, News } from '@/types'
 
 export default function LandingPage() {
+  const router = useRouter()
   const [tariffs, setTariffs]   = useState<Tariff[]>([])
   const [proxies, setProxies]   = useState<TelegramProxy[]>([])
   const [news, setNews]         = useState<News[]>([])
   const [landing, setLanding]   = useState<Record<string, any>>({})
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [tmaChecked, setTmaChecked] = useState(false)
+  const tmaTriedRef = useRef(false)
+
+  // ── Telegram MiniApp auto-login ──
+  useEffect(() => {
+    if (tmaTriedRef.current) return
+    tmaTriedRef.current = true
+
+    const tg = (window as any).Telegram?.WebApp
+    if (tg?.initData) {
+      // Opened inside Telegram → auto-login via initData
+      fetch('/api/auth/telegram-mini-app', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData }),
+      })
+        .then(r => { if (r.ok) return r.json(); throw new Error() })
+        .then(() => {
+          tg.expand?.()
+          router.replace('/dashboard')
+        })
+        .catch(() => setTmaChecked(true))
+    } else {
+      // Also check if already logged in
+      fetch('/api/auth/me', { credentials: 'include' })
+        .then(r => { if (r.ok) return r.json(); throw new Error() })
+        .then(() => {
+          // If inside TG WebApp context but initData missing, still redirect
+          if (tg) { router.replace('/dashboard'); return }
+          setTmaChecked(true)
+        })
+        .catch(() => setTmaChecked(true))
+    }
+  }, [router])
 
   useEffect(() => {
     Promise.all([
