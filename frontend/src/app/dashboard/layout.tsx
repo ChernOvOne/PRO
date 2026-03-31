@@ -192,21 +192,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет уведомлений</p>
             </div>
           ) : (
-            notifications.slice(0, 3).map(n => (
+            notifications.slice(0, 3).map(n => {
+              const typeColors: Record<string, { bg: string; border: string; dot: string; icon: string }> = {
+                INFO:    { bg: 'rgba(6,182,212,0.04)',   border: 'rgba(6,182,212,0.1)',   dot: '#06b6d4', icon: 'ℹ️' },
+                WARNING: { bg: 'rgba(245,158,11,0.04)',  border: 'rgba(245,158,11,0.1)',  dot: '#f59e0b', icon: '⚠️' },
+                SUCCESS: { bg: 'rgba(16,185,129,0.04)',  border: 'rgba(16,185,129,0.1)',  dot: '#10b981', icon: '✅' },
+                PROMO:   { bg: 'rgba(139,92,246,0.04)',  border: 'rgba(139,92,246,0.1)',  dot: '#8b5cf6', icon: '🎁' },
+              }
+              const tc = typeColors[n.type] || typeColors.INFO
+              return (
               <div key={n.id}
                    onClick={() => { if (!n.isRead) markOneRead(n.id) }}
                    className="flex gap-3 px-4 py-3 transition-all cursor-pointer hover:bg-white/[0.03]"
                    style={{
                      borderBottom: '1px solid var(--glass-border)',
-                     background: n.isRead ? 'transparent' : 'rgba(6,182,212,0.04)',
+                     background: n.isRead ? 'transparent' : tc.bg,
+                     borderLeft: n.isRead ? 'none' : `3px solid ${tc.dot}`,
                    }}>
-                <div className="mt-1.5 flex-shrink-0">
-                  {!n.isRead ? (
-                    <div className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-1)' }} />
-                  ) : (
-                    <div className="w-2 h-2 rounded-full" style={{ background: 'var(--glass-border)' }} />
-                  )}
-                </div>
+                <div className="mt-0.5 flex-shrink-0 text-sm">{tc.icon}</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{n.title}</p>
                   <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
@@ -217,7 +220,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </p>
                 </div>
               </div>
-            ))
+              )
+            })
           )}
         </div>
 
