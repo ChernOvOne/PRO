@@ -180,6 +180,9 @@
 
   .skeleton { @apply rounded-xl animate-pulse; background: var(--glass-bg); }
 
+  select option, select optgroup { background: var(--surface-2); color: var(--text-primary); }
+  select option:disabled { color: var(--text-tertiary); }
+
   .text-gradient {
     background: var(--accent-gradient);
     -webkit-background-clip: text;

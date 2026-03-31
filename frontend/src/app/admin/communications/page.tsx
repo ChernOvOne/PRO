@@ -1825,7 +1825,7 @@ function FunnelsTab() {
                 setNewTriggerId(e.target.value)
                 const opt = triggerOptions.flatMap((g: any) => g.triggers).find((t: any) => t.id === e.target.value)
                 if (opt && !newName) setNewName(opt.name)
-              }} className="glass-input w-full text-sm">
+              }} className="glass-input w-full text-sm" style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
                 <option value="">Выберите триггер...</option>
                 {triggerOptions.map((g: any) => (
                   <optgroup key={g.group} label={g.group}>
