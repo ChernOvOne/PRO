@@ -119,7 +119,7 @@ export async function adminBotRoutes(app: FastifyInstance) {
     try {
       await bot.api.sendMessage(user.telegramId, text)
     } catch (err) {
-      logger.error({ err, userId, telegramId: user.telegramId }, 'Failed to send bot message')
+      logger.error(`Failed to send bot message to user ${userId} (tg: ${user.telegramId}): ${err}`)
       return reply.status(502).send({ error: 'Failed to send message via Telegram' })
     }
 
