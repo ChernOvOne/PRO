@@ -151,6 +151,12 @@ export const publicApi = {
     apiFetch<{ valid: boolean; referrerName?: string }>(`/public/referral/${code}`),
 }
 
+// ── Promo ────────────────────────────────────────────────────
+export const promoApi = {
+  check: (code: string) => apiFetch<any>('/user/promo/check', { method: 'POST', body: JSON.stringify({ code }) }),
+  activate: (code: string) => apiFetch<any>('/user/promo/activate', { method: 'POST', body: JSON.stringify({ code }) }),
+}
+
 // ── Payments ──────────────────────────────────────────────────
 export const paymentsApi = {
   create: (params: {
@@ -294,4 +300,11 @@ export const adminApi = {
   exportUsers:  (format = 'json') => apiFetch<{ users: any[]; total: number }>(`/admin/export/users?format=${format}`),
 
   squads: () => apiFetch<{ squads: InternalSquad[]; total: number }>('/admin/squads'),
+
+  // Promos
+  promos: () => apiFetch<any[]>('/admin/promos'),
+  createPromo: (data: any) => apiFetch<any>('/admin/promos', { method: 'POST', body: JSON.stringify(data) }),
+  updatePromo: (id: string, data: any) => apiFetch<any>(`/admin/promos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePromo: (id: string) => apiFetch<void>(`/admin/promos/${id}`, { method: 'DELETE' }),
+  promoStats: (id: string) => apiFetch<any>(`/admin/promos/${id}/stats`),
 }
