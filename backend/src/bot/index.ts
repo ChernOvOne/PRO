@@ -71,6 +71,35 @@ async function logOutgoing(chatId: string, userId: string | null, text: string, 
   }
 }
 
+// ── Human-readable callback labels ───────────────────────────
+const CALLBACK_LABELS: Record<string, string> = {
+  'menu:main':         '🏠 Главное меню',
+  'menu:subscription': '🔑 Подписка',
+  'menu:tariffs':      '💳 Тарифы',
+  'menu:referral':     '👥 Рефералы',
+  'menu:balance':      '💰 Баланс',
+  'menu:promo':        '🎟 Промокод',
+  'menu:devices':      '📱 Устройства',
+  'menu:instructions': '📖 Инструкции',
+  'sub:copy':          '📋 Скопировать ссылку',
+  'sub:revoke':        '🔄 Обновить ссылку',
+  'ref:share':         '📤 Поделиться реферальной ссылкой',
+}
+
+function callbackToLabel(data: string): string {
+  if (CALLBACK_LABELS[data]) return CALLBACK_LABELS[data]
+  if (data.startsWith('tariff:select:'))  return '💳 Выбор тарифа'
+  if (data.startsWith('tariff:pay:'))     return '💳 Оплата тарифа'
+  if (data.startsWith('instr:platform:')) return '📖 Выбор платформы'
+  if (data.startsWith('instr:app:'))      return '📖 Выбор приложения'
+  if (data.startsWith('instr:step:'))     return '📖 Шаг инструкции'
+  if (data.startsWith('device:delete:'))  return '🗑 Удаление устройства'
+  if (data.startsWith('promo:activate:')) return '🎟 Активация промокода'
+  if (data.startsWith('ref:redeem'))      return '👥 Использование реферальных дней'
+  if (data.startsWith('page:'))           return '📄 Переход по страницам'
+  return `Действие: ${data}`
+}
+
 // ── Logging middleware ────────────────────────────────────────
 bot.use(async (ctx, next) => {
   const chatId = String(ctx.chat?.id ?? '')
@@ -82,7 +111,8 @@ bot.use(async (ctx, next) => {
     await logIncoming(chatId, user?.id ?? null, ctx.message.text)
   } else if (ctx.callbackQuery?.data) {
     const user = await ensureUser(telegramId)
-    await logIncoming(chatId, user?.id ?? null, ctx.callbackQuery.data, ctx.callbackQuery.data)
+    const label = callbackToLabel(ctx.callbackQuery.data)
+    await logIncoming(chatId, user?.id ?? null, label, ctx.callbackQuery.data)
   }
 
   await next()
