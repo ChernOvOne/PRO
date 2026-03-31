@@ -84,8 +84,16 @@ export async function paymentRoutes(app: FastifyInstance) {
       const pct = activeDiscount.promo.discountPct
       const tariffMatch = activeDiscount.promo.tariffIds.length === 0 || activeDiscount.promo.tariffIds.includes(body.tariffId)
       if (tariffMatch) {
+        const originalPrice = actualPrice
         actualPrice = Math.round(actualPrice * (1 - pct / 100))
         if (actualPriceUsdt) actualPriceUsdt = Math.round(actualPriceUsdt * (1 - pct / 100) * 100) / 100
+        // Store promo info in payment metadata
+        paymentMeta = {
+          ...paymentMeta,
+          promoCode: activeDiscount.promo.code,
+          discountPct: pct,
+          originalAmount: originalPrice,
+        }
       }
     }
 

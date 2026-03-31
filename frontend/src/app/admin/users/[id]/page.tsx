@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, Trash2, Bell,
   RefreshCw, Ban, UserX, Calendar, Smartphone,
   Globe, FileText, DollarSign, ChevronRight, ChevronDown,
+  Wallet, Tag, Gift, Star, Filter,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -31,6 +32,9 @@ export default function AdminUserDetail() {
   const [showGrantDays, setShowGrantDays] = useState(false)
   const [showDelete, setShowDelete]     = useState(false)
   const [devicesOpen, setDevicesOpen]   = useState(false)
+  const [activityFilter, setActivityFilter] = useState<string>('all')
+  const [activities, setActivities]   = useState<any[]>([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
 
   // Form state
   const [extendDays, setExtendDays]     = useState(30)
@@ -42,6 +46,21 @@ export default function AdminUserDetail() {
   const [balanceDesc, setBalanceDesc]   = useState('')
   const [grantDaysCount, setGrantDaysCount] = useState(30)
   const [grantDaysDesc, setGrantDaysDesc]   = useState('')
+
+  const loadActivities = async () => {
+    setActivitiesLoading(true)
+    try {
+      const res = await fetch(`/api/admin/users/${id}/activity?limit=50`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setActivities(data.items || data.activities || [])
+      }
+    } catch {
+      // Activities endpoint may not exist yet; fall back to parsing payments
+    } finally {
+      setActivitiesLoading(false)
+    }
+  }
 
   const load = async () => {
     try {
@@ -58,6 +77,8 @@ export default function AdminUserDetail() {
           .then(d => setDevices(d.devices || []))
           .catch(() => {})
       }
+
+      loadActivities()
     } finally {
       setLoading(false)
     }
@@ -386,52 +407,239 @@ export default function AdminUserDetail() {
             )}
           </div>
 
-          {/* Payments */}
+          {/* Activity History */}
           <div className="glass-card space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
               <CreditCard className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
-              Платежи
+              История активности
             </h2>
-            {!user.payments?.length ? (
-              <p className="text-sm py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>Нет платежей</p>
-            ) : (
-              <div className="space-y-2">
-                {user.payments.map((p: any) => (
-                  <div key={p.id} className="flex items-center justify-between py-2.5"
-                       style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <div className="flex items-center gap-3">
-                      {p.status === 'PAID'
-                        ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        : p.status === 'PENDING'
-                        ? <Clock className="w-4 h-4 text-yellow-400" />
-                        : <XCircle className="w-4 h-4 text-red-400" />}
-                      <div>
-                        <p className="text-sm font-medium">{p.provider}</p>
-                        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                          {new Date(p.createdAt).toLocaleString('ru')}
-                        </p>
+
+            {/* Filter tabs */}
+            <div className="flex flex-wrap gap-1.5">
+              {([
+                { key: 'all', label: 'Все' },
+                { key: 'payment', label: 'Платежи' },
+                { key: 'bonus_redeem', label: 'Бонусные дни' },
+                { key: 'referral_redeem', label: 'Реферальные дни' },
+                { key: 'promo', label: 'Промокоды' },
+                { key: 'balance', label: 'Баланс' },
+              ] as const).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActivityFilter(tab.key)}
+                  className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+                  style={{
+                    background: activityFilter === tab.key ? 'var(--accent-1)' : 'var(--glass-bg)',
+                    color: activityFilter === tab.key ? '#fff' : 'var(--text-secondary)',
+                    border: `1px solid ${activityFilter === tab.key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Timeline */}
+            {(() => {
+              // Build unified activity list from payments + activities endpoint
+              const allItems: any[] = []
+
+              // Parse payments into activity items
+              if (user.payments?.length) {
+                for (const p of user.payments) {
+                  let meta: any = null
+                  try { meta = JSON.parse(p.yukassaStatus || '{}') } catch {}
+
+                  if (meta?._type === 'referral_redeem') {
+                    allItems.push({
+                      id: p.id,
+                      type: 'referral_redeem',
+                      description: `Активация реферальных дней`,
+                      value: `+${meta.days} дней`,
+                      date: p.createdAt,
+                      status: p.status,
+                      meta,
+                    })
+                  } else if (meta?._type === 'bonus_redeem') {
+                    allItems.push({
+                      id: p.id,
+                      type: 'bonus_redeem',
+                      description: `Активация бонусных дней`,
+                      value: `+${meta.days} дней`,
+                      date: p.createdAt,
+                      status: p.status,
+                      meta,
+                    })
+                  } else {
+                    const modeLabel = meta?._mode === 'variant' ? meta.variantName || meta.tariffName || ''
+                      : meta?._mode === 'configurator' ? `${meta.days || ''}д / ${meta.devices || ''}устр`
+                      : ''
+                    const promoLabel = meta?.promoCode ? ` (промо: ${meta.promoCode}${meta.discountPct ? ` -${meta.discountPct}%` : ''})` : ''
+
+                    allItems.push({
+                      id: p.id,
+                      type: 'payment',
+                      description: [
+                        p.provider,
+                        modeLabel,
+                        p.purpose === 'GIFT' ? 'Подарок' : '',
+                        promoLabel,
+                      ].filter(Boolean).join(' · '),
+                      value: (() => {
+                        if (p.purpose === 'GIFT' && p.amount === 0) return 'Подарок'
+                        if (p.amount === 0 && p.provider === 'MANUAL') return 'Бонус'
+                        const amt = p.currency === 'RUB' ? `${p.amount.toLocaleString('ru')} ₽` : `${p.amount} ${p.currency}`
+                        return amt
+                      })(),
+                      originalAmount: meta?.originalAmount ?? null,
+                      amount: p.amount,
+                      currency: p.currency,
+                      date: p.createdAt,
+                      status: p.status,
+                      meta,
+                    })
+                  }
+                }
+              }
+
+              // Merge in activities from the API (promo, balance, etc.)
+              for (const a of activities) {
+                // Avoid duplicates if the activity endpoint also returns payments
+                if (a.type === 'payment' && allItems.some(i => i.id === a.id)) continue
+                allItems.push({
+                  id: a.id,
+                  type: a.type,
+                  description: a.description,
+                  value: a.amount != null
+                    ? (a.currency === 'RUB' ? `${a.amount > 0 ? '+' : ''}${a.amount} ₽` : `${a.amount} ${a.currency || ''}`)
+                    : '',
+                  amount: a.amount,
+                  date: a.date,
+                  status: a.status,
+                  meta: a.metadata,
+                })
+              }
+
+              // Sort by date descending
+              allItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+              // Apply filter
+              const filtered = activityFilter === 'all'
+                ? allItems
+                : allItems.filter(i => i.type === activityFilter)
+
+              if (filtered.length === 0) {
+                return (
+                  <p className="text-sm py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                    {activitiesLoading ? 'Загрузка...' : 'Нет записей'}
+                  </p>
+                )
+              }
+
+              const typeConfig: Record<string, { icon: React.ReactNode; dotColor: string; badgeClass: string; badgeLabel: string }> = {
+                payment: {
+                  icon: <CreditCard className="w-4 h-4" />,
+                  dotColor: '#34d399',
+                  badgeClass: 'badge-green',
+                  badgeLabel: 'Платёж',
+                },
+                bonus_redeem: {
+                  icon: <Star className="w-4 h-4" />,
+                  dotColor: '#a78bfa',
+                  badgeClass: 'badge-violet',
+                  badgeLabel: 'Бонус',
+                },
+                referral_redeem: {
+                  icon: <Users className="w-4 h-4" />,
+                  dotColor: '#22d3ee',
+                  badgeClass: 'badge-cyan',
+                  badgeLabel: 'Реферал',
+                },
+                promo: {
+                  icon: <Tag className="w-4 h-4" />,
+                  dotColor: '#fbbf24',
+                  badgeClass: 'badge-yellow',
+                  badgeLabel: 'Промокод',
+                },
+                balance: {
+                  icon: <Wallet className="w-4 h-4" />,
+                  dotColor: '#60a5fa',
+                  badgeClass: 'badge-blue',
+                  badgeLabel: 'Баланс',
+                },
+              }
+
+              return (
+                <div className="space-y-0">
+                  {filtered.map((item, idx) => {
+                    const cfg = typeConfig[item.type] || typeConfig.payment
+                    const isLast = idx === filtered.length - 1
+
+                    return (
+                      <div key={item.id} className="flex gap-3 relative">
+                        {/* Timeline line + dot */}
+                        <div className="flex flex-col items-center flex-shrink-0" style={{ width: 32 }}>
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ background: `${cfg.dotColor}15`, color: cfg.dotColor }}
+                          >
+                            {cfg.icon}
+                          </div>
+                          {!isLast && (
+                            <div className="flex-1 w-px my-1" style={{ background: 'var(--glass-border)' }} />
+                          )}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0 pb-4">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                  {item.description}
+                                </p>
+                                <span className={cfg.badgeClass} style={{ fontSize: '10px' }}>
+                                  {cfg.badgeLabel}
+                                </span>
+                                {item.status && item.status !== 'PAID' && item.status !== 'completed' && (
+                                  <span className={`badge-${item.status === 'PENDING' ? 'yellow' : 'red'}`} style={{ fontSize: '10px' }}>
+                                    {item.status}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                {new Date(item.date).toLocaleString('ru')}
+                              </p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-sm font-semibold" style={{
+                                color: item.type === 'payment' ? '#34d399'
+                                  : item.type === 'bonus_redeem' ? '#a78bfa'
+                                  : item.type === 'referral_redeem' ? '#22d3ee'
+                                  : item.type === 'balance' ? '#60a5fa'
+                                  : 'var(--text-primary)',
+                              }}>
+                                {item.value}
+                              </p>
+                              {item.originalAmount != null && item.originalAmount !== item.amount && (
+                                <p className="text-[10px] line-through" style={{ color: 'var(--text-tertiary)' }}>
+                                  {item.currency === 'RUB' ? `${item.originalAmount.toLocaleString('ru')} ₽` : `${item.originalAmount}`}
+                                </p>
+                              )}
+                              {item.meta?.promoCode && (
+                                <p className="text-[10px] mt-0.5" style={{ color: '#a78bfa' }}>
+                                  {item.meta.promoCode}{item.meta.discountPct ? ` -${item.meta.discountPct}%` : ''}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">
-                        {(() => {
-                          let meta: any = null
-                          try { meta = JSON.parse(p.yukassaStatus || '{}') } catch {}
-                          if (meta?._type === 'referral_redeem') return `Реф. дни: +${meta.days} дн.`
-                          if (meta?._type === 'bonus_redeem') return `Бонус: +${meta.days} дн.`
-                          if (p.purpose === 'GIFT' && p.amount === 0) return 'Подарок'
-                          if (p.amount === 0 && p.provider === 'MANUAL') return 'Бонус'
-                          return p.currency === 'RUB' ? `${p.amount.toLocaleString('ru')} ₽` : `${p.amount} ${p.currency}`
-                        })()}
-                      </p>
-                      <span className={`badge-${p.status === 'PAID' ? 'green' : p.status === 'PENDING' ? 'yellow' : 'red'}`}>
-                        {p.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Admin Notes */}

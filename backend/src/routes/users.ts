@@ -142,15 +142,30 @@ export async function userRoutes(app: FastifyInstance) {
     })
   })
 
-  // ── Get payment history ────────────────────────────────────
+  // ── Get payment history (enriched with yukassaStatus metadata) ──
   app.get('/payments', auth, async (req) => {
     const userId = (req.user as any).sub
-    return prisma.payment.findMany({
+    const payments = await prisma.payment.findMany({
       where:   { userId },
       include: { tariff: { select: { name: true, durationDays: true } } },
       orderBy: { createdAt: 'desc' },
       take:    50,
     })
+    return payments.map(p => ({
+      ...p,
+      parsedMeta: parseYukassaStatus(p.yukassaStatus),
+    }))
+  })
+
+  // ── Unified activity log ──────────────────────────────────
+  app.get('/activity', auth, async (req) => {
+    const userId = (req.user as any).sub
+    const { type, page = '1', limit = '20' } = req.query as Record<string, string>
+    const take = Math.min(Number(limit) || 20, 100)
+    const skip = ((Number(page) || 1) - 1) * take
+
+    const items = await buildActivityLog(userId, type || null, skip, take)
+    return { items, page: Number(page) || 1, limit: take }
   })
 
   // ── Get referral info ──────────────────────────────────────
@@ -595,4 +610,150 @@ export async function userRoutes(app: FastifyInstance) {
 
     return { ok: true, redeemedDays: days, remainingDays: user.bonusDays - days }
   })
+}
+
+// ── Shared helpers (exported for admin routes) ──────────────
+
+export function parseYukassaStatus(raw: string | null): Record<string, any> | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    const meta: Record<string, any> = {}
+
+    if (parsed._type) meta.type = parsed._type          // e.g. referral_redeem, bonus_redeem
+    if (parsed._mode) meta.mode = parsed._mode           // variant | configurator
+    if (parsed.days != null) meta.days = parsed.days
+    if (parsed.variantIndex != null) meta.variantIndex = parsed.variantIndex
+    if (parsed.trafficGb != null) meta.trafficGb = parsed.trafficGb
+    if (parsed.devices != null) meta.devices = parsed.devices
+    if (parsed.price != null) meta.price = parsed.price
+    if (parsed.promoCode) meta.promoCode = parsed.promoCode
+    if (parsed.discountPct != null) meta.discountPct = parsed.discountPct
+    if (parsed.originalAmount != null) meta.originalAmount = parsed.originalAmount
+
+    // pass through any other keys that start without underscore
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!k.startsWith('_') && !(k in meta)) meta[k] = v
+    }
+
+    return Object.keys(meta).length ? meta : parsed
+  } catch {
+    return null
+  }
+}
+
+interface ActivityEntry {
+  id: string
+  type: 'payment' | 'promo' | 'balance' | 'bonus_redeem' | 'referral_redeem'
+  description: string
+  amount: number | null
+  date: Date
+  metadata: Record<string, any>
+}
+
+export async function buildActivityLog(
+  userId: string,
+  typeFilter: string | null,
+  skip: number,
+  take: number,
+): Promise<ActivityEntry[]> {
+  const types = typeFilter ? typeFilter.split(',').map(t => t.trim()) : null
+
+  const entries: ActivityEntry[] = []
+
+  // --- Payments ---
+  const includePayments = !types || types.some(t => ['payment', 'bonus_redeem', 'referral_redeem', 'bonus', 'referral'].includes(t))
+  if (includePayments) {
+    const payments = await prisma.payment.findMany({
+      where:   { userId },
+      include: { tariff: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    for (const p of payments) {
+      const meta = parseYukassaStatus(p.yukassaStatus)
+      let entryType: ActivityEntry['type'] = 'payment'
+      if (meta?.type === 'bonus_redeem')    entryType = 'bonus_redeem'
+      if (meta?.type === 'referral_redeem') entryType = 'referral_redeem'
+
+      // Apply type filter
+      if (types) {
+        const match = types.some(t => {
+          if (t === 'payment' && entryType === 'payment') return true
+          if (t === 'bonus_redeem' && entryType === 'bonus_redeem') return true
+          if (t === 'bonus' && entryType === 'bonus_redeem') return true
+          if (t === 'referral_redeem' && entryType === 'referral_redeem') return true
+          if (t === 'referral' && entryType === 'referral_redeem') return true
+          return false
+        })
+        if (!match) continue
+      }
+
+      let desc = p.tariff?.name || `Платёж ${p.provider}`
+      if (entryType === 'bonus_redeem') desc = `Активация бонусных дней: ${meta?.days ?? '?'} дн.`
+      if (entryType === 'referral_redeem') desc = `Активация реферальных дней: ${meta?.days ?? '?'} дн.`
+
+      entries.push({
+        id:          p.id,
+        type:        entryType,
+        description: desc,
+        amount:      Number(p.amount),
+        date:        p.createdAt,
+        metadata:    {
+          status: p.status, provider: p.provider, purpose: p.purpose,
+          tariff: p.tariff?.name ?? null,
+          ...meta,
+        },
+      })
+    }
+  }
+
+  // --- Promo activations ---
+  const includePromo = !types || types.includes('promo')
+  if (includePromo) {
+    const promoUsages = await prisma.promoUsage.findMany({
+      where:   { userId },
+      include: { promo: { select: { code: true, type: true, description: true, discountPct: true, bonusDays: true, balanceAmount: true } } },
+      orderBy: { usedAt: 'desc' },
+    })
+    for (const pu of promoUsages) {
+      entries.push({
+        id:          pu.id,
+        type:        'promo',
+        description: `Промокод ${pu.promo.code}: ${pu.promo.description || pu.promo.type}`,
+        amount:      pu.promo.balanceAmount ? Number(pu.promo.balanceAmount) : null,
+        date:        pu.usedAt,
+        metadata:    {
+          code:        pu.promo.code,
+          promoType:   pu.promo.type,
+          discountPct: pu.promo.discountPct,
+          bonusDays:   pu.promo.bonusDays,
+          balanceAmount: pu.promo.balanceAmount ? Number(pu.promo.balanceAmount) : null,
+        },
+      })
+    }
+  }
+
+  // --- Balance transactions ---
+  const includeBalance = !types || types.includes('balance')
+  if (includeBalance) {
+    const txns = await prisma.balanceTransaction.findMany({
+      where:   { userId },
+      orderBy: { createdAt: 'desc' },
+    })
+    for (const tx of txns) {
+      entries.push({
+        id:          tx.id,
+        type:        'balance',
+        description: tx.description || `Баланс: ${tx.type}`,
+        amount:      Number(tx.amount),
+        date:        tx.createdAt,
+        metadata:    { balanceType: tx.type, paymentId: tx.paymentId },
+      })
+    }
+  }
+
+  // Sort all entries by date descending, then paginate
+  entries.sort((a, b) => b.date.getTime() - a.date.getTime())
+  return entries.slice(skip, skip + take)
 }

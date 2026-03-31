@@ -7,6 +7,7 @@ import { balanceService } from '../services/balance'
 import { inAppNotifications } from '../services/notification-service'
 import { notifications } from '../services/notifications'
 import { logger }   from '../utils/logger'
+import { parseYukassaStatus, buildActivityLog } from './users'
 
 // GeoIP cache (in-memory, TTL 1 hour)
 const geoCache = new Map<string, { data: any; ts: number }>()
@@ -245,6 +246,17 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ...safe, rmData, geoInfo }
   })
 
+  // ── User activity log (admin view) ─────────────────────────
+  app.get('/users/:id/activity', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    const { type, page = '1', limit = '20' } = req.query as Record<string, string>
+    const take = Math.min(Number(limit) || 20, 100)
+    const skip = ((Number(page) || 1) - 1) * take
+
+    const items = await buildActivityLog(id, type || null, skip, take)
+    return { items, page: Number(page) || 1, limit: take, userId: id }
+  })
+
   // Extend user subscription manually
   app.post('/users/:id/extend', admin, async (req, reply) => {
     const { id } = req.params as { id: string }
@@ -307,14 +319,18 @@ export async function adminRoutes(app: FastifyInstance) {
   //  PAYMENTS
   // ─────────────────────────────────────────────────────────
   app.get('/payments', admin, async (req) => {
-    const { page = '1', limit = '50', status = '', provider = '', search = '', userId = '', dateFrom = '', dateTo = '' } =
-      req.query as Record<string, string>
+    const {
+      page = '1', limit = '50', status = '', provider = '',
+      search = '', userId = '', dateFrom = '', dateTo = '',
+      purpose = '', type: paymentType = '',
+    } = req.query as Record<string, string>
 
     const skip  = (Number(page) - 1) * Number(limit)
     const where: any = {}
     if (status)   where.status   = status
     if (provider) where.provider = provider
     if (userId)   where.userId   = userId
+    if (purpose)  where.purpose  = purpose
 
     if (dateFrom || dateTo) {
       where.createdAt = {}
@@ -331,6 +347,19 @@ export async function adminRoutes(app: FastifyInstance) {
       ]
     }
 
+    // For special type filters (bonus_redeem, referral_redeem, promo_discount, real_payment)
+    // we need to filter via yukassaStatus JSON content
+    if (paymentType === 'bonus_redeem') {
+      where.yukassaStatus = { contains: '"_type":"bonus_redeem"' }
+    } else if (paymentType === 'referral_redeem') {
+      where.yukassaStatus = { contains: '"_type":"referral_redeem"' }
+    } else if (paymentType === 'promo_discount') {
+      where.yukassaStatus = { contains: '"promoCode"' }
+    } else if (paymentType === 'real_payment' && !provider) {
+      // Real payments: provider is YUKASSA or CRYPTOPAY (not BALANCE/MANUAL)
+      where.provider = { in: ['YUKASSA', 'CRYPTOPAY'] }
+    }
+
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
         where,
@@ -345,7 +374,12 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.payment.count({ where }),
     ])
 
-    return { payments, total }
+    const enriched = payments.map(p => ({
+      ...p,
+      parsedMeta: parseYukassaStatus(p.yukassaStatus),
+    }))
+
+    return { payments: enriched, total }
   })
 
   // ─────────────────────────────────────────────────────────
