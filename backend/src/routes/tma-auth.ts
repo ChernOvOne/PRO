@@ -67,7 +67,7 @@ export async function tmaAuthRoute(app: FastifyInstance) {
     let user = await prisma.user.findUnique({ where: { telegramId } })
 
     if (!user) {
-      // Try to find existing REMNAWAVE subscription
+      // Try to find existing REMNAWAVE subscription by telegramId
       const rmUser = await remnawave.getUserByTelegramId(telegramId).catch(() => null)
 
       user = await prisma.user.create({
@@ -81,6 +81,24 @@ export async function tmaAuthRoute(app: FastifyInstance) {
         },
       })
       logger.info(`New TMA user: ${telegramId}`)
+    } else if (!user.remnawaveUuid) {
+      // Existing user without REMNAWAVE link — try to sync
+      const rmUser = await remnawave.getUserByTelegramId(telegramId).catch(() => null)
+        || (user.email ? await remnawave.getUserByEmail(user.email).catch(() => null) : null)
+
+      if (rmUser) {
+        const statusMap: Record<string, string> = { ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED' }
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            remnawaveUuid: rmUser.uuid,
+            subStatus: (statusMap[rmUser.status] ?? 'INACTIVE') as any,
+            subExpireAt: rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+            subLink: remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl),
+          },
+        })
+        logger.info(`TMA user ${telegramId}: synced with REMNAWAVE ${rmUser.uuid}`)
+      }
     }
 
     await prisma.user.update({

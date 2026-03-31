@@ -84,6 +84,8 @@ const CALLBACK_LABELS: Record<string, string> = {
   'sub:copy':          '📋 Скопировать ссылку',
   'sub:revoke':        '🔄 Обновить ссылку',
   'ref:share':         '📤 Поделиться реферальной ссылкой',
+  'trial:start':       '🎁 Пробный период',
+  'link:email':        '📧 Привязать email',
 }
 
 function callbackToLabel(data: string): string {
@@ -150,39 +152,168 @@ function backButton(to = 'menu:main'): InlineKeyboard {
   return new InlineKeyboard().text('◀️ Назад', to)
 }
 
+// ── Trial subscription creation ──────────────────────────────
+async function createTrialSubscription(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw new Error('User not found')
+  if (user.remnawaveUuid) throw new Error('Уже есть подписка')
+
+  const trialDays = config.features.trialDays || 3
+  const cheapestTariff = await prisma.tariff.findFirst({
+    where: { isActive: true, type: 'SUBSCRIPTION' },
+    orderBy: { priceRub: 'asc' },
+  })
+  if (!cheapestTariff) throw new Error('Нет доступных тарифов')
+
+  const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+  const expireAt = new Date(Date.now() + trialDays * 86400_000).toISOString()
+
+  const rmUser = await remnawave.createUser({
+    username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+    email: user.email ?? undefined,
+    telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
+    expireAt,
+    trafficLimitBytes,
+    trafficLimitStrategy: cheapestTariff.trafficStrategy || 'MONTH',
+    hwidDeviceLimit: cheapestTariff.deviceLimit ?? 3,
+    tag: cheapestTariff.remnawaveTag ?? undefined,
+    activeInternalSquads: cheapestTariff.remnawaveSquads.length > 0 ? cheapestTariff.remnawaveSquads : undefined,
+  })
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      remnawaveUuid: rmUser.uuid,
+      subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
+      subStatus: 'ACTIVE',
+      subExpireAt: new Date(expireAt),
+    },
+  })
+
+  return { days: trialDays, tariffName: cheapestTariff.name }
+}
+
+// ── Sync user subscription from REMNAWAVE ────────────────────
+async function syncUserSub(user: any) {
+  if (user.remnawaveUuid) return user // already linked
+
+  // Try finding in REMNAWAVE by telegramId
+  const rmUser = await remnawave.getUserByTelegramId(user.telegramId).catch(() => null)
+  if (rmUser) {
+    const statusMap: Record<string, string> = { ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED' }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        remnawaveUuid: rmUser.uuid,
+        subStatus: (statusMap[rmUser.status] ?? 'INACTIVE') as any,
+        subExpireAt: rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+        subLink: remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl),
+      },
+    })
+    return prisma.user.findUnique({ where: { id: user.id } })
+  }
+
+  // Try finding by email
+  if (user.email) {
+    const rmByEmail = await remnawave.getUserByEmail(user.email).catch(() => null)
+    if (rmByEmail) {
+      const statusMap: Record<string, string> = { ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED' }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          remnawaveUuid: rmByEmail.uuid,
+          subStatus: (statusMap[rmByEmail.status] ?? 'INACTIVE') as any,
+          subExpireAt: rmByEmail.expireAt ? new Date(rmByEmail.expireAt) : null,
+          subLink: remnawave.getSubscriptionUrl(rmByEmail.uuid, rmByEmail.subscriptionUrl),
+        },
+      })
+      return prisma.user.findUnique({ where: { id: user.id } })
+    }
+  }
+
+  return user
+}
+
 // ── /start command ───────────────────────────────────────────
 bot.command('start', async (ctx) => {
   const telegramId = String(ctx.from?.id)
+  const tgName = ctx.from?.username || ctx.from?.first_name || telegramId
   const args = ctx.match
 
-  // Handle referral
-  if (args && args.startsWith('ref_')) {
-    const refCode = args.replace('ref_', '')
-    const user = await prisma.user.findUnique({ where: { telegramId } })
-    if (!user?.referredById) {
-      const referrer = await prisma.user.findUnique({
-        where:  { referralCode: refCode },
-        select: { id: true },
-      })
-      if (referrer) {
-        await prisma.user.upsert({
-          where:  { telegramId },
-          create: { telegramId, referredById: referrer.id },
-          update: { referredById: referrer.id },
-        })
+  // Find or create user
+  let user = await prisma.user.findUnique({ where: { telegramId } })
+
+  if (!user) {
+    // New user — create in DB
+    let referredById: string | undefined
+    if (args && args.startsWith('ref_')) {
+      const refCode = args.replace('ref_', '')
+      const referrer = await prisma.user.findUnique({ where: { referralCode: refCode }, select: { id: true } })
+      if (referrer) referredById = referrer.id
+    }
+
+    user = await prisma.user.create({
+      data: {
+        telegramId,
+        telegramName: tgName,
+        referredById: referredById ?? undefined,
+      },
+    })
+    logger.info(`New bot user: ${telegramId} (@${tgName})`)
+  } else {
+    // Update name if changed
+    if (tgName !== user.telegramName) {
+      await prisma.user.update({ where: { id: user.id }, data: { telegramName: tgName } }).catch(() => {})
+    }
+    // Handle referral for existing user without referrer
+    if (args && args.startsWith('ref_') && !user.referredById) {
+      const refCode = args.replace('ref_', '')
+      const referrer = await prisma.user.findUnique({ where: { referralCode: refCode }, select: { id: true } })
+      if (referrer && referrer.id !== user.id) {
+        await prisma.user.update({ where: { id: user.id }, data: { referredById: referrer.id } }).catch(() => {})
       }
     }
   }
 
-  const greeting = msg(
-    'bot_welcome',
-    '👋 Добро пожаловать в *HIDEYOU VPN*!\n\nВыберите нужный раздел:',
-  )
+  // Sync subscription from REMNAWAVE (by tg id or email)
+  user = await syncUserSub(user)
 
-  await ctx.reply(greeting, {
-    parse_mode:   'Markdown',
-    reply_markup: mainMenuKeyboard(),
-  })
+  // ── Determine what to show ──
+  if (user!.remnawaveUuid && user!.subStatus === 'ACTIVE') {
+    // Has active subscription → main menu
+    await ctx.reply(
+      msg('bot_welcome_active', '✅ *Подписка активна!*\n\nВыберите нужный раздел:'),
+      { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+    )
+  } else if (user!.remnawaveUuid) {
+    // Has REMNAWAVE but expired/inactive
+    await ctx.reply(
+      '⏰ *Ваша подписка истекла.*\n\nПродлите подписку или активируйте пробный период.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard()
+          .text('💳 Выбрать тариф', 'menu:tariffs').row()
+          .text('🎟 Ввести промокод', 'menu:promo').row()
+          .webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`),
+      },
+    )
+  } else {
+    // No subscription at all — new user flow
+    const kb = new InlineKeyboard()
+    if (config.features.trial) {
+      kb.text(`🎁 Пробный период (${config.features.trialDays || 3} дней)`, 'trial:start').row()
+    }
+    kb.text('💳 Выбрать тариф', 'menu:tariffs').row()
+    kb.text('📧 У меня есть аккаунт (привязать email)', 'link:email').row()
+    kb.text('🎟 Ввести промокод', 'menu:promo').row()
+    kb.webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`)
+
+    await ctx.reply(
+      msg('bot_welcome_new', '👋 Добро пожаловать в *HIDEYOU VPN*!\n\n' +
+        'Для начала выберите один из вариантов:'),
+      { parse_mode: 'Markdown', reply_markup: kb },
+    )
+  }
 })
 
 // ── Main menu callback ───────────────────────────────────────
@@ -917,10 +1048,122 @@ bot.on('message:text', async (ctx) => {
     return
   }
 
+  // ── Email linking flow ──
+  if (state === 'awaiting_email') {
+    const emailInput = ctx.message.text.trim().toLowerCase()
+    await redis.del(`bot:state:${chatId}`)
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+      await ctx.reply('❌ Некорректный email. Попробуйте ещё раз.', {
+        reply_markup: new InlineKeyboard()
+          .text('📧 Ввести email', 'link:email').row()
+          .text('◀️ В меню', 'menu:main'),
+      })
+      return
+    }
+
+    const telegramId = String(ctx.from.id)
+    const currentUser = await ensureUser(telegramId)
+
+    // Find existing user by email
+    const emailUser = await prisma.user.findUnique({ where: { email: emailInput } })
+
+    if (emailUser && emailUser.telegramId && emailUser.telegramId !== telegramId) {
+      await ctx.reply('❌ Этот email уже привязан к другому аккаунту.', { reply_markup: backButton() })
+      return
+    }
+
+    if (emailUser && !emailUser.telegramId) {
+      // Link telegram to existing email account
+      await prisma.user.update({
+        where: { id: emailUser.id },
+        data: { telegramId, telegramName: ctx.from.username || ctx.from.first_name || telegramId },
+      })
+      // Delete the orphan tg-only account if it exists and is different
+      if (currentUser && currentUser.id !== emailUser.id) {
+        await prisma.user.delete({ where: { id: currentUser.id } }).catch(() => {})
+      }
+      const linked = await syncUserSub(emailUser)
+      const hasActive = linked?.remnawaveUuid && linked?.subStatus === 'ACTIVE'
+      await ctx.reply(
+        `✅ *Аккаунт привязан!*\n\nEmail: ${emailInput}` +
+        (hasActive ? '\n\nПодписка найдена и активна!' : ''),
+        { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+      )
+      return
+    }
+
+    if (!emailUser && currentUser) {
+      // No user with this email — just set email on current user
+      await prisma.user.update({ where: { id: currentUser.id }, data: { email: emailInput } })
+      const synced = await syncUserSub(currentUser)
+      const hasActive = synced?.remnawaveUuid && synced?.subStatus === 'ACTIVE'
+      await ctx.reply(
+        `✅ *Email привязан:* ${emailInput}` +
+        (hasActive ? '\n\nПодписка найдена!' : ''),
+        { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+      )
+      return
+    }
+
+    await ctx.reply('✅ Email сохранён.', { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() })
+    return
+  }
+
   // No active state — show main menu for any text
   await ctx.reply(
     msg('bot_welcome', '👋 Добро пожаловать в *HIDEYOU VPN*!\n\nВыберите нужный раздел:'),
     { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+  )
+})
+
+// ── Trial subscription callback ─────────────────────────────
+bot.callbackQuery('trial:start', async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const telegramId = String(ctx.from.id)
+  const user = await ensureUser(telegramId)
+
+  if (!user) {
+    await ctx.editMessageText('❌ Пользователь не найден. Нажмите /start', { reply_markup: backButton() })
+    return
+  }
+
+  if (user.remnawaveUuid) {
+    await ctx.editMessageText('ℹ️ У вас уже есть подписка.', {
+      reply_markup: mainMenuKeyboard(),
+    })
+    return
+  }
+
+  if (!config.features.trial) {
+    await ctx.editMessageText('❌ Пробный период недоступен.', { reply_markup: mainMenuKeyboard() })
+    return
+  }
+
+  try {
+    const result = await createTrialSubscription(user.id)
+    await ctx.editMessageText(
+      `🎉 *Пробный период активирован!*\n\n` +
+      `Тариф: ${result.tariffName}\n` +
+      `Срок: ${result.days} дней\n\n` +
+      `Откройте раздел "Подписка" для получения ссылки.`,
+      { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+    )
+  } catch (err: any) {
+    await ctx.editMessageText(`❌ ${err.message || 'Не удалось активировать пробный период'}`, {
+      reply_markup: mainMenuKeyboard(),
+    })
+  }
+})
+
+// ── Email linking callback ──────────────────────────────────
+bot.callbackQuery('link:email', async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const chatId = String(ctx.from.id)
+  await redis.set(`bot:state:${chatId}`, 'awaiting_email', 'EX', 300)
+  await ctx.editMessageText(
+    '📧 *Привязка аккаунта*\n\nВведите email, который вы использовали при регистрации на сайте:',
+    { parse_mode: 'Markdown', reply_markup: backButton() },
   )
 })
 

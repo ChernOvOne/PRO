@@ -500,7 +500,17 @@ export async function adminRoutes(app: FastifyInstance) {
       )
     }
 
-    // Delete from local DB (cascade)
+    // Delete all related records that don't have CASCADE
+    await prisma.referralBonus.deleteMany({ where: { referrerId: id } })
+    await prisma.giftSubscription.deleteMany({ where: { OR: [{ fromUserId: id }, { recipientUserId: id }] } })
+    await prisma.promoUsage.deleteMany({ where: { userId: id } })
+    await prisma.botMessage.deleteMany({ where: { userId: id } })
+    await prisma.balanceTransaction.deleteMany({ where: { userId: id } })
+    await prisma.payment.deleteMany({ where: { userId: id } })
+    // Unset referredById on users who were referred by this user
+    await prisma.user.updateMany({ where: { referredById: id }, data: { referredById: null } })
+
+    // Delete user (cascade handles sessions, notes, notifications, etc.)
     await prisma.user.delete({ where: { id } })
 
     logger.info(`Admin deleted user ${id}`)
