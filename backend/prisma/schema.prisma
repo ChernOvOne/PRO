@@ -524,39 +524,64 @@ model Funnel {
   name          String
   description   String?
   enabled       Boolean  @default(false)
-
-  delayType     String   @default("immediate") @map("delay_type")
-  delayValue    Int      @default(0) @map("delay_value")
-  delayTime     String?  @map("delay_time")
-  delayWeekdays Json?    @map("delay_weekdays")
-
-  channelTg     Boolean  @default(false) @map("channel_tg")
-  channelEmail  Boolean  @default(false) @map("channel_email")
-  channelLk     Boolean  @default(false) @map("channel_lk")
-
-  tgText        String?  @map("tg_text")
-  tgButtons     Json?    @map("tg_buttons")
-  tgParseMode   String   @default("Markdown") @map("tg_parse_mode")
-
-  emailSubject  String?  @map("email_subject")
-  emailHtml     String?  @map("email_html")
-  emailBtnText  String?  @map("email_btn_text")
-  emailBtnUrl   String?  @map("email_btn_url")
-  emailTemplate String   @default("dark") @map("email_template")
-
-  lkTitle       String?  @map("lk_title")
-  lkMessage     String?  @map("lk_message")
-  lkType        String   @default("INFO") @map("lk_type")
-
   isCustom      Boolean  @default(false) @map("is_custom")
   sortOrder     Int      @default(0) @map("sort_order")
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  steps         FunnelStep[]
   logs          FunnelLog[]
 
   @@map("funnels")
+}
+
+model FunnelStep {
+  id            String   @id @default(uuid())
+  funnelId      String   @map("funnel_id")
+  funnel        Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  stepOrder     Int      @default(0) @map("step_order")
+
+  // Delay (from previous step or trigger)
+  delayType     String   @default("immediate") @map("delay_type")
+  delayValue    Int      @default(0) @map("delay_value")
+  delayTime     String?  @map("delay_time")
+
+  // Condition to continue chain
+  condition     String   @default("none") @map("condition") // none|not_paid|not_connected|no_subscription|expired
+
+  // Channels
+  channelTg     Boolean  @default(false) @map("channel_tg")
+  channelEmail  Boolean  @default(false) @map("channel_email")
+  channelLk     Boolean  @default(false) @map("channel_lk")
+
+  // TG message
+  tgText        String?  @map("tg_text")
+  tgButtons     Json?    @map("tg_buttons")
+  tgParseMode   String   @default("Markdown") @map("tg_parse_mode")
+
+  // Email
+  emailSubject  String?  @map("email_subject")
+  emailHtml     String?  @map("email_html")
+  emailBtnText  String?  @map("email_btn_text")
+  emailBtnUrl   String?  @map("email_btn_url")
+  emailTemplate String   @default("dark") @map("email_template")
+
+  // LK notification
+  lkTitle       String?  @map("lk_title")
+  lkMessage     String?  @map("lk_message")
+  lkType        String   @default("INFO") @map("lk_type")
+
+  // Action on send
+  actionType    String   @default("none") @map("action_type") // none|bonus_days|balance|promo_discount|promo_balance|trial
+  actionValue   Int      @default(0) @map("action_value")     // days, rubles, percent
+  actionPromoExpiry Int  @default(7) @map("action_promo_expiry") // promo valid for N days
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([funnelId, stepOrder])
+  @@map("funnel_steps")
 }
 
 model FunnelLog {
@@ -564,12 +589,13 @@ model FunnelLog {
   funnelId  String   @map("funnel_id")
   funnel    Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
   userId    String   @map("user_id")
+  stepOrder Int      @default(0) @map("step_order")
   channel   String
   status    String   @default("sent")
   error     String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([funnelId, userId])
+  @@index([funnelId, userId, stepOrder])
   @@index([userId, createdAt(sort: Desc)])
   @@map("funnel_logs")
 }

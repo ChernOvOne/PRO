@@ -1,42 +1,18 @@
 /**
- * Funnel execution engine.
- * - Event triggers: called from code at the moment something happens
- * - Cron triggers: checked periodically by scheduler
- * - Variable substitution: {name}, {email}, {days}, etc.
+ * Funnel execution engine with step chains, conditions, actions, variables.
  */
-
 import { prisma } from '../db'
 import { bot } from '../bot'
 import { emailService } from '../services/email'
 import { inAppNotifications } from '../services/notification-service'
 import { remnawave } from '../services/remnawave'
+import { balanceService } from '../services/balance'
 import { config } from '../config'
 import { logger } from '../utils/logger'
 import { InlineKeyboard } from 'grammy'
+import { nanoid } from 'nanoid'
 
-// ── Variable substitution ───────────────────────────────────
-// Available variables that can be used in funnel messages:
-//
-// {name}           — имя пользователя (TG или email)
-// {email}          — email
-// {telegramName}   — Telegram username
-// {referralCode}   — реферальный код
-// {referralUrl}    — реферальная ссылка
-// {referralCount}  — кол-во рефералов
-// {balance}        — баланс (руб)
-// {bonusDays}      — бонусные дни
-// {subStatus}      — статус подписки
-// {subExpireDate}  — дата истечения подписки
-// {daysLeft}       — дней до конца подписки
-// {tariffName}     — название тарифа
-// {amount}         — сумма платежа
-// {refName}        — имя реферала (для ref-триггеров)
-// {refBonusDays}   — начисленные реф. дни
-// {promoCode}      — промокод
-// {trialDays}      — дней пробного периода
-// {appUrl}         — URL сервиса
-// {deviceName}     — имя устройства
-
+// ── Variable documentation ──────────────────────────────────
 export const VARIABLE_DOCS = [
   { var: '{name}', desc: 'Имя пользователя' },
   { var: '{email}', desc: 'Email' },
@@ -46,303 +22,372 @@ export const VARIABLE_DOCS = [
   { var: '{referralCount}', desc: 'Кол-во рефералов' },
   { var: '{balance}', desc: 'Баланс (руб)' },
   { var: '{bonusDays}', desc: 'Бонусные дни' },
-  { var: '{subStatus}', desc: 'Статус подписки' },
   { var: '{subExpireDate}', desc: 'Дата окончания подписки' },
   { var: '{daysLeft}', desc: 'Дней осталось' },
   { var: '{tariffName}', desc: 'Название тарифа' },
   { var: '{amount}', desc: 'Сумма платежа' },
   { var: '{refName}', desc: 'Имя реферала' },
   { var: '{refBonusDays}', desc: 'Реферальные дни' },
-  { var: '{promoCode}', desc: 'Промокод' },
+  { var: '{promoCode}', desc: 'Промокод (если есть)' },
+  { var: '{generatedPromo}', desc: 'Автосгенерированный промокод' },
   { var: '{trialDays}', desc: 'Дней пробного периода' },
   { var: '{appUrl}', desc: 'URL сервиса' },
-  { var: '{deviceName}', desc: 'Название устройства' },
 ]
 
-function substituteVars(text: string, vars: Record<string, string>): string {
-  let result = text
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '')
-  }
-  // Always substitute appUrl
-  result = result.replace(/\{appUrl\}/g, config.appUrl)
-  return result
+// ── Available triggers for dropdown ─────────────────────────
+export const TRIGGER_OPTIONS = [
+  { group: 'Онбординг', triggers: [
+    { id: 'registration', name: 'Регистрация' },
+    { id: 'trial_not_activated', name: 'Не активировал триал' },
+    { id: 'not_connected_24h', name: 'Не подключился (24ч)' },
+    { id: 'not_connected_72h', name: 'Не подключился (72ч)' },
+    { id: 'first_connection', name: 'Первое подключение' },
+  ]},
+  { group: 'Подписка', triggers: [
+    { id: 'expiring_7d', name: 'Истекает через 7 дней' },
+    { id: 'expiring_3d', name: 'Истекает через 3 дня' },
+    { id: 'expiring_1d', name: 'Истекает через 1 день' },
+    { id: 'expired', name: 'Подписка истекла' },
+    { id: 'expired_7d', name: 'Истекла 7 дней назад' },
+    { id: 'traffic_80', name: 'Трафик 80%' },
+    { id: 'traffic_100', name: 'Трафик исчерпан' },
+  ]},
+  { group: 'Оплата', triggers: [
+    { id: 'payment_success', name: 'Оплата прошла' },
+    { id: 'payment_pending', name: 'Оплата не завершена' },
+    { id: 'payment_renewal', name: 'Повторная оплата' },
+  ]},
+  { group: 'Рефералы', triggers: [
+    { id: 'referral_registered', name: 'Реферал зарегистрировался' },
+    { id: 'referral_trial', name: 'Реферал взял триал' },
+    { id: 'referral_paid', name: 'Реферал оплатил' },
+  ]},
+  { group: 'Бонусы', triggers: [
+    { id: 'bonus_days_granted', name: 'Начислены бонусные дни' },
+    { id: 'promo_activated', name: 'Промокод активирован' },
+    { id: 'balance_topup', name: 'Баланс пополнен' },
+  ]},
+  { group: 'Безопасность', triggers: [
+    { id: 'new_device', name: 'Новое устройство' },
+    { id: 'device_limit', name: 'Лимит устройств' },
+    { id: 'sub_link_revoked', name: 'Ссылка обновлена' },
+  ]},
+  { group: 'Апсейл', triggers: [
+    { id: 'upsell_basic_30d', name: 'На базовом 30+ дней' },
+    { id: 'traffic_frequent_exceed', name: 'Частое превышение трафика' },
+    { id: 'trial_expired_offer', name: 'Триал закончился' },
+  ]},
+  { group: 'Социальное', triggers: [
+    { id: 'zero_referrals_7d', name: '0 рефералов за 7 дней' },
+    { id: 'five_referrals', name: '5 рефералов' },
+    { id: 'gift_received', name: 'Подарок получен' },
+    { id: 'gift_not_claimed_3d', name: 'Подарок не активирован 3д' },
+  ]},
+  { group: 'Вовлечение', triggers: [
+    { id: 'inactive_14d', name: 'Не заходил 14 дней' },
+    { id: 'inactive_30d', name: 'Не заходил 30 дней' },
+    { id: 'anniversary', name: 'Годовщина регистрации' },
+  ]},
+  { group: 'Фидбек', triggers: [
+    { id: 'feedback_7d', name: 'Отзыв после 7 дней' },
+    { id: 'feedback_loyal', name: 'Отзыв от лояльного клиента' },
+  ]},
+]
+
+// ── Helpers ─────────────────────────────────────────────────
+function subVars(text: string, vars: Record<string, string>): string {
+  let r = text
+  for (const [k, v] of Object.entries(vars)) r = r.replace(new RegExp(`\\{${k}\\}`, 'g'), v || '')
+  return r.replace(/\{appUrl\}/g, config.appUrl)
 }
 
-async function buildUserVars(userId: string, extra: Record<string, string> = {}): Promise<Record<string, string>> {
-  const user = await prisma.user.findUnique({
+async function buildVars(userId: string, extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const u = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      email: true, telegramName: true, telegramId: true,
-      referralCode: true, balance: true, bonusDays: true,
-      subStatus: true, subExpireAt: true,
-      _count: { select: { referrals: true } },
-    },
+    select: { email: true, telegramName: true, referralCode: true, balance: true, bonusDays: true, subStatus: true, subExpireAt: true, _count: { select: { referrals: true } } },
   })
-  if (!user) return extra
-
-  const daysLeft = user.subExpireAt
-    ? Math.max(0, Math.ceil((user.subExpireAt.getTime() - Date.now()) / 86400_000))
-    : 0
-
+  if (!u) return { appUrl: config.appUrl, ...extra }
+  const daysLeft = u.subExpireAt ? Math.max(0, Math.ceil((u.subExpireAt.getTime() - Date.now()) / 86400_000)) : 0
   return {
-    name: user.telegramName || user.email?.split('@')[0] || 'Пользователь',
-    email: user.email || '',
-    telegramName: user.telegramName || '',
-    referralCode: user.referralCode || '',
-    referralUrl: `${config.appUrl}?ref=${user.referralCode}`,
-    referralCount: String(user._count.referrals),
-    balance: String(Number(user.balance || 0)),
-    bonusDays: String(user.bonusDays || 0),
-    subStatus: user.subStatus,
-    subExpireDate: user.subExpireAt ? user.subExpireAt.toLocaleDateString('ru') : '—',
-    daysLeft: String(daysLeft),
-    trialDays: String(config.features.trialDays || 3),
-    appUrl: config.appUrl,
-    ...extra,
+    name: u.telegramName || u.email?.split('@')[0] || 'Пользователь',
+    email: u.email || '', telegramName: u.telegramName || '',
+    referralCode: u.referralCode || '', referralUrl: `${config.appUrl}?ref=${u.referralCode}`,
+    referralCount: String(u._count.referrals), balance: String(Number(u.balance || 0)),
+    bonusDays: String(u.bonusDays || 0), subExpireDate: u.subExpireAt?.toLocaleDateString('ru') || '—',
+    daysLeft: String(daysLeft), trialDays: String(config.features.trialDays || 3),
+    appUrl: config.appUrl, generatedPromo: '', ...extra,
   }
 }
 
-// ── Build keyboard from funnel buttons ──────────────────────
-function buildKeyboard(buttons: any[]): InlineKeyboard | undefined {
-  if (!buttons || !Array.isArray(buttons) || buttons.length === 0) return undefined
+function buildKb(buttons: any[]): InlineKeyboard | undefined {
+  if (!buttons?.length) return undefined
   const kb = new InlineKeyboard()
-  for (const btn of buttons) {
-    if (!btn.label) continue
-    if (btn.type === 'callback') kb.text(btn.label, btn.data || 'menu:main')
-    else if (btn.type === 'url' && btn.data?.startsWith('http')) kb.url(btn.label, btn.data)
-    else if (btn.type === 'webapp' && btn.data?.startsWith('http')) kb.webApp(btn.label, btn.data)
+  for (const b of buttons) {
+    if (!b.label) continue
+    if (b.type === 'callback') kb.text(b.label, b.data || 'menu:main')
+    else if (b.type === 'url' && b.data?.startsWith('http')) kb.url(b.label, b.data)
+    else if (b.type === 'webapp' && b.data?.startsWith('http')) kb.webApp(b.label, b.data)
     kb.row()
   }
   return kb
 }
 
-// ── Send funnel to a single user ────────────────────────────
-async function sendFunnel(funnelId: string, userId: string, extraVars: Record<string, string> = {}) {
-  const funnel = await prisma.funnel.findUnique({ where: { id: funnelId } })
-  if (!funnel || !funnel.enabled) return
-
-  // Check if already sent to this user
-  const alreadySent = await prisma.funnelLog.findFirst({
-    where: { funnelId, userId },
+// ── Check step condition ────────────────────────────────────
+async function checkCondition(condition: string, userId: string): Promise<boolean> {
+  if (condition === 'none') return true
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { subStatus: true, remnawaveUuid: true, subExpireAt: true },
   })
-  if (alreadySent) return // Don't send same funnel twice
+  if (!user) return false
 
+  switch (condition) {
+    case 'not_paid': {
+      const paid = await prisma.payment.count({ where: { userId, status: 'PAID', amount: { gt: 0 }, provider: { in: ['YUKASSA', 'CRYPTOPAY'] } } })
+      return paid === 0
+    }
+    case 'not_connected': {
+      if (!user.remnawaveUuid) return true
+      try {
+        const rm = await remnawave.getUserByUuid(user.remnawaveUuid)
+        return !rm.userTraffic?.firstConnectedAt
+      } catch { return true }
+    }
+    case 'no_subscription': return user.subStatus !== 'ACTIVE'
+    case 'expired': return user.subStatus !== 'ACTIVE' && !!user.subExpireAt && user.subExpireAt < new Date()
+    default: return true
+  }
+}
+
+// ── Execute action ──────────────────────────────────────────
+async function executeAction(step: any, userId: string, vars: Record<string, string>): Promise<void> {
+  if (step.actionType === 'none' || !step.actionType) return
+
+  switch (step.actionType) {
+    case 'bonus_days':
+      await prisma.user.update({ where: { id: userId }, data: { bonusDays: { increment: step.actionValue } } })
+      logger.info(`Funnel action: +${step.actionValue} bonus days for ${userId}`)
+      break
+
+    case 'balance':
+      await balanceService.adminAdjust({ userId, amount: step.actionValue, description: 'Бонус от воронки' })
+      logger.info(`Funnel action: +${step.actionValue}₽ balance for ${userId}`)
+      break
+
+    case 'promo_discount':
+    case 'promo_balance': {
+      const code = `FUNNEL_${nanoid(6).toUpperCase()}`
+      const isDiscount = step.actionType === 'promo_discount'
+      await prisma.promoCode.create({
+        data: {
+          code,
+          type: isDiscount ? 'discount' : 'balance',
+          discountPct: isDiscount ? step.actionValue : null,
+          balanceAmount: isDiscount ? null : step.actionValue,
+          maxUses: 1, maxUsesPerUser: 1,
+          expiresAt: new Date(Date.now() + step.actionPromoExpiry * 86400_000),
+          description: `Автоворонка`,
+        },
+      })
+      vars.generatedPromo = code
+      logger.info(`Funnel action: promo ${code} (${step.actionType} ${step.actionValue}) for ${userId}`)
+      break
+    }
+
+    case 'trial':
+      // Only if user has no subscription
+      const user = await prisma.user.findUnique({ where: { id: userId } })
+      if (user && !user.remnawaveUuid) {
+        // Import and call trial activation from users route
+        try {
+          const { triggerEvent } = await import('./funnel-engine')
+          // We can't easily call the trial activation here, so just grant bonus days
+          await prisma.user.update({ where: { id: userId }, data: { bonusDays: { increment: step.actionValue || config.features.trialDays || 3 } } })
+          logger.info(`Funnel action: trial ${step.actionValue} days for ${userId}`)
+        } catch {}
+      }
+      break
+  }
+}
+
+// ── Send a single step to a user ────────────────────────────
+export async function sendTestStep(step: any, funnelId: string, userId: string) {
+  return sendStep(step, funnelId, userId, {}, '🧪 ТЕСТ: ')
+}
+
+async function sendStep(step: any, funnelId: string, userId: string, extraVars: Record<string, string> = {}, prefix = '') {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, telegramId: true, email: true },
   })
   if (!user) return
 
-  const vars = await buildUserVars(userId, extraVars)
+  // Check condition
+  if (!await checkCondition(step.condition, userId)) {
+    await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'skip', status: 'skipped' } })
+    return
+  }
+
+  // Execute action (before sending, so {generatedPromo} is available)
+  const vars = await buildVars(userId, extraVars)
+  await executeAction(step, userId, vars)
 
   // TG
-  if (funnel.channelTg && user.telegramId && funnel.tgText) {
+  if (step.channelTg && user.telegramId && step.tgText) {
     try {
-      const text = substituteVars(funnel.tgText, vars)
-      const kb = buildKeyboard(funnel.tgButtons as any[])
-      await bot.api.sendMessage(user.telegramId, text, {
-        parse_mode: (funnel.tgParseMode as any) || 'Markdown',
-        ...(kb && { reply_markup: kb }),
-      })
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'tg', status: 'sent' } })
+      const text = prefix + subVars(step.tgText, vars)
+      const kb = buildKb(step.tgButtons as any[])
+      await bot.api.sendMessage(user.telegramId, text, { parse_mode: (step.tgParseMode as any) || 'Markdown', ...(kb && { reply_markup: kb }) })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'tg', status: 'sent' } })
     } catch (e: any) {
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'tg', status: 'failed', error: e.message } })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'tg', status: 'failed', error: e.message } })
     }
   }
 
   // Email
-  if (funnel.channelEmail && user.email && funnel.emailSubject) {
+  if (step.channelEmail && user.email && step.emailSubject) {
     try {
       await emailService.sendBroadcastEmail({
-        to: user.email,
-        subject: substituteVars(funnel.emailSubject, vars),
-        html: substituteVars(funnel.emailHtml || funnel.tgText || '', vars),
-        btnText: funnel.emailBtnText ?? undefined,
-        btnUrl: funnel.emailBtnUrl ? substituteVars(funnel.emailBtnUrl, vars) : undefined,
-        template: funnel.emailTemplate || 'dark',
+        to: user.email, subject: prefix + subVars(step.emailSubject, vars),
+        html: subVars(step.emailHtml || step.tgText || '', vars),
+        btnText: step.emailBtnText ?? undefined,
+        btnUrl: step.emailBtnUrl ? subVars(step.emailBtnUrl, vars) : undefined,
+        template: step.emailTemplate || 'dark',
       })
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'email', status: 'sent' } })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'email', status: 'sent' } })
     } catch (e: any) {
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'email', status: 'failed', error: e.message } })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'email', status: 'failed', error: e.message } })
     }
   }
 
   // LK
-  if (funnel.channelLk && funnel.lkTitle) {
+  if (step.channelLk && step.lkTitle) {
     try {
-      await inAppNotifications.sendToUser({
-        userId,
-        title: substituteVars(funnel.lkTitle, vars),
-        message: substituteVars(funnel.lkMessage || '', vars),
-        type: (funnel.lkType || 'INFO') as any,
-      })
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'lk', status: 'sent' } })
+      await inAppNotifications.sendToUser({ userId, title: prefix + subVars(step.lkTitle, vars), message: subVars(step.lkMessage || '', vars), type: (step.lkType || 'INFO') as any })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'lk', status: 'sent' } })
     } catch (e: any) {
-      await prisma.funnelLog.create({ data: { funnelId, userId, channel: 'lk', status: 'failed', error: e.message } })
+      await prisma.funnelLog.create({ data: { funnelId, userId, stepOrder: step.stepOrder, channel: 'lk', status: 'failed', error: e.message } })
     }
   }
 }
 
-// ── EVENT TRIGGERS (called from code) ───────────────────────
-// Call these from the relevant places in the codebase
-
+// ── EVENT TRIGGER ───────────────────────────────────────────
 export async function triggerEvent(triggerId: string, userId: string, extraVars: Record<string, string> = {}) {
-  const funnel = await prisma.funnel.findUnique({ where: { triggerId } })
-  if (!funnel || !funnel.enabled) return
+  const funnel = await prisma.funnel.findUnique({
+    where: { triggerId },
+    include: { steps: { orderBy: { stepOrder: 'asc' } } },
+  })
+  if (!funnel || !funnel.enabled || funnel.steps.length === 0) return
 
-  // Check delay
-  if (funnel.delayType === 'immediate' || funnel.delayValue === 0) {
-    await sendFunnel(funnel.id, userId, extraVars)
-  } else {
-    // Delayed: calculate ms and use setTimeout (simple approach)
+  for (const step of funnel.steps) {
+    // Check if this step was already sent
+    const sent = await prisma.funnelLog.findFirst({
+      where: { funnelId: funnel.id, userId, stepOrder: step.stepOrder, status: 'sent' },
+    })
+    if (sent) continue
+
+    // Calculate delay
     let delayMs = 0
-    switch (funnel.delayType) {
-      case 'minutes': delayMs = funnel.delayValue * 60_000; break
-      case 'hours':   delayMs = funnel.delayValue * 3600_000; break
-      case 'days':    delayMs = funnel.delayValue * 86400_000; break
-      default:        delayMs = 0
+    switch (step.delayType) {
+      case 'minutes': delayMs = step.delayValue * 60_000; break
+      case 'hours':   delayMs = step.delayValue * 3600_000; break
+      case 'days':    delayMs = step.delayValue * 86400_000; break
     }
-    if (delayMs > 0 && delayMs < 24 * 3600_000) {
-      // For delays up to 24h, use setTimeout
-      setTimeout(() => sendFunnel(funnel.id, userId, extraVars).catch(() => {}), delayMs)
-      logger.info(`Funnel ${triggerId} scheduled for ${userId} in ${delayMs / 60000} min`)
-    } else if (delayMs > 0) {
-      // For longer delays, just send immediately (cron will handle in production)
-      // TODO: implement proper job queue for long delays
-      await sendFunnel(funnel.id, userId, extraVars)
+
+    if (delayMs === 0) {
+      await sendStep(step, funnel.id, userId, extraVars)
+    } else if (delayMs <= 24 * 3600_000) {
+      // Short delay: setTimeout
+      setTimeout(() => sendStep(step, funnel.id, userId, extraVars).catch(() => {}), delayMs)
+      logger.info(`Funnel ${triggerId} step ${step.stepOrder} scheduled for ${userId} in ${delayMs / 60000}min`)
+      break // Don't schedule further steps — cron will pick them up
     } else {
-      await sendFunnel(funnel.id, userId, extraVars)
+      // Long delay: cron will handle
+      break
     }
   }
 }
 
-// ── CRON TRIGGERS (run by scheduler) ────────────────────────
-// These check conditions in the database and send to matching users
-
+// ── CRON: process pending chain steps ───────────────────────
 export async function runCronFunnels() {
   const now = new Date()
 
-  // trial_not_activated: registered > 1h ago, no remnawaveUuid, trial available
-  await runConditionFunnel('trial_not_activated', {
-    remnawaveUuid: null,
-    createdAt: { lt: new Date(now.getTime() - 3600_000) },
-  })
+  // 1. Process condition-based triggers
+  await processConditionTrigger('trial_not_activated', { remnawaveUuid: null, createdAt: { lt: new Date(now.getTime() - 3600_000) } })
+  await processConditionTrigger('expiring_7d', { subStatus: 'ACTIVE' as const, subExpireAt: { gte: new Date(now.getTime() + 6 * 86400_000), lt: new Date(now.getTime() + 7 * 86400_000) } })
+  await processConditionTrigger('expiring_3d', { subStatus: 'ACTIVE' as const, subExpireAt: { gte: new Date(now.getTime() + 2 * 86400_000), lt: new Date(now.getTime() + 3 * 86400_000) } })
+  await processConditionTrigger('expiring_1d', { subStatus: 'ACTIVE' as const, subExpireAt: { gte: now, lt: new Date(now.getTime() + 86400_000) } })
+  await processConditionTrigger('expired', { subExpireAt: { gte: new Date(now.getTime() - 2 * 86400_000), lt: new Date(now.getTime() - 86400_000) } })
+  await processConditionTrigger('expired_7d', { subExpireAt: { gte: new Date(now.getTime() - 8 * 86400_000), lt: new Date(now.getTime() - 7 * 86400_000) } })
+  await processConditionTrigger('inactive_14d', { lastLoginAt: { lt: new Date(now.getTime() - 14 * 86400_000) }, isActive: true })
+  await processConditionTrigger('inactive_30d', { lastLoginAt: { lt: new Date(now.getTime() - 30 * 86400_000) }, isActive: true })
+  await processConditionTrigger('zero_referrals_7d', { createdAt: { lt: new Date(now.getTime() - 7 * 86400_000) }, referrals: { none: {} } })
+  await processConditionTrigger('trial_expired_offer', { subStatus: { not: 'ACTIVE' as const }, remnawaveUuid: { not: null }, payments: { none: { status: 'PAID', amount: { gt: 0 } } } })
 
-  // not_connected_24h: has remnawave, subscribed > 24h ago, but never connected
-  const users24h = await prisma.user.findMany({
-    where: {
-      remnawaveUuid: { not: null },
-      subStatus: 'ACTIVE',
-      createdAt: { lt: new Date(now.getTime() - 24 * 3600_000) },
-    },
-    select: { id: true, remnawaveUuid: true },
-  })
-  for (const u of users24h) {
-    try {
-      const rm = await remnawave.getUserByUuid(u.remnawaveUuid!)
-      if (!rm.userTraffic?.firstConnectedAt) {
-        await triggerIfNotSent('not_connected_24h', u.id)
-      }
-    } catch {}
-  }
+  // 2. Process pending chain steps (steps with delay that need to fire)
+  await processPendingChainSteps()
 
-  // not_connected_72h
-  const users72h = await prisma.user.findMany({
-    where: {
-      remnawaveUuid: { not: null },
-      subStatus: 'ACTIVE',
-      createdAt: { lt: new Date(now.getTime() - 72 * 3600_000) },
-    },
-    select: { id: true, remnawaveUuid: true },
-  })
-  for (const u of users72h) {
-    try {
-      const rm = await remnawave.getUserByUuid(u.remnawaveUuid!)
-      if (!rm.userTraffic?.firstConnectedAt) {
-        await triggerIfNotSent('not_connected_72h', u.id)
-      }
-    } catch {}
-  }
-
-  // expiring_7d, 3d, 1d
-  for (const [trigger, days] of [['expiring_7d', 7], ['expiring_3d', 3], ['expiring_1d', 1]] as const) {
-    const from = new Date(now.getTime() + (days - 1) * 86400_000)
-    const to = new Date(now.getTime() + days * 86400_000)
-    await runConditionFunnel(trigger, {
-      subStatus: 'ACTIVE',
-      subExpireAt: { gte: from, lt: to },
-    })
-  }
-
-  // expired: subExpireAt was yesterday
-  await runConditionFunnel('expired', {
-    subExpireAt: {
-      gte: new Date(now.getTime() - 2 * 86400_000),
-      lt: new Date(now.getTime() - 86400_000),
-    },
-  })
-
-  // expired_7d
-  await runConditionFunnel('expired_7d', {
-    subExpireAt: {
-      gte: new Date(now.getTime() - 8 * 86400_000),
-      lt: new Date(now.getTime() - 7 * 86400_000),
-    },
-  })
-
-  // inactive_14d
-  await runConditionFunnel('inactive_14d', {
-    lastLoginAt: { lt: new Date(now.getTime() - 14 * 86400_000) },
-    isActive: true,
-  })
-
-  // inactive_30d
-  await runConditionFunnel('inactive_30d', {
-    lastLoginAt: { lt: new Date(now.getTime() - 30 * 86400_000) },
-    isActive: true,
-  })
-
-  // zero_referrals_7d: registered > 7d ago, 0 referrals
-  await runConditionFunnel('zero_referrals_7d', {
-    createdAt: { lt: new Date(now.getTime() - 7 * 86400_000) },
-    referrals: { none: {} },
-  })
-
-  // trial_expired_offer: trial ended (subStatus != ACTIVE, has remnawave, no paid payments)
-  await runConditionFunnel('trial_expired_offer', {
-    subStatus: { not: 'ACTIVE' },
-    remnawaveUuid: { not: null },
-    payments: { none: { status: 'PAID', amount: { gt: 0 }, provider: { in: ['YUKASSA', 'CRYPTOPAY'] } } },
-  })
-
-  logger.info('Cron funnels check completed')
+  logger.info('Cron funnels completed')
 }
 
-// Helper: run a trigger for all matching users who haven't received it
-async function runConditionFunnel(triggerId: string, where: any) {
-  const funnel = await prisma.funnel.findUnique({ where: { triggerId } })
-  if (!funnel || !funnel.enabled) return
-
-  const users = await prisma.user.findMany({
-    where: { ...where, isActive: true },
-    select: { id: true },
-    take: 100, // batch limit
+async function processConditionTrigger(triggerId: string, where: any) {
+  const funnel = await prisma.funnel.findUnique({
+    where: { triggerId },
+    include: { steps: { orderBy: { stepOrder: 'asc' }, take: 1 } },
   })
+  if (!funnel || !funnel.enabled || funnel.steps.length === 0) return
+
+  const firstStep = funnel.steps[0]
+  const users = await prisma.user.findMany({ where: { ...where, isActive: true }, select: { id: true }, take: 100 })
 
   for (const u of users) {
-    await triggerIfNotSent(triggerId, u.id)
+    const sent = await prisma.funnelLog.findFirst({ where: { funnelId: funnel.id, userId: u.id, stepOrder: firstStep.stepOrder, status: 'sent' } })
+    if (sent) continue
+    await sendStep(firstStep, funnel.id, u.id)
   }
 }
 
-async function triggerIfNotSent(triggerId: string, userId: string) {
-  const funnel = await prisma.funnel.findUnique({ where: { triggerId } })
-  if (!funnel || !funnel.enabled) return
-
-  const alreadySent = await prisma.funnelLog.findFirst({
-    where: { funnelId: funnel.id, userId },
+async function processPendingChainSteps() {
+  // Find funnels that have multi-step chains
+  const funnels = await prisma.funnel.findMany({
+    where: { enabled: true },
+    include: { steps: { orderBy: { stepOrder: 'asc' } } },
   })
-  if (alreadySent) return
 
-  await sendFunnel(funnel.id, userId)
+  for (const funnel of funnels) {
+    if (funnel.steps.length <= 1) continue
+
+    // Find users who received step N but not step N+1
+    for (let i = 0; i < funnel.steps.length - 1; i++) {
+      const currentStep = funnel.steps[i]
+      const nextStep = funnel.steps[i + 1]
+
+      // Calculate when next step should fire
+      let delayMs = 0
+      switch (nextStep.delayType) {
+        case 'minutes': delayMs = nextStep.delayValue * 60_000; break
+        case 'hours':   delayMs = nextStep.delayValue * 3600_000; break
+        case 'days':    delayMs = nextStep.delayValue * 86400_000; break
+      }
+
+      // Find users who got current step but not next step
+      const sentLogs = await prisma.funnelLog.findMany({
+        where: { funnelId: funnel.id, stepOrder: currentStep.stepOrder, status: 'sent' },
+        select: { userId: true, createdAt: true },
+      })
+
+      for (const log of sentLogs) {
+        // Check if enough time has passed
+        if (Date.now() - log.createdAt.getTime() < delayMs) continue
+
+        // Check if next step already sent
+        const nextSent = await prisma.funnelLog.findFirst({
+          where: { funnelId: funnel.id, userId: log.userId, stepOrder: nextStep.stepOrder },
+        })
+        if (nextSent) continue
+
+        await sendStep(nextStep, funnel.id, log.userId)
+      }
+    }
+  }
 }

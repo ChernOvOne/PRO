@@ -41,14 +41,19 @@ interface Broadcast {
 }
 
 // ---- Funnel types ----
-interface FunnelConfig {
-  id: string; triggerId: string; name: string; description?: string; enabled: boolean; isCustom: boolean
-  delayType: string; delayValue: number; delayTime?: string; delayWeekdays?: number[]
+interface FunnelStep {
+  id: string; stepOrder: number
+  delayType: string; delayValue: number; delayTime?: string
+  condition: string
   channelTg: boolean; channelEmail: boolean; channelLk: boolean
   tgText?: string; tgButtons?: any[]; tgParseMode: string
   emailSubject?: string; emailHtml?: string; emailBtnText?: string; emailBtnUrl?: string; emailTemplate: string
   lkTitle?: string; lkMessage?: string; lkType: string
-  sortOrder: number; _count?: { logs: number }
+  actionType: string; actionValue: number; actionPromoExpiry: number
+}
+interface FunnelConfig {
+  id: string; triggerId: string; name: string; description?: string; enabled: boolean; isCustom: boolean
+  sortOrder: number; steps: FunnelStep[]; _count?: { logs: number }
 }
 
 // ---- Chat types ----
@@ -1442,7 +1447,7 @@ function BroadcastsTab() {
 }
 
 /* ============================================================
-   TAB 2: AUTO-FUNNELS
+   TAB 2: AUTO-FUNNELS (with step chains)
    ============================================================ */
 
 const CATEGORIES = [
@@ -1481,18 +1486,34 @@ const DELAY_TYPES = [
 
 const WEEKDAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-function formatDelay(f: FunnelConfig): string {
-  switch (f.delayType) {
+function formatStepDelay(s: FunnelStep): string {
+  switch (s.delayType) {
     case 'immediate': return 'Сразу'
-    case 'minutes': return `Через ${f.delayValue} мин.`
-    case 'hours': return `Через ${f.delayValue} ч.`
-    case 'days': return `Через ${f.delayValue} дн.`
-    case 'exact_time': return `В ${f.delayTime || '10:00'}`
-    case 'next_day_time': return `На след. день в ${f.delayTime || '10:00'}`
-    case 'weekdays': return `По дням в ${f.delayTime || '10:00'}`
+    case 'minutes': return `Через ${s.delayValue} мин.`
+    case 'hours': return `Через ${s.delayValue} ч.`
+    case 'days': return `Через ${s.delayValue} дн.`
+    case 'exact_time': return `В ${s.delayTime || '10:00'}`
+    case 'next_day_time': return `На след. день в ${s.delayTime || '10:00'}`
     default: return 'Сразу'
   }
 }
+
+const CONDITIONS = [
+  { value: 'none', label: 'Без условия' },
+  { value: 'not_paid', label: 'Если не оплатил' },
+  { value: 'not_connected', label: 'Если не подключился' },
+  { value: 'no_subscription', label: 'Если нет подписки' },
+  { value: 'expired', label: 'Если подписка истекла' },
+]
+
+const ACTIONS = [
+  { value: 'none', label: 'Без действия' },
+  { value: 'bonus_days', label: 'Выдать бонусные дни', unit: 'дней' },
+  { value: 'balance', label: 'Пополнить баланс', unit: '₽' },
+  { value: 'promo_discount', label: 'Промокод скидка', unit: '%' },
+  { value: 'promo_balance', label: 'Промокод на баланс', unit: '₽' },
+  { value: 'trial', label: 'Выдать пробный период', unit: 'дней' },
+]
 
 const funnelApi = (path: string, opts?: RequestInit) =>
   fetch(`/api/admin/communications${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...opts?.headers }, ...opts })
@@ -1500,6 +1521,7 @@ const funnelApi = (path: string, opts?: RequestInit) =>
 
 function FunnelsTab() {
   const [funnels, setFunnels] = useState<FunnelConfig[]>([])
+  const [triggerOptions, setTriggerOptions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -1511,22 +1533,49 @@ function FunnelsTab() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { setFunnels(await funnelApi('/funnels')) }
-    catch { toast.error('Не удалось загрузить воронки') }
+    try {
+      const [f, t] = await Promise.all([funnelApi('/funnels'), funnelApi('/triggers').catch(() => [])])
+      setFunnels(f)
+      setTriggerOptions(t)
+    } catch { toast.error('Не удалось загрузить воронки') }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const upd = (id: string, patch: Partial<FunnelConfig>) =>
-    setFunnels(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f))
+  const updStep = (funnelId: string, stepId: string, patch: Partial<FunnelStep>) =>
+    setFunnels(prev => prev.map(f => f.id === funnelId ? { ...f, steps: f.steps.map(s => s.id === stepId ? { ...s, ...patch } : s) } : f))
 
-  const save = async (id: string) => {
+  const saveStep = async (stepId: string) => {
+    setSavingId(stepId)
+    const step = funnels.flatMap(f => f.steps).find(s => s.id === stepId)
+    if (!step) return
+    try {
+      await funnelApi(`/steps/${stepId}`, { method: 'PUT', body: JSON.stringify(step) })
+      toast.success('Шаг сохранён')
+    } catch { toast.error('Ошибка') }
+    finally { setSavingId(null) }
+  }
+
+  const addStep = async (funnelId: string) => {
+    try {
+      await funnelApi(`/funnels/${funnelId}/steps`, { method: 'POST' })
+      load()
+    } catch { toast.error('Ошибка') }
+  }
+
+  const deleteStep = async (stepId: string) => {
+    if (!confirm('Удалить шаг?')) return
+    try { await funnelApi(`/steps/${stepId}`, { method: 'DELETE' }); load() }
+    catch { toast.error('Ошибка') }
+  }
+
+  const saveFunnel = async (id: string) => {
     setSavingId(id)
     const f = funnels.find(x => x.id === id)
     if (!f) return
     try {
-      await funnelApi(`/funnels/${id}`, { method: 'PUT', body: JSON.stringify(f) })
+      await funnelApi(`/funnels/${id}`, { method: 'PUT', body: JSON.stringify({ name: f.name, description: f.description, enabled: f.enabled }) })
       toast.success('Сохранено')
     } catch { toast.error('Ошибка') }
     finally { setSavingId(null) }
@@ -1535,7 +1584,7 @@ function FunnelsTab() {
   const toggle = async (id: string) => {
     try {
       const res = await funnelApi(`/funnels/${id}/toggle`, { method: 'POST' })
-      upd(id, { enabled: res.enabled })
+      setFunnels(prev => prev.map(f => f.id === id ? { ...f, enabled: res.enabled } : f))
     } catch { toast.error('Ошибка') }
   }
 
@@ -1634,10 +1683,11 @@ function FunnelsTab() {
                 <span className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--glass-border)' }}>{f.triggerId}</span>
               </div>
               <div className="flex items-center gap-3 mt-0.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                <span><Clock className="w-3 h-3 inline mr-0.5" />{formatDelay(f)}</span>
-                {f.channelTg && <span className="text-cyan-400">TG</span>}
-                {f.channelEmail && <span className="text-blue-400">Email</span>}
-                {f.channelLk && <span className="text-violet-400">ЛК</span>}
+                <span>{f.steps.length} {f.steps.length === 1 ? 'шаг' : f.steps.length < 5 ? 'шага' : 'шагов'}</span>
+                {f.steps[0] && <span><Clock className="w-3 h-3 inline mr-0.5" />{formatStepDelay(f.steps[0])}</span>}
+                {f.steps.some(s => s.channelTg) && <span className="text-cyan-400">TG</span>}
+                {f.steps.some(s => s.channelEmail) && <span className="text-blue-400">Email</span>}
+                {f.steps.some(s => s.channelLk) && <span className="text-violet-400">ЛК</span>}
                 {(f._count?.logs ?? 0) > 0 && <span>📊 {f._count?.logs}</span>}
               </div>
             </div>
@@ -1654,164 +1704,101 @@ function FunnelsTab() {
             </button>
           </div>
 
-          {/* Expanded */}
+          {/* Expanded: step chain */}
           {expandedId === f.id && (
-            <div className="px-4 pb-4 space-y-4 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
-              {/* Timer */}
-              <div>
-                <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Таймер</p>
-                <div className="flex gap-1.5 flex-wrap mb-2">
-                  {DELAY_TYPES.map(dt => (
-                    <button key={dt.value} onClick={() => upd(f.id, { delayType: dt.value })}
-                      className="text-[10px] px-2 py-1 rounded-lg transition-all"
-                      style={{ background: f.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-bg)', color: f.delayType === dt.value ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${f.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
-                      {dt.label}
-                    </button>
-                  ))}
-                </div>
-                {['minutes', 'hours', 'days'].includes(f.delayType) && (
-                  <input type="number" min={1} value={f.delayValue || 1} onChange={e => upd(f.id, { delayValue: +e.target.value })}
-                    className="glass-input w-24 text-sm" />
-                )}
-                {['exact_time', 'next_day_time', 'weekdays'].includes(f.delayType) && (
-                  <input type="time" value={f.delayTime || '10:00'} onChange={e => upd(f.id, { delayTime: e.target.value })}
-                    className="glass-input w-32 text-sm" />
-                )}
-                {f.delayType === 'weekdays' && (
-                  <div className="flex gap-1 mt-2">
-                    {WEEKDAY_NAMES.map((d, i) => (
-                      <button key={i} onClick={() => {
-                        const wd = f.delayWeekdays || []
-                        upd(f.id, { delayWeekdays: wd.includes(i + 1) ? wd.filter((x: number) => x !== i + 1) : [...wd, i + 1] })
-                      }}
-                        className="w-8 h-8 rounded-lg text-[10px] font-medium transition-all"
-                        style={{ background: (f.delayWeekdays || []).includes(i + 1) ? 'var(--accent-1)' : 'var(--glass-bg)', color: (f.delayWeekdays || []).includes(i + 1) ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${(f.delayWeekdays || []).includes(i + 1) ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Channels */}
-              <div>
-                <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Каналы</p>
-                <div className="flex gap-3">
-                  {[{ key: 'channelTg' as const, label: 'TG бот' }, { key: 'channelEmail' as const, label: 'Email' }, { key: 'channelLk' as const, label: 'ЛК' }].map(ch => (
-                    <label key={ch.key} className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={f[ch.key]} onChange={() => upd(f.id, { [ch.key]: !f[ch.key] })}
-                        className="w-3.5 h-3.5 rounded accent-purple-500" />
-                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{ch.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* TG message */}
-              {f.channelTg && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}>
-                    <MessageCircle className="w-3.5 h-3.5" /> Telegram
-                  </p>
-                  <textarea value={f.tgText || ''} rows={3} onChange={e => upd(f.id, { tgText: e.target.value })}
-                    className="glass-input w-full text-sm resize-y font-mono" placeholder="*жирный*, _курсив_, {name} — имя пользователя" />
-                  <details className="mt-1">
-                    <summary className="text-[10px] cursor-pointer" style={{ color: 'var(--accent-1)' }}>📖 Переменные для подстановки</summary>
-                    <div className="mt-1 p-2 rounded-lg text-[10px] grid grid-cols-2 gap-x-4 gap-y-0.5" style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)' }}>
-                      <span><code>{'{name}'}</code> — имя</span>
-                      <span><code>{'{email}'}</code> — email</span>
-                      <span><code>{'{telegramName}'}</code> — TG username</span>
-                      <span><code>{'{referralUrl}'}</code> — реф. ссылка</span>
-                      <span><code>{'{referralCount}'}</code> — кол-во рефералов</span>
-                      <span><code>{'{balance}'}</code> — баланс</span>
-                      <span><code>{'{bonusDays}'}</code> — бонусные дни</span>
-                      <span><code>{'{daysLeft}'}</code> — дней до конца</span>
-                      <span><code>{'{subExpireDate}'}</code> — дата окончания</span>
-                      <span><code>{'{tariffName}'}</code> — тариф</span>
-                      <span><code>{'{amount}'}</code> — сумма</span>
-                      <span><code>{'{refName}'}</code> — имя реферала</span>
-                      <span><code>{'{refBonusDays}'}</code> — реф. дни</span>
-                      <span><code>{'{promoCode}'}</code> — промокод</span>
-                      <span><code>{'{trialDays}'}</code> — дней триала</span>
-                      <span><code>{'{appUrl}'}</code> — URL сервиса</span>
+            <div className="px-4 pb-4 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+              {f.steps.map((s, si) => (
+                <div key={s.id} className="mb-4 p-3 rounded-xl relative" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold" style={{ color: 'var(--accent-1)' }}>Шаг {si + 1} · {formatStepDelay(s)}</p>
+                    <div className="flex gap-1">
+                      {f.steps.length > 1 && <button onClick={() => deleteStep(s.id)} className="p-1 rounded hover:bg-red-500/10"><Trash2 className="w-3 h-3 text-red-400" /></button>}
                     </div>
-                  </details>
-                  {/* Bot buttons */}
-                  <div className="space-y-1.5">
-                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Кнопки</p>
-                    {(f.tgButtons || []).map((btn: any, i: number) => (
-                      <div key={i} className="flex gap-1.5 items-center">
-                        <select value={btn.type || 'callback'} onChange={e => {
-                          const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, type: e.target.value }; upd(f.id, { tgButtons: btns })
-                        }} className="glass-input w-24 text-[10px] py-1">
-                          <option value="callback">Бот меню</option>
-                          <option value="url">URL</option>
-                          <option value="webapp">WebApp</option>
-                        </select>
-                        {btn.type === 'callback' ? (
-                          <select value={btn.data || ''} onChange={e => {
-                            const btns = [...(f.tgButtons || [])]; const opt = BOT_BTN_OPTIONS.find(o => o.value === e.target.value)
-                            btns[i] = { ...btn, data: e.target.value, label: opt?.label || btn.label }; upd(f.id, { tgButtons: btns })
-                          }} className="glass-input flex-1 text-[10px] py-1">
-                            <option value="">Выберите...</option>
-                            {BOT_BTN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        ) : (
-                          <>
-                            <input value={btn.label || ''} onChange={e => { const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, label: e.target.value }; upd(f.id, { tgButtons: btns }) }}
-                              placeholder="Текст" className="glass-input w-28 text-[10px] py-1" />
-                            <input value={btn.data || ''} onChange={e => { const btns = [...(f.tgButtons || [])]; btns[i] = { ...btn, data: e.target.value }; upd(f.id, { tgButtons: btns }) }}
-                              placeholder="URL" className="glass-input flex-1 text-[10px] py-1" />
-                          </>
-                        )}
-                        <button onClick={() => { const btns = (f.tgButtons || []).filter((_: any, j: number) => j !== i); upd(f.id, { tgButtons: btns }) }}
-                          className="p-1 rounded hover:bg-red-500/10"><Trash2 className="w-3 h-3 text-red-400" /></button>
-                      </div>
+                  </div>
+                  {/* Delay */}
+                  <div className="flex gap-1.5 flex-wrap mb-2">
+                    {DELAY_TYPES.map(dt => (
+                      <button key={dt.value} onClick={() => updStep(f.id, s.id, { delayType: dt.value })}
+                        className="text-[10px] px-2 py-0.5 rounded-lg" style={{ background: s.delayType === dt.value ? 'var(--accent-1)' : 'transparent', color: s.delayType === dt.value ? '#fff' : 'var(--text-tertiary)', border: `1px solid ${s.delayType === dt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>{dt.label}</button>
                     ))}
-                    <button onClick={() => upd(f.id, { tgButtons: [...(f.tgButtons || []), { type: 'callback', label: '', data: '' }] })}
-                      className="text-[10px] px-2 py-1 rounded-lg" style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)' }}>
-                      + Кнопка
+                  </div>
+                  {['minutes','hours','days'].includes(s.delayType) && <input type="number" min={1} value={s.delayValue||1} onChange={e => updStep(f.id,s.id,{delayValue:+e.target.value})} className="glass-input w-20 text-xs mb-2" />}
+                  {['exact_time','next_day_time'].includes(s.delayType) && <input type="time" value={s.delayTime||'10:00'} onChange={e => updStep(f.id,s.id,{delayTime:e.target.value})} className="glass-input w-28 text-xs mb-2" />}
+                  {/* Condition */}
+                  {si > 0 && <div className="mb-2">
+                    <select value={s.condition} onChange={e => updStep(f.id,s.id,{condition:e.target.value})} className="glass-input text-[10px] w-auto py-1">
+                      {CONDITIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </div>}
+                  {/* Channels */}
+                  <div className="flex gap-3 mb-2">
+                    {[{k:'channelTg' as const,l:'TG'},{k:'channelEmail' as const,l:'Email'},{k:'channelLk' as const,l:'ЛК'}].map(ch => (
+                      <label key={ch.k} className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={s[ch.k]} onChange={() => updStep(f.id,s.id,{[ch.k]:!s[ch.k]})} className="w-3 h-3 rounded accent-purple-500" />
+                        <span className="text-[10px]" style={{color:'var(--text-secondary)'}}>{ch.l}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {/* TG */}
+                  {s.channelTg && <div className="mb-2">
+                    <textarea value={s.tgText||''} rows={2} onChange={e => updStep(f.id,s.id,{tgText:e.target.value})} className="glass-input w-full text-xs resize-y font-mono" placeholder="Текст TG ({name}, {daysLeft}...)" />
+                    <details className="mt-0.5"><summary className="text-[9px] cursor-pointer" style={{color:'var(--accent-1)'}}>📖 Переменные</summary>
+                      <div className="mt-1 p-1.5 rounded text-[9px] grid grid-cols-2 gap-x-3 gap-y-0" style={{background:'var(--surface-1)',color:'var(--text-tertiary)'}}>
+                        {['{name}','{email}','{daysLeft}','{subExpireDate}','{tariffName}','{amount}','{refName}','{referralUrl}','{generatedPromo}','{bonusDays}','{appUrl}','{trialDays}'].map(v => <span key={v}><code>{v}</code></span>)}
+                      </div>
+                    </details>
+                    {/* Buttons */}
+                    <div className="mt-1.5 space-y-1">
+                      {(s.tgButtons||[]).map((btn:any,bi:number) => (
+                        <div key={bi} className="flex gap-1 items-center">
+                          <select value={btn.type||'callback'} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,type:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input w-20 text-[9px] py-0.5"><option value="callback">Меню</option><option value="url">URL</option><option value="webapp">WebApp</option></select>
+                          {btn.type==='callback'?<select value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];const o=BOT_BTN_OPTIONS.find(x=>x.value===e.target.value);b[bi]={...btn,data:e.target.value,label:o?.label||btn.label};updStep(f.id,s.id,{tgButtons:b})}} className="glass-input flex-1 text-[9px] py-0.5"><option value="">...</option>{BOT_BTN_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+                          :<><input value={btn.label||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,label:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="Текст" className="glass-input w-24 text-[9px] py-0.5" /><input value={btn.data||''} onChange={e=>{const b=[...(s.tgButtons||[])];b[bi]={...btn,data:e.target.value};updStep(f.id,s.id,{tgButtons:b})}} placeholder="URL" className="glass-input flex-1 text-[9px] py-0.5" /></>}
+                          <button onClick={()=>{updStep(f.id,s.id,{tgButtons:(s.tgButtons||[]).filter((_:any,j:number)=>j!==bi)})}} className="p-0.5 rounded hover:bg-red-500/10"><Trash2 className="w-2.5 h-2.5 text-red-400"/></button>
+                        </div>
+                      ))}
+                      <button onClick={()=>updStep(f.id,s.id,{tgButtons:[...(s.tgButtons||[]),{type:'callback',label:'',data:''}]})} className="text-[9px] px-1.5 py-0.5 rounded" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)'}}>+ Кнопка</button>
+                    </div>
+                  </div>}
+                  {/* Email */}
+                  {s.channelEmail && <div className="mb-2 space-y-1">
+                    <input value={s.emailSubject||''} onChange={e=>updStep(f.id,s.id,{emailSubject:e.target.value})} placeholder="Тема" className="glass-input w-full text-xs" />
+                    <textarea value={s.emailHtml||''} rows={2} onChange={e=>updStep(f.id,s.id,{emailHtml:e.target.value})} placeholder="HTML" className="glass-input w-full text-xs resize-y" />
+                    <div className="flex gap-1"><input value={s.emailBtnText||''} onChange={e=>updStep(f.id,s.id,{emailBtnText:e.target.value})} placeholder="CTA" className="glass-input flex-1 text-xs" /><input value={s.emailBtnUrl||''} onChange={e=>updStep(f.id,s.id,{emailBtnUrl:e.target.value})} placeholder="URL" className="glass-input flex-1 text-xs" /></div>
+                  </div>}
+                  {/* LK */}
+                  {s.channelLk && <div className="mb-2 space-y-1">
+                    <input value={s.lkTitle||''} onChange={e=>updStep(f.id,s.id,{lkTitle:e.target.value})} placeholder="Заголовок" className="glass-input w-full text-xs" />
+                    <input value={s.lkMessage||''} onChange={e=>updStep(f.id,s.id,{lkMessage:e.target.value})} placeholder="Текст" className="glass-input w-full text-xs" />
+                  </div>}
+                  {/* Action */}
+                  <div className="flex gap-2 items-center">
+                    <select value={s.actionType} onChange={e=>updStep(f.id,s.id,{actionType:e.target.value})} className="glass-input text-[10px] w-auto py-1">
+                      {ACTIONS.map(a=><option key={a.value} value={a.value}>{a.label}</option>)}
+                    </select>
+                    {s.actionType!=='none' && <>
+                      <input type="number" min={1} value={s.actionValue||0} onChange={e=>updStep(f.id,s.id,{actionValue:+e.target.value})} className="glass-input w-16 text-[10px] py-1" />
+                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>{ACTIONS.find(a=>a.value===s.actionType)?.unit}</span>
+                    </>}
+                    {['promo_discount','promo_balance'].includes(s.actionType) && <>
+                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>действует</span>
+                      <input type="number" min={1} value={s.actionPromoExpiry||7} onChange={e=>updStep(f.id,s.id,{actionPromoExpiry:+e.target.value})} className="glass-input w-14 text-[10px] py-1" />
+                      <span className="text-[9px]" style={{color:'var(--text-tertiary)'}}>дн.</span>
+                    </>}
+                  </div>
+                  {/* Save step */}
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={()=>saveStep(s.id)} disabled={savingId===s.id} className="btn-primary text-[10px] py-1 px-3">
+                      {savingId===s.id?<Loader2 className="w-3 h-3 animate-spin"/>:<Save className="w-3 h-3"/>} Сохранить
                     </button>
                   </div>
                 </div>
-              )}
-
-              {/* Email */}
-              {f.channelEmail && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}><Mail className="w-3.5 h-3.5" /> Email</p>
-                  <input value={f.emailSubject || ''} onChange={e => upd(f.id, { emailSubject: e.target.value })} placeholder="Тема" className="glass-input w-full text-sm" />
-                  <textarea value={f.emailHtml || ''} rows={3} onChange={e => upd(f.id, { emailHtml: e.target.value })} placeholder="HTML текст" className="glass-input w-full text-sm resize-y" />
-                  <div className="flex gap-2">
-                    <input value={f.emailBtnText || ''} onChange={e => upd(f.id, { emailBtnText: e.target.value })} placeholder="Кнопка текст" className="glass-input flex-1 text-sm" />
-                    <input value={f.emailBtnUrl || ''} onChange={e => upd(f.id, { emailBtnUrl: e.target.value })} placeholder="Кнопка URL" className="glass-input flex-1 text-sm" />
-                  </div>
-                </div>
-              )}
-
-              {/* LK */}
-              {f.channelLk && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}><Bell className="w-3.5 h-3.5" /> ЛК уведомление</p>
-                  <input value={f.lkTitle || ''} onChange={e => upd(f.id, { lkTitle: e.target.value })} placeholder="Заголовок" className="glass-input w-full text-sm" />
-                  <textarea value={f.lkMessage || ''} rows={2} onChange={e => upd(f.id, { lkMessage: e.target.value })} placeholder="Текст" className="glass-input w-full text-sm resize-y" />
-                  <select value={f.lkType} onChange={e => upd(f.id, { lkType: e.target.value })} className="glass-input w-auto text-sm">
-                    <option value="INFO">Info</option><option value="WARNING">Warning</option><option value="SUCCESS">Success</option><option value="PROMO">Promo</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => save(f.id)} disabled={savingId === f.id} className="btn-primary text-xs py-2 px-4">
-                  {savingId === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Сохранить
-                </button>
-                <button onClick={() => test(f.id)} disabled={testingId === f.id} className="btn-secondary text-xs py-2 px-3">
-                  🧪 {testingId === f.id ? '...' : 'Тест'}
-                </button>
-                {f.isCustom && (
-                  <button onClick={() => del(f.id)} className="btn-danger text-xs py-2 px-3"><Trash2 className="w-3.5 h-3.5" /> Удалить</button>
-                )}
+              ))}
+              {/* Add step + funnel actions */}
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={()=>addStep(f.id)} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'var(--accent-1)',background:'rgba(6,182,212,0.06)',border:'1px solid rgba(6,182,212,0.15)'}}>+ Добавить шаг</button>
+                <button onClick={()=>test(f.id)} disabled={testingId===f.id} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'#fbbf24',background:'rgba(245,158,11,0.06)',border:'1px solid rgba(245,158,11,0.15)'}}>🧪 {testingId===f.id?'...':'Тест'}</button>
+                <button onClick={()=>del(f.id)} className="text-[10px] px-3 py-1.5 rounded-lg" style={{color:'#f87171',background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.15)'}}><Trash2 className="w-3 h-3 inline mr-1"/>Удалить</button>
               </div>
             </div>
           )}
@@ -1832,8 +1819,31 @@ function FunnelsTab() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
           <div className="relative glass-card w-full max-w-md space-y-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <h3 className="font-semibold">Создать воронку</h3>
-            <input value={newTriggerId} onChange={e => setNewTriggerId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              placeholder="trigger_id (латиница, _, цифры)" className="glass-input w-full text-sm" />
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Триггер</p>
+              <select value={newTriggerId} onChange={e => {
+                setNewTriggerId(e.target.value)
+                const opt = triggerOptions.flatMap((g: any) => g.triggers).find((t: any) => t.id === e.target.value)
+                if (opt && !newName) setNewName(opt.name)
+              }} className="glass-input w-full text-sm">
+                <option value="">Выберите триггер...</option>
+                {triggerOptions.map((g: any) => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.triggers.map((t: any) => {
+                      const used = funnels.some(f => f.triggerId === t.id)
+                      return <option key={t.id} value={t.id} disabled={used}>{t.name}{used ? ' (уже есть)' : ''}</option>
+                    })}
+                  </optgroup>
+                ))}
+                <optgroup label="Кастомный">
+                  <option value="__custom">Свой триггер...</option>
+                </optgroup>
+              </select>
+              {newTriggerId === '__custom' && (
+                <input value="" onChange={e => setNewTriggerId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                  placeholder="trigger_id (латиница, _, цифры)" className="glass-input w-full text-sm mt-2" />
+              )}
+            </div>
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название" className="glass-input w-full text-sm" />
             <div className="flex gap-2">
               <button onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Отмена</button>
