@@ -624,59 +624,62 @@ export async function userRoutes(app: FastifyInstance) {
     if (!user) return reply.status(404).send({ error: 'User not found' })
     if (user.remnawaveUuid) return reply.status(400).send({ error: 'У вас уже есть подписка' })
 
-    const trialDays = config.features.trialDays || 3
     // First look for a tariff marked as trial, otherwise fallback to cheapest
-    const trialTariff = await prisma.tariff.findFirst({
-      where: { isTrial: true },
-    })
-    const cheapestTariff = trialTariff || await prisma.tariff.findFirst({
+    const trialTariff = await prisma.tariff.findFirst({ where: { isTrial: true } })
+    const tariff = trialTariff || await prisma.tariff.findFirst({
       where: { isActive: true, type: 'SUBSCRIPTION' },
       orderBy: { priceRub: 'asc' },
     })
-    if (!cheapestTariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
+    if (!tariff) return reply.status(400).send({ error: 'Нет доступных тарифов' })
 
-    const trafficLimitBytes = cheapestTariff.trafficGb ? cheapestTariff.trafficGb * 1024 * 1024 * 1024 : 0
+    const trialDays = tariff.durationDays || config.features.trialDays || 3
+    const trafficLimitBytes = tariff.trafficGb ? tariff.trafficGb * 1024 * 1024 * 1024 : 0
     const expireAt = new Date(Date.now() + trialDays * 86400_000).toISOString()
 
-    const rmUser = await remnawave.createUser({
-      username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
-      email: user.email ?? undefined,
-      telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
-      expireAt,
-      trafficLimitBytes,
-      trafficLimitStrategy: cheapestTariff.trafficStrategy || 'MONTH',
-      hwidDeviceLimit: cheapestTariff.deviceLimit ?? 3,
-      tag: cheapestTariff.remnawaveTag ?? undefined,
-      activeInternalSquads: cheapestTariff.remnawaveSquads.length > 0 ? cheapestTariff.remnawaveSquads : undefined,
+    try {
+      const rmUser = await remnawave.createUser({
+        username: user.email || `tg_${user.telegramId}` || `user_${user.id.slice(0, 8)}`,
+        email: user.email ?? undefined,
+        telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
+        expireAt,
+        trafficLimitBytes,
+        trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+        hwidDeviceLimit: tariff.deviceLimit > 0 ? tariff.deviceLimit : undefined,
+        tag: tariff.remnawaveTag ?? undefined,
+        activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
+      })
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          remnawaveUuid: rmUser.uuid,
+          subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
+          subStatus: 'ACTIVE',
+          subExpireAt: new Date(expireAt),
+        },
+      })
+
+      // Log as payment
+      await prisma.payment.create({
+        data: {
+          userId,
+          tariffId: tariff.id,
+          provider: 'MANUAL',
+          amount: 0,
+          currency: 'RUB',
+          status: 'PAID',
+          purpose: 'SUBSCRIPTION',
+          confirmedAt: new Date(),
+          yukassaStatus: JSON.stringify({ _type: 'trial', days: trialDays }),
+        },
     })
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        remnawaveUuid: rmUser.uuid,
-        subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
-        subStatus: 'ACTIVE',
-        subExpireAt: new Date(expireAt),
-      },
-    })
-
-    // Log as payment
-    await prisma.payment.create({
-      data: {
-        userId,
-        tariffId: cheapestTariff.id,
-        provider: 'MANUAL',
-        amount: 0,
-        currency: 'RUB',
-        status: 'PAID',
-        purpose: 'SUBSCRIPTION',
-        confirmedAt: new Date(),
-        yukassaStatus: JSON.stringify({ _type: 'trial', days: trialDays }),
-      },
-    })
-
-    logger.info(`Trial activated for user ${userId}: ${trialDays} days`)
-    return { ok: true, days: trialDays, tariffName: cheapestTariff.name }
+      logger.info(`Trial activated for user ${userId}: ${trialDays} days`)
+      return { ok: true, days: trialDays, tariffName: tariff.name }
+    } catch (err: any) {
+      logger.error(`Trial activation failed for ${userId}: ${err.message}`)
+      return reply.status(500).send({ error: err.message || 'Не удалось создать пробную подписку' })
+    }
   })
 }
 

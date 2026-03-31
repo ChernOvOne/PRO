@@ -32,6 +32,14 @@ function getCountryCode(name: string): string | null {
   return null
 }
 
+/* ── Declension helper ── */
+function pluralDays(n: number): string {
+  const abs = Math.abs(n)
+  if (abs % 10 === 1 && abs % 100 !== 11) return `${n} день`
+  if (abs % 10 >= 2 && abs % 10 <= 4 && (abs % 100 < 10 || abs % 100 >= 20)) return `${n} дня`
+  return `${n} дней`
+}
+
 /* ════════════════════════════════════════════════════════════════════
    DASHBOARD PAGE
    ════════════════════════════════════════════════════════════════════ */
@@ -416,7 +424,7 @@ export default function DashboardPage() {
                 Попробуйте бесплатно!
               </p>
               <p className="text-sm leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-secondary)' }}>
-                Активируйте пробный период на <strong style={{ color: 'var(--accent-1)' }}>{config.features?.trialDays || 3} дней</strong> — полный доступ к VPN без ограничений и обязательств.
+                Активируйте пробный период на <strong style={{ color: 'var(--accent-1)' }}>{pluralDays(config.features?.trialDays || 3)}</strong> — полный доступ к VPN без ограничений и обязательств.
               </p>
             </div>
 
@@ -425,7 +433,7 @@ export default function DashboardPage() {
                 const res = await fetch('/api/user/trial/activate', { method: 'POST', credentials: 'include' })
                 const d = await res.json()
                 if (!res.ok) throw new Error(d.error || 'Ошибка')
-                toast.success(`Пробный период активирован! ${d.days} дней`)
+                toast.success(`Пробный период активирован! ${pluralDays(d.days)}`)
                 window.location.reload()
               } catch (e: any) { toast.error(e.message) }
             }}
