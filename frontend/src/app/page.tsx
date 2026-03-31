@@ -41,16 +41,14 @@ export default function LandingPage() {
           router.replace('/dashboard')
         })
         .catch(() => setTmaChecked(true))
-    } else {
-      // Also check if already logged in
+    } else if (tg) {
+      // Inside TG but no initData — check existing session
       fetch('/api/auth/me', { credentials: 'include' })
-        .then(r => { if (r.ok) return r.json(); throw new Error() })
-        .then(() => {
-          // If inside TG WebApp context but initData missing, still redirect
-          if (tg) { router.replace('/dashboard'); return }
-          setTmaChecked(true)
-        })
+        .then(r => { if (r.ok) router.replace('/dashboard'); else setTmaChecked(true) })
         .catch(() => setTmaChecked(true))
+    } else {
+      // Normal browser — show landing immediately
+      setTmaChecked(true)
     }
   }, [router])
 
@@ -71,6 +69,17 @@ export default function LandingPage() {
   const heroTitle    = landing?.hero?.title    || 'Интернет без границ'
   const heroSubtitle = landing?.hero?.subtitle || 'VPN нового поколения на базе протокола VLESS. Обход блокировок, защита данных, максимальная скорость.'
   const heroCta      = landing?.hero?.ctaText  || 'Попробовать бесплатно'
+
+  // Don't render landing until TMA check completes (prevents flash)
+  if (!tmaChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--surface-0)' }}>
+        <div className="w-10 h-10 rounded-full border-2 border-transparent"
+             style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+        <style jsx>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--surface-0)', color: 'var(--text-primary)' }}>
