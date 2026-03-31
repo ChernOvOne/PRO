@@ -8,7 +8,7 @@ import {
   X, Bell, User, Search, ArrowLeft, ExternalLink,
   Wallet, Gift, Star, Zap, ToggleLeft, Save, RefreshCw,
   Loader2, MessageSquare, Mouse, Link2, ChevronLeft,
-  ChevronRight, Settings, Filter,
+  ChevronRight, Settings, Filter, Upload, GripVertical,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -283,6 +283,16 @@ function BroadcastsTab() {
   // TG fields
   const [tgText, setTgText] = useState('')
   const [tgButtons, setTgButtons] = useState<InlineButton[]>([])
+  const [tgParseMode, setTgParseMode] = useState<'Markdown' | 'HTML'>('Markdown')
+  const [tgMediaType, setTgMediaType] = useState<string>('')
+  const [tgMediaUrl, setTgMediaUrl] = useState('')
+  const [tgPollEnabled, setTgPollEnabled] = useState(false)
+  const [tgPollQuestion, setTgPollQuestion] = useState('')
+  const [tgPollOptions, setTgPollOptions] = useState(['', ''])
+  const [tgPollAnonymous, setTgPollAnonymous] = useState(true)
+  const [tgPollMultiple, setTgPollMultiple] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const tgTextareaRef = useRef<HTMLTextAreaElement>(null)
   // Email fields
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
@@ -383,7 +393,17 @@ function BroadcastsTab() {
     const channel = getBroadcastChannel()
     return {
       channel, audience,
-      ...(channel !== 'email' && { tgText, tgButtons: tgButtons.filter(b => b.label && b.url) }),
+      ...(channel !== 'email' && {
+        tgText, tgButtons: tgButtons.filter(b => b.label && b.url),
+        tgParseMode,
+        ...(tgMediaType && tgMediaUrl && { tgMediaType, tgMediaUrl }),
+        ...(tgPollEnabled && tgPollQuestion && {
+          tgPollQuestion,
+          tgPollOptions: tgPollOptions.filter(o => o.trim()),
+          tgPollAnonymous,
+          tgPollMultiple,
+        }),
+      }),
       ...(channel !== 'telegram' && { emailSubject, emailHtml: emailBody, emailTemplate, ...(emailCtaText && { emailBtnText: emailCtaText }), ...(emailCtaUrl && { emailBtnUrl: emailCtaUrl }) }),
       ...extra,
     }
@@ -480,6 +500,9 @@ function BroadcastsTab() {
     setTgText(''); setTgButtons([]); setEmailSubject(''); setEmailBody('')
     setEmailCtaText(''); setEmailCtaUrl(''); setScheduledAt('')
     setNotifTitle(''); setNotifMessage(''); setNotifType('INFO')
+    setTgParseMode('Markdown'); setTgMediaType(''); setTgMediaUrl('')
+    setTgPollEnabled(false); setTgPollQuestion(''); setTgPollOptions(['', ''])
+    setTgPollAnonymous(true); setTgPollMultiple(false)
   }
 
   // TG buttons
@@ -488,6 +511,104 @@ function BroadcastsTab() {
     const copy = [...tgButtons]; copy[i] = { ...copy[i], [field]: val }; setTgButtons(copy)
   }
   const removeTgButton = (i: number) => setTgButtons(tgButtons.filter((_, idx) => idx !== i))
+
+  // TG rich editor helpers
+  const insertFormatting = (before: string, after: string) => {
+    const ta = tgTextareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = tgText.substring(start, end)
+    const replacement = before + (selected || 'text') + after
+    const newText = tgText.substring(0, start) + replacement + tgText.substring(end)
+    setTgText(newText)
+    setTimeout(() => {
+      ta.focus()
+      const cursorPos = selected ? start + replacement.length : start + before.length
+      const cursorEnd = selected ? start + replacement.length : start + before.length + 4
+      ta.setSelectionRange(selected ? cursorPos : cursorPos, selected ? cursorEnd : cursorEnd)
+    }, 0)
+  }
+
+  const toolbarActions = [
+    { label: 'B', title: 'Жирный', md: ['*', '*'], html: ['<b>', '</b>'] },
+    { label: 'I', title: 'Курсив', md: ['_', '_'], html: ['<i>', '</i>'], italic: true },
+    { label: 'S', title: 'Зачёркнутый', md: ['~', '~'], html: ['<s>', '</s>'], strike: true },
+    { label: '</>', title: 'Код', md: ['`', '`'], html: ['<code>', '</code>'] },
+    { label: 'Pre', title: 'Блок кода', md: ['```\n', '\n```'], html: ['<pre>', '</pre>'] },
+  ]
+
+  const insertLink = () => {
+    const ta = tgTextareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = tgText.substring(start, end) || 'текст'
+    const link = tgParseMode === 'Markdown'
+      ? `[${selected}](url)`
+      : `<a href="url">${selected}</a>`
+    const newText = tgText.substring(0, start) + link + tgText.substring(end)
+    setTgText(newText)
+    setTimeout(() => { ta.focus() }, 0)
+  }
+
+  const uploadMedia = async (file: File) => {
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/admin/upload', { method: 'POST', credentials: 'include', body: form })
+      const data = await res.json()
+      if (data.url) setTgMediaUrl(data.url)
+    } catch { toast.error('Ошибка загрузки') }
+    finally { setUploading(false) }
+  }
+
+  const addPollOption = () => {
+    if (tgPollOptions.length < 10) setTgPollOptions([...tgPollOptions, ''])
+  }
+  const updatePollOption = (i: number, val: string) => {
+    const copy = [...tgPollOptions]; copy[i] = val; setTgPollOptions(copy)
+  }
+  const removePollOption = (i: number) => {
+    if (tgPollOptions.length > 2) setTgPollOptions(tgPollOptions.filter((_, idx) => idx !== i))
+  }
+
+  // Simple Markdown/HTML preview renderer
+  const renderTgPreview = (text: string): string => {
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    if (tgParseMode === 'Markdown') {
+      html = html
+        .replace(/```\n?([\s\S]*?)\n?```/g, '<pre style="background:rgba(0,0,0,0.3);padding:8px;border-radius:6px;font-size:12px;overflow-x:auto">$1</pre>')
+        .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
+        .replace(/\*([^*]+)\*/g, '<b>$1</b>')
+        .replace(/_([^_]+)_/g, '<i>$1</i>')
+        .replace(/~([^~]+)~/g, '<s>$1</s>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#60a5fa;text-decoration:underline" target="_blank" rel="noopener">$1</a>')
+    } else {
+      // HTML mode: unescape the tags we support
+      html = html
+        .replace(/&lt;b&gt;([\s\S]*?)&lt;\/b&gt;/g, '<b>$1</b>')
+        .replace(/&lt;i&gt;([\s\S]*?)&lt;\/i&gt;/g, '<i>$1</i>')
+        .replace(/&lt;s&gt;([\s\S]*?)&lt;\/s&gt;/g, '<s>$1</s>')
+        .replace(/&lt;code&gt;([\s\S]*?)&lt;\/code&gt;/g, '<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
+        .replace(/&lt;pre&gt;([\s\S]*?)&lt;\/pre&gt;/g, '<pre style="background:rgba(0,0,0,0.3);padding:8px;border-radius:6px;font-size:12px;overflow-x:auto">$1</pre>')
+        .replace(/&lt;a href=&quot;([^&]*)&quot;&gt;([\s\S]*?)&lt;\/a&gt;/g, '<a href="$1" style="color:#60a5fa;text-decoration:underline" target="_blank" rel="noopener">$2</a>')
+    }
+    html = html.replace(/\n/g, '<br/>')
+    return html
+  }
+
+  const MEDIA_TYPES = [
+    { value: 'photo', icon: '📷', label: 'Фото' },
+    { value: 'video', icon: '🎥', label: 'Видео' },
+    { value: 'animation', icon: '🎬', label: 'GIF' },
+    { value: 'document', icon: '📄', label: 'Файл' },
+    { value: '', icon: '❌', label: 'Без медиа' },
+  ]
 
   // Validation
   const showTg = channelMode === 'tg_bot' || channelMode === 'all'
@@ -580,23 +701,124 @@ function BroadcastsTab() {
               Сообщение
             </h3>
             <div className="space-y-5">
-              {/* TG fields */}
+              {/* TG fields — Rich Editor */}
               {showTg && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <label className="text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
                     <MessageCircle className="w-3.5 h-3.5" /> Telegram
                   </label>
-                  <textarea value={tgText} onChange={e => setTgText(e.target.value)}
-                    placeholder="Текст сообщения (Markdown)"
-                    rows={5} className="glass-input w-full resize-y text-sm" />
+
+                  {/* Parse mode toggle */}
+                  <div className="flex items-center gap-1 p-0.5 rounded-lg w-fit"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    {(['Markdown', 'HTML'] as const).map(mode => (
+                      <button key={mode} onClick={() => setTgParseMode(mode)}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                        style={{
+                          background: tgParseMode === mode ? 'rgba(139,92,246,0.15)' : 'transparent',
+                          color: tgParseMode === mode ? '#a78bfa' : 'var(--text-tertiary)',
+                        }}>
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-1 flex-wrap p-1.5 rounded-xl"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    {toolbarActions.map(action => (
+                      <button key={action.label}
+                        onClick={() => {
+                          const [before, after] = tgParseMode === 'Markdown' ? action.md : action.html
+                          insertFormatting(before, after)
+                        }}
+                        title={action.title}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all hover:scale-105"
+                        style={{
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid var(--glass-border)',
+                          color: 'var(--text-secondary)',
+                          fontWeight: action.label === 'B' ? 700 : 500,
+                          fontStyle: action.italic ? 'italic' : 'normal',
+                          textDecoration: action.strike ? 'line-through' : 'none',
+                        }}>
+                        {action.label}
+                      </button>
+                    ))}
+                    <button onClick={insertLink} title="Ссылка"
+                      className="px-2.5 py-1.5 rounded-lg text-xs transition-all hover:scale-105 flex items-center gap-1"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--glass-border)',
+                        color: 'var(--text-secondary)',
+                      }}>
+                      <Link2 className="w-3 h-3" /> Ссылка
+                    </button>
+                  </div>
+
+                  {/* Textarea */}
+                  <textarea ref={tgTextareaRef} value={tgText} onChange={e => setTgText(e.target.value)}
+                    placeholder={tgParseMode === 'Markdown' ? 'Текст сообщения (*жирный*, _курсив_, ~зачёркнутый~)' : 'Текст сообщения (<b>жирный</b>, <i>курсив</i>, <s>зачёркнутый</s>)'}
+                    rows={6} className="glass-input w-full resize-y text-sm font-mono"
+                    style={{ lineHeight: '1.6' }} />
+
+                  {/* Media section */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Медиа</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {MEDIA_TYPES.map(mt => (
+                        <button key={mt.value} onClick={() => { setTgMediaType(mt.value); if (!mt.value) setTgMediaUrl('') }}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                          style={{
+                            background: tgMediaType === mt.value ? 'rgba(139,92,246,0.12)' : 'var(--glass-bg)',
+                            border: `1px solid ${tgMediaType === mt.value ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                            color: tgMediaType === mt.value ? 'var(--accent-1)' : 'var(--text-tertiary)',
+                          }}>
+                          <span>{mt.icon}</span> {mt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {tgMediaType && (
+                      <div className="flex gap-2 items-center">
+                        <input value={tgMediaUrl} onChange={e => setTgMediaUrl(e.target.value)}
+                          placeholder="URL медиа или путь /uploads/..." className="glass-input flex-1 text-sm" />
+                        <label className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-medium cursor-pointer transition-all"
+                          style={{
+                            background: 'rgba(139,92,246,0.08)',
+                            border: '1px solid rgba(139,92,246,0.2)',
+                            color: '#a78bfa',
+                            opacity: uploading ? 0.5 : 1,
+                          }}>
+                          {uploading
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Upload className="w-3.5 h-3.5" />}
+                          {uploading ? 'Загрузка...' : 'Загрузить'}
+                          <input type="file" className="sr-only" disabled={uploading}
+                            onChange={e => { if (e.target.files?.[0]) uploadMedia(e.target.files[0]) }} />
+                        </label>
+                      </div>
+                    )}
+                    {tgMediaType === 'photo' && tgMediaUrl && (
+                      <div className="rounded-xl overflow-hidden w-fit" style={{ border: '1px solid var(--glass-border)' }}>
+                        <img src={tgMediaUrl} alt="preview" className="max-h-32 max-w-full object-contain"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline buttons */}
                   <div className="space-y-2">
+                    <p className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Inline кнопки</p>
                     {tgButtons.map((btn, i) => (
-                      <div key={i} className="flex gap-2 items-center">
+                      <div key={i} className="flex gap-2 items-center group">
+                        <GripVertical className="w-4 h-4 flex-shrink-0 opacity-30 group-hover:opacity-60 transition-opacity"
+                          style={{ color: 'var(--text-tertiary)' }} />
                         <input value={btn.label} onChange={e => updateTgButton(i, 'label', e.target.value)}
                           placeholder="Текст кнопки" className="glass-input flex-1 text-sm" />
                         <input value={btn.url} onChange={e => updateTgButton(i, 'url', e.target.value)}
                           placeholder="URL" className="glass-input flex-1 text-sm" />
-                        <button onClick={() => removeTgButton(i)} className="p-2 rounded-lg transition-colors hover:bg-red-500/10"
+                        <button onClick={() => removeTgButton(i)}
+                          className="p-2 rounded-lg transition-colors hover:bg-red-500/10 flex-shrink-0"
                           style={{ color: 'var(--text-tertiary)' }}><X className="w-4 h-4" /></button>
                       </div>
                     ))}
@@ -607,6 +829,128 @@ function BroadcastsTab() {
                       </button>
                     )}
                   </div>
+
+                  {/* Poll section */}
+                  <div className="space-y-3 rounded-xl p-3" style={{ background: 'rgba(139,92,246,0.03)', border: '1px solid var(--glass-border)' }}>
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input type="checkbox" checked={tgPollEnabled} onChange={e => setTgPollEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded accent-purple-500" />
+                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Добавить опрос</span>
+                    </label>
+                    {tgPollEnabled && (
+                      <div className="space-y-3 pt-1">
+                        <input value={tgPollQuestion} onChange={e => setTgPollQuestion(e.target.value)}
+                          placeholder="Вопрос опроса" className="glass-input w-full text-sm" />
+                        <div className="space-y-2">
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Варианты ответа</p>
+                          {tgPollOptions.map((opt, i) => (
+                            <div key={i} className="flex gap-2 items-center">
+                              <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                                style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{i + 1}</span>
+                              <input value={opt} onChange={e => updatePollOption(i, e.target.value)}
+                                placeholder={`Вариант ${i + 1}`} className="glass-input flex-1 text-sm" />
+                              {tgPollOptions.length > 2 && (
+                                <button onClick={() => removePollOption(i)}
+                                  className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 flex-shrink-0"
+                                  style={{ color: 'var(--text-tertiary)' }}><X className="w-3.5 h-3.5" /></button>
+                              )}
+                            </div>
+                          ))}
+                          {tgPollOptions.length < 10 && (
+                            <button onClick={addPollOption} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-all"
+                              style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.06)' }}>
+                              <Plus className="w-3 h-3" /> Добавить вариант
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={tgPollAnonymous} onChange={e => setTgPollAnonymous(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-purple-500" />
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Анонимный</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={tgPollMultiple} onChange={e => setTgPollMultiple(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-purple-500" />
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Множественный выбор</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Preview panel */}
+                  {(tgText || tgMediaUrl || tgPollEnabled) && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Предпросмотр</p>
+                      <div className="rounded-2xl overflow-hidden"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95))',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          maxWidth: '380px',
+                        }}>
+                        {/* Media preview */}
+                        {tgMediaType === 'photo' && tgMediaUrl && (
+                          <div className="w-full bg-black/20">
+                            <img src={tgMediaUrl} alt="" className="w-full max-h-48 object-cover"
+                              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                          </div>
+                        )}
+                        {tgMediaType && tgMediaType !== 'photo' && tgMediaUrl && (
+                          <div className="px-4 pt-3 flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            {tgMediaType === 'video' && <span>🎥</span>}
+                            {tgMediaType === 'animation' && <span>🎬</span>}
+                            {tgMediaType === 'document' && <span>📄</span>}
+                            <span className="truncate">{tgMediaUrl.split('/').pop()}</span>
+                          </div>
+                        )}
+
+                        {/* Message text */}
+                        {tgText && (
+                          <div className="px-4 py-3">
+                            <div className="text-[13px] leading-relaxed" style={{ color: '#e2e8f0' }}
+                              dangerouslySetInnerHTML={{ __html: renderTgPreview(tgText) }} />
+                          </div>
+                        )}
+
+                        {/* Inline buttons preview */}
+                        {tgButtons.filter(b => b.label).length > 0 && (
+                          <div className="px-3 pb-3 space-y-1">
+                            {tgButtons.filter(b => b.label).map((btn, i) => (
+                              <div key={i} className="text-center text-[13px] py-2 rounded-lg font-medium cursor-default"
+                                style={{
+                                  background: 'rgba(58,130,240,0.12)',
+                                  color: '#60a5fa',
+                                }}>
+                                {btn.label}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Poll preview */}
+                        {tgPollEnabled && tgPollQuestion && (
+                          <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <p className="text-[13px] font-semibold mb-2" style={{ color: '#e2e8f0' }}>{tgPollQuestion}</p>
+                            <div className="space-y-1.5">
+                              {tgPollOptions.filter(o => o.trim()).map((opt, i) => (
+                                <div key={i} className="flex items-center gap-2 text-[12px] py-1.5 px-2.5 rounded-lg"
+                                  style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }}>
+                                  {tgPollMultiple
+                                    ? <div className="w-3.5 h-3.5 rounded border flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.2)' }} />
+                                    : <div className="w-3.5 h-3.5 rounded-full border flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.2)' }} />}
+                                  {opt}
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[10px] mt-2" style={{ color: '#64748b' }}>
+                              {tgPollAnonymous ? 'Анонимный опрос' : 'Публичный опрос'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -891,15 +1235,61 @@ function BroadcastsTab() {
               <div className="mb-4">
                 <p className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
                   <MessageCircle className="w-3.5 h-3.5" /> Telegram
+                  <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{tgParseMode}</span>
                 </p>
-                <div className="rounded-xl p-4 text-sm" style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
-                  <pre className="whitespace-pre-wrap font-sans">{tgText || '(пусто)'}</pre>
+                <div className="rounded-2xl overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.95))',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                  }}>
+                  {tgMediaType === 'photo' && tgMediaUrl && (
+                    <div className="w-full bg-black/20">
+                      <img src={tgMediaUrl} alt="" className="w-full max-h-48 object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    </div>
+                  )}
+                  {tgMediaType && tgMediaType !== 'photo' && tgMediaUrl && (
+                    <div className="px-4 pt-3 flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {tgMediaType === 'video' && <span>🎥</span>}
+                      {tgMediaType === 'animation' && <span>🎬</span>}
+                      {tgMediaType === 'document' && <span>📄</span>}
+                      <span className="truncate">{tgMediaUrl.split('/').pop()}</span>
+                    </div>
+                  )}
+                  {tgText && (
+                    <div className="px-4 py-3">
+                      <div className="text-[13px] leading-relaxed" style={{ color: '#e2e8f0' }}
+                        dangerouslySetInnerHTML={{ __html: renderTgPreview(tgText) }} />
+                    </div>
+                  )}
+                  {!tgText && (
+                    <div className="px-4 py-3 text-sm" style={{ color: '#64748b' }}>(пусто)</div>
+                  )}
                   {tgButtons.filter(b => b.label).length > 0 && (
-                    <div className="mt-3 space-y-1.5">
+                    <div className="px-3 pb-3 space-y-1">
                       {tgButtons.filter(b => b.label).map((btn, i) => (
-                        <div key={i} className="text-center text-xs py-2 rounded-lg"
-                          style={{ background: 'rgba(139,92,246,0.1)', color: 'var(--accent-1)' }}>{btn.label}</div>
+                        <div key={i} className="text-center text-[13px] py-2 rounded-lg font-medium"
+                          style={{ background: 'rgba(58,130,240,0.12)', color: '#60a5fa' }}>{btn.label}</div>
                       ))}
+                    </div>
+                  )}
+                  {tgPollEnabled && tgPollQuestion && (
+                    <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <p className="text-[13px] font-semibold mb-2" style={{ color: '#e2e8f0' }}>{tgPollQuestion}</p>
+                      <div className="space-y-1.5">
+                        {tgPollOptions.filter(o => o.trim()).map((opt, i) => (
+                          <div key={i} className="flex items-center gap-2 text-[12px] py-1.5 px-2.5 rounded-lg"
+                            style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }}>
+                            {tgPollMultiple
+                              ? <div className="w-3.5 h-3.5 rounded border flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.2)' }} />
+                              : <div className="w-3.5 h-3.5 rounded-full border flex-shrink-0" style={{ borderColor: 'rgba(255,255,255,0.2)' }} />}
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] mt-2" style={{ color: '#64748b' }}>
+                        {tgPollAnonymous ? 'Анонимный опрос' : 'Публичный опрос'}
+                      </p>
                     </div>
                   )}
                 </div>

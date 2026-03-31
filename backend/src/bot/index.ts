@@ -1354,6 +1354,25 @@ bot.callbackQuery('link:email', async (ctx) => {
   )
 })
 
+// ── Poll answer tracking ────────────────────────────────────
+bot.on('poll_answer', async (ctx) => {
+  try {
+    const pa = ctx.pollAnswer
+    if (!pa.user) return
+    const key = `poll_results_${pa.poll_id}`
+    const existing = await prisma.setting.findUnique({ where: { key } })
+    const results: Record<string, number[]> = existing ? JSON.parse(existing.value) : {}
+    results[String(pa.user.id)] = pa.option_ids
+    await prisma.setting.upsert({
+      where: { key },
+      create: { key, value: JSON.stringify(results) },
+      update: { value: JSON.stringify(results) },
+    })
+  } catch (err) {
+    logger.warn('Failed to track poll answer:', err)
+  }
+})
+
 // ── Catch-all for unknown callbacks ──────────────────────────
 bot.on('callback_query:data', async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Неизвестное действие' })
