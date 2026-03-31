@@ -54,6 +54,7 @@ model User {
   giftsReceived      GiftSubscription[]   @relation("GiftsReceived")
   balanceTransactions BalanceTransaction[]
   emailVerifications EmailVerification[]
+  promoUsages        PromoUsage[]
 
   @@map("users")
 }
@@ -411,6 +412,38 @@ model ImportRecord {
   status           String   @default("pending")
 
   @@map("import_records")
+}
+
+// ── Promo Codes ──────────────────────────────────────────────
+model PromoCode {
+  id              String       @id @default(uuid())
+  code            String       @unique
+  type            String       @default("bonus_days")  // bonus_days | discount | balance | trial
+  bonusDays       Int?         @map("bonus_days")
+  discountPct     Int?         @map("discount_pct")
+  tariffIds       String[]     @default([]) @map("tariff_ids")
+  balanceAmount   Float?       @map("balance_amount")
+  maxUses         Int?         @map("max_uses")
+  usedCount       Int          @default(0) @map("used_count")
+  maxUsesPerUser  Int          @default(1) @map("max_uses_per_user")
+  expiresAt       DateTime?    @map("expires_at")
+  isActive        Boolean      @default(true) @map("is_active")
+  description     String?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  usages          PromoUsage[]
+  @@map("promo_codes")
+}
+
+model PromoUsage {
+  id        String    @id @default(uuid())
+  promoId   String    @map("promo_id")
+  promo     PromoCode @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usedAt    DateTime  @default(now()) @map("used_at")
+  @@unique([promoId, userId])
+  @@map("promo_usages")
 }
 
 // ── Enums ────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import toast from 'react-hot-toast'
+import { promoApi } from '@/lib/api'
 
 /* ── Country code lookup for flag images ── */
 const COUNTRY_MAP: Record<string, string> = {
@@ -82,6 +83,12 @@ export default function DashboardPage() {
   const [bonusRedeemDays, setBonusRedeemDays] = useState(1)
   const [bonusRedeeming, setBonusRedeeming]   = useState(false)
 
+  /* ── promo code ── */
+  const [promoCode, setPromoCode]           = useState('')
+  const [promoResult, setPromoResult]       = useState<any>(null)
+  const [promoChecking, setPromoChecking]   = useState(false)
+  const [promoActivating, setPromoActivating] = useState(false)
+
   /* ── public config ── */
   const [config, setConfig] = useState<any>({})
 
@@ -116,6 +123,31 @@ export default function DashboardPage() {
     toast.success('Скопировано!')
     setTimeout(() => setCopied(null), 2500)
   }, [])
+
+  const checkPromo = async () => {
+    if (!promoCode.trim()) return
+    setPromoChecking(true)
+    setPromoResult(null)
+    try {
+      const res = await promoApi.check(promoCode.trim())
+      setPromoResult(res)
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка проверки')
+    } finally { setPromoChecking(false) }
+  }
+
+  const activatePromo = async () => {
+    if (!promoCode.trim()) return
+    setPromoActivating(true)
+    try {
+      const res = await promoApi.activate(promoCode.trim())
+      toast.success(res.message || 'Промокод активирован!')
+      setPromoResult(null)
+      setPromoCode('')
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка активации')
+    } finally { setPromoActivating(false) }
+  }
 
   const handleRevoke = async () => {
     setRevoking(true)
@@ -479,6 +511,40 @@ export default function DashboardPage() {
             </button>
           </div>
         )}
+
+        {/* Promo code block */}
+        <div className="glass-card !p-4">
+          <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
+            <Tag className="w-4 h-4" style={{ color: '#8b5cf6' }} /> Промокод
+          </h3>
+          <div className="flex gap-2">
+            <input className="glass-input flex-1 !py-2 text-sm" placeholder="Введите промокод"
+                   value={promoCode}
+                   onChange={e => setPromoCode(e.target.value.toUpperCase())}
+                   onKeyDown={e => e.key === 'Enter' && checkPromo()} />
+            <button onClick={checkPromo} disabled={promoChecking || !promoCode.trim()}
+                    className="btn-primary text-xs px-4 py-2 flex-shrink-0"
+                    style={{ opacity: promoChecking || !promoCode.trim() ? 0.5 : 1 }}>
+              {promoChecking ? '...' : 'Применить'}
+            </button>
+          </div>
+          {promoResult && (
+            <div className="mt-3 p-3 rounded-xl" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+              <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                {promoResult.type === 'bonus_days' && `+${promoResult.bonusDays} бонусных дней`}
+                {promoResult.type === 'discount' && `Скидка ${promoResult.discountPct}% на оплату`}
+                {promoResult.type === 'balance' && `+${promoResult.balanceAmount} руб. на баланс`}
+                {promoResult.type === 'trial' && 'Пробный период'}
+                {promoResult.description && ` — ${promoResult.description}`}
+              </p>
+              <button onClick={activatePromo} disabled={promoActivating}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', color: '#a78bfa' }}>
+                {promoActivating ? 'Активация...' : 'Активировать'}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Balance block */}
         <div className="glass-card !p-4">

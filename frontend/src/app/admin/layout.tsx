@@ -7,7 +7,7 @@ import {
   Shield, LayoutDashboard, Users, CreditCard,
   Settings, BookOpen, LogOut, Menu, X,
   Package, TrendingUp, ChevronRight, Upload,
-  Newspaper, Bell, Wifi, Globe,
+  Newspaper, Bell, Wifi, Globe, Tag,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
@@ -20,6 +20,7 @@ const NAV = [
   { href: '/admin/notifications',icon: Bell,            label: 'Уведомления' },
   { href: '/admin/proxies',      icon: Wifi,            label: 'Прокси' },
   { href: '/admin/instructions', icon: BookOpen,        label: 'Инструкции' },
+  { href: '/admin/promos',       icon: Tag,             label: 'Промокоды' },
   { href: '/admin/analytics',    icon: TrendingUp,      label: 'Аналитика' },
   { href: '/admin/landing',      icon: Globe,           label: 'Лендинг' },
   { href: '/admin/import',       icon: Upload,          label: 'Импорт' },

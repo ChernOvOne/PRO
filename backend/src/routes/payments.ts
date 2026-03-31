@@ -75,6 +75,20 @@ export async function paymentRoutes(app: FastifyInstance) {
       paymentMeta = { _mode: 'configurator', trafficGb, days, devices, price }
     }
 
+    // Check for active discount promo
+    const activeDiscount = await prisma.promoUsage.findFirst({
+      where: { userId, promo: { type: 'discount', isActive: true } },
+      include: { promo: true },
+    })
+    if (activeDiscount?.promo?.discountPct) {
+      const pct = activeDiscount.promo.discountPct
+      const tariffMatch = activeDiscount.promo.tariffIds.length === 0 || activeDiscount.promo.tariffIds.includes(body.tariffId)
+      if (tariffMatch) {
+        actualPrice = Math.round(actualPrice * (1 - pct / 100))
+        if (actualPriceUsdt) actualPriceUsdt = Math.round(actualPriceUsdt * (1 - pct / 100) * 100) / 100
+      }
+    }
+
     const tariffOverride = { ...tariff, priceRub: actualPrice, priceUsdt: actualPriceUsdt, durationDays: actualDays, trafficGb: actualTrafficGb, deviceLimit: actualDeviceLimit }
     const result = await paymentService.createOrder({
       user,

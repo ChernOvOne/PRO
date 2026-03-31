@@ -16,6 +16,7 @@ import { giftRoutes }             from './gifts'
 import { verificationRoutes }     from './verification'
 import { adminLandingRoutes }     from './admin-landing'
 import { uploadRoutes }           from './upload'
+import { adminPromoRoutes, userPromoRoutes } from './promo'
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -41,6 +42,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(notificationRoutes,       { prefix: '/api/notifications'       })
   await app.register(proxyRoutes,              { prefix: '/api/proxies'             })
   await app.register(giftRoutes,               { prefix: '/api/gifts'               })
+  await app.register(userPromoRoutes,          { prefix: '/api/user/promo'          })
   await app.register(instructionRoutes,        { prefix: '/api/instructions'        })
 
   // Webhooks
@@ -54,6 +56,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminNotificationRoutes,  { prefix: '/api/admin/notifications' })
   await app.register(adminProxyRoutes,         { prefix: '/api/admin/proxies'       })
   await app.register(adminLandingRoutes,       { prefix: '/api/admin/landing'       })
+  await app.register(adminPromoRoutes,         { prefix: '/api/admin/promos'        })
   await app.register(uploadRoutes,             { prefix: '/api/admin'               })
 
   // Serve uploaded files
