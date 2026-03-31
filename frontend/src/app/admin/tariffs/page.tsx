@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Plus, Trash2, Edit2, Save, X, Star, Wifi, Calendar,
+  Plus, Trash2, Save, X, Star, Calendar,
   Package, Zap, ChevronDown, ChevronUp, Shield,
+  Sliders, Layers, Settings2, Eye, GripVertical,
+  Smartphone, Clock, Wifi, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -25,7 +27,7 @@ interface Tariff {
 const EMPTY_SUB: Partial<Tariff> = {
   type: 'SUBSCRIPTION', name: '', durationDays: 30, priceRub: 0,
   deviceLimit: 3, trafficStrategy: 'MONTH', isActive: true,
-  isFeatured: false, sortOrder: 0, remnawaveSquads: [],
+  isFeatured: false, sortOrder: 0, remnawaveSquads: [], mode: 'simple',
 }
 const EMPTY_ADDON: Partial<Tariff> = {
   type: 'TRAFFIC_ADDON', name: '', priceRub: 0, trafficAddonGb: 100,
@@ -42,15 +44,23 @@ async function req(method: string, path: string, body?: any) {
   return r.json()
 }
 
-// ── Form ──────────────────────────────────────────────────────
 const EMPTY_VARIANT: TariffVariant = { label: '', days: 30, priceRub: 0 }
 const EMPTY_CFG_PARAM: ConfiguratorParam = { pricePerUnit: 0, min: 1, max: 100, step: 1, default: 10 }
 
+const MODE_META = {
+  simple:       { label: 'Простой',       icon: Package,  desc: 'Один тариф с фиксированной ценой',   color: 'var(--accent-1)' },
+  variants:     { label: 'С вариантами',  icon: Layers,   desc: 'Несколько вариантов по длительности', color: 'var(--accent-2)' },
+  configurator: { label: 'Конфигуратор',  icon: Sliders,  desc: 'Пользователь выбирает параметры',    color: 'var(--success)' },
+} as const
+
+/* ================================================================
+   TARIFF FORM
+   ================================================================ */
 function TariffForm({ initial, squads, onSave, onCancel }: {
-  initial: Partial<Tariff>;
-  squads: Squad[];
-  onSave: (t: Tariff) => void;
-  onCancel: () => void;
+  initial: Partial<Tariff>
+  squads: Squad[]
+  onSave: (t: Tariff) => void
+  onCancel: () => void
 }) {
   const [form, setForm] = useState<Partial<Tariff>>(initial)
   const [saving, setSaving] = useState(false)
@@ -63,9 +73,11 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
     days: !!initial.configurator?.days,
     devices: !!initial.configurator?.devices,
   })
+  const [showPreview, setShowPreview] = useState(false)
 
   const set = (k: keyof Tariff, v: any) => setForm(f => ({ ...f, [k]: v }))
   const mode = form.mode ?? 'simple'
+  const isAddon = form.type === 'TRAFFIC_ADDON'
 
   const save = async () => {
     setSaving(true)
@@ -100,367 +112,620 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
     set('remnawaveSquads', cur.includes(uuid) ? cur.filter(x => x !== uuid) : [...cur, uuid])
   }
 
-  const isAddon = form.type === 'TRAFFIC_ADDON'
-
-  const inputCls = "w-full bg-white/4 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-500/40 transition-all"
+  /* Configurator price preview */
+  const calcCfgPrice = () => {
+    let p = 0
+    if (cfgEnabled.traffic) p += cfgTraffic.default * cfgTraffic.pricePerUnit
+    if (cfgEnabled.days) p += cfgDays.default * cfgDays.pricePerUnit
+    if (cfgEnabled.devices) p += cfgDevices.default * cfgDevices.pricePerUnit
+    return Math.round(p)
+  }
 
   return (
-    <div className="rounded-3xl bg-white/4 border border-white/8 p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{initial.id ? 'Редактировать тариф' : 'Новый тариф'}</h3>
-        <button onClick={onCancel} className="p-1.5 rounded-xl hover:bg-white/8 transition-all">
-          <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
-        </button>
-      </div>
-
-      {/* Type */}
-      <div className="flex gap-2">
-        {(['SUBSCRIPTION', 'TRAFFIC_ADDON'] as const).map(t => (
-          <button key={t} onClick={() => set('type', t)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium
-                        border transition-all flex-1 justify-center
-                        ${form.type === t
-                          ? t === 'SUBSCRIPTION'
-                            ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
-                            : 'bg-orange-500/15 border-orange-500/30 text-orange-300'
-                          : 'bg-white/4 border-white/8 hover:bg-white/8'}`}
-            style={form.type !== t ? { color: 'var(--text-tertiary)' } : undefined}>
-            {t === 'SUBSCRIPTION'
-              ? <><Shield className="w-4 h-4" />Подписка</>
-              : <><Zap className="w-4 h-4" />Доп. трафик</>}
-          </button>
-        ))}
-      </div>
-
-      {/* Mode selector (only for subscriptions) */}
-      {!isAddon && (
-        <div className="flex gap-1 p-1 rounded-2xl bg-white/4 border border-white/8">
-          {([
-            { key: 'simple' as const, label: 'Простой' },
-            { key: 'variants' as const, label: 'С вариантами' },
-            { key: 'configurator' as const, label: 'Конфигуратор' },
-          ]).map(m => (
-            <button key={m.key} onClick={() => set('mode', m.key)}
-              className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium transition-all
-                          ${mode === m.key ? 'bg-violet-500/20 border border-violet-500/30 text-violet-300' : 'hover:bg-white/5'}`}
-              style={mode !== m.key ? { color: 'var(--text-tertiary)' } : undefined}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Common fields */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2 space-y-1">
-          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Название *</label>
-          <input value={form.name ?? ''} onChange={e => set('name', e.target.value)}
-            placeholder={isAddon ? '+100 ГБ трафика' : 'Базовый · 1 месяц'}
-            className={inputCls}
-            style={{ color: 'var(--text-primary)' }} />
-        </div>
-
-        {mode === 'simple' && (
-          <>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена ₽ *</label>
-              <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Цена USDT</label>
-              <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }} />
-            </div>
-          </>
-        )}
-        {(mode === 'variants' || mode === 'configurator') && (
-          <>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовая цена ₽ (отображение)</label>
-              <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовая цена USDT</label>
-              <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }} />
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* ── VARIANTS MODE ── */}
-      {!isAddon && mode === 'variants' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Варианты</label>
-            <button onClick={() => setVariants(v => [...v, { ...EMPTY_VARIANT }])}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium
-                         bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all">
-              <Plus className="w-3 h-3" /> Вариант
-            </button>
-          </div>
-          {variants.length === 0 && (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Добавьте хотя бы один вариант</p>
-          )}
-          {variants.map((v, i) => (
-            <div key={i} className="grid grid-cols-[1fr_80px_80px_80px_36px] gap-2 items-end">
-              <div className="space-y-1">
-                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Метка</label>
-                <input value={v.label} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], label: e.target.value }; setVariants(nv) }}
-                  placeholder="1 мес" className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Дней</label>
-                <input type="number" value={v.days} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], days: +e.target.value }; setVariants(nv) }}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Цена ₽</label>
-                <input type="number" value={v.priceRub} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceRub: +e.target.value }; setVariants(nv) }}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>USDT</label>
-                <input type="number" step="0.01" value={v.priceUsdt ?? ''} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceUsdt: +e.target.value || undefined }; setVariants(nv) }}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <button onClick={() => setVariants(v => v.filter((_, j) => j !== i))}
-                className="p-2 rounded-xl hover:bg-red-500/10 transition-all self-end mb-0.5">
-                <Trash2 className="w-4 h-4 text-red-400" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── CONFIGURATOR MODE ── */}
-      {!isAddon && mode === 'configurator' && (
-        <div className="space-y-4">
-          <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Параметры конфигуратора</label>
-          {([
-            { key: 'traffic' as const, label: 'Трафик (ГБ)', state: cfgTraffic, setState: setCfgTraffic },
-            { key: 'days' as const, label: 'Дни', state: cfgDays, setState: setCfgDays },
-            { key: 'devices' as const, label: 'Устройства', state: cfgDevices, setState: setCfgDevices },
-          ]).map(p => (
-            <div key={p.key} className="rounded-xl bg-white/3 border border-white/8 p-3 space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={cfgEnabled[p.key]}
-                  onChange={e => setCfgEnabled(prev => ({ ...prev, [p.key]: e.target.checked }))}
-                  className="w-4 h-4 rounded accent-violet-500" />
-                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{p.label}</span>
-              </label>
-              {cfgEnabled[p.key] && (
-                <div className="grid grid-cols-5 gap-2">
-                  {(['pricePerUnit', 'min', 'max', 'step', 'default'] as const).map(f => (
-                    <div key={f} className="space-y-0.5">
-                      <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                        {f === 'pricePerUnit' ? '₽/ед' : f === 'min' ? 'Мин' : f === 'max' ? 'Макс' : f === 'step' ? 'Шаг' : 'По умолч.'}
-                      </label>
-                      <input type="number" value={p.state[f]} onChange={e => p.setState(prev => ({ ...prev, [f]: +e.target.value }))}
-                        className={inputCls} style={{ color: 'var(--text-primary)' }} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Subscription fields (simple mode base fields, always shown for non-addon) */}
-      {!isAddon && (
-        <>
-          {mode === 'simple' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Дней *</label>
-                <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Устройств</label>
-                <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-            </div>
-          )}
-
-          {(mode === 'variants' || mode === 'configurator') && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовые дни (fallback)</label>
-                <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Базовые устройства</label>
-                <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
-                  className={inputCls} style={{ color: 'var(--text-primary)' }} />
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Трафик ГБ (пусто = безлимит)</label>
-              <input type="number" value={form.trafficGb ?? ''} onChange={e => set('trafficGb', +e.target.value || undefined)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Стратегия трафика</label>
-              <select value={form.trafficStrategy ?? 'MONTH'} onChange={e => set('trafficStrategy', e.target.value)}
-                className={inputCls} style={{ color: 'var(--text-primary)' }}>
-                <option value="MONTH">MONTH -- сброс раз в месяц</option>
-                <option value="NO_RESET">NO_RESET -- не сбрасывается</option>
-                <option value="WEEK">WEEK -- сброс раз в неделю</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tag в Remnawave</label>
-            <input value={form.remnawaveTag ?? ''} onChange={e => set('remnawaveTag', e.target.value || undefined)}
-              placeholder="premium / basic / ..."
-              className={`${inputCls} font-mono`}
-              style={{ color: 'var(--text-primary)' }} />
-          </div>
-
-          {/* Squads */}
-          {squads.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                Серверные группы Remnawave <span style={{ color: 'var(--text-tertiary)' }}>(activeInternalSquads)</span>
-              </label>
-              <div className="grid grid-cols-1 gap-2">
-                {squads.map(sq => (
-                  <label key={sq.uuid} className="flex items-center gap-3 p-3 rounded-xl
-                                                  bg-white/3 border border-white/8 cursor-pointer
-                                                  hover:bg-white/6 transition-all">
-                    <input type="checkbox"
-                      checked={(form.remnawaveSquads ?? []).includes(sq.uuid)}
-                      onChange={() => toggleSquad(sq.uuid)}
-                      className="w-4 h-4 rounded accent-violet-500 shrink-0" />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{sq.name}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{sq.info?.membersCount ?? 0} участников</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Addon fields */}
-      {isAddon && (
-        <div className="space-y-1">
-          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Объём трафика ГБ *</label>
-          <input type="number" value={form.trafficAddonGb ?? ''} onChange={e => set('trafficAddonGb', +e.target.value)}
-            placeholder="100"
-            className={inputCls}
-            style={{ color: 'var(--text-primary)' }} />
-        </div>
-      )}
-
-      {/* Options */}
-      <div className="flex items-center gap-6">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={form.isActive ?? true} onChange={e => set('isActive', e.target.checked)}
-            className="w-4 h-4 rounded accent-violet-500" />
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Активен</span>
-        </label>
-        {!isAddon && (
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.isFeatured ?? false} onChange={e => set('isFeatured', e.target.checked)}
-              className="w-4 h-4 rounded accent-amber-400" />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный</span>
-          </label>
-        )}
-      </div>
-
-      <div className="flex gap-2">
-        <button onClick={save} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white
-                     bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 transition-all">
-          <Save className="w-4 h-4" />
-          {saving ? 'Сохранение...' : 'Сохранить'}
-        </button>
-        <button onClick={onCancel}
-          className="px-5 py-2.5 rounded-2xl text-sm bg-white/5 hover:bg-white/10
-                     border border-white/10 transition-all"
-          style={{ color: 'var(--text-primary)' }}>
-          Отмена
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Tariff card ───────────────────────────────────────────────
-function TariffCard({ tariff, onEdit, onDelete }: {
-  tariff: Tariff; onEdit: () => void; onDelete: () => void;
-}) {
-  const isAddon = tariff.type === 'TRAFFIC_ADDON'
-  return (
-    <div className={`rounded-3xl border p-5 space-y-3 transition-all
-                     ${!tariff.isActive ? 'opacity-50' : ''}
-                     ${isAddon
-                       ? 'bg-orange-500/5 border-orange-500/15'
-                       : 'bg-white/4 border-white/8'}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className="glass-card animate-slide-up !p-0 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--glass-border)' }}>
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center
-                           ${isAddon ? 'bg-orange-500/15' : 'bg-violet-500/15'}`}>
-            {isAddon
-              ? <Zap className="w-5 h-5 text-orange-400" />
-              : <Shield className="w-5 h-5 text-violet-400" />}
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+               style={{ background: 'rgba(6,182,212,0.1)' }}>
+            {initial.id
+              ? <Settings2 className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+              : <Plus className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />}
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{tariff.name}</span>
-              {tariff.isFeatured && <Star className="w-3.5 h-3.5 text-amber-400" fill="currentColor" />}
-              {tariff.mode === 'variants' && <span className="text-[10px] bg-blue-500/15 text-blue-300 px-1.5 py-0.5 rounded-full">варианты</span>}
-              {tariff.mode === 'configurator' && <span className="text-[10px] bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 rounded-full">конфигуратор</span>}
-              {!tariff.isActive && <span className="text-xs bg-white/6 px-2 py-0.5 rounded-full" style={{ color: 'var(--text-tertiary)' }}>Неактивен</span>}
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              {isAddon
-                ? `+${tariff.trafficAddonGb} ГБ`
-                : `${tariff.durationDays} дн · ${tariff.trafficGb ? tariff.trafficGb + ' ГБ' : '∞'} · ${tariff.deviceLimit} устр.`}
-            </div>
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {initial.id ? 'Редактировать тариф' : 'Новый тариф'}
+            </h3>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {initial.id ? 'Измените параметры и сохраните' : 'Заполните параметры нового тарифа'}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={onEdit}
-            className="p-2 rounded-xl hover:bg-white/8 transition-all"
-            style={{ color: 'var(--text-tertiary)' }}>
-            <Edit2 className="w-4 h-4" />
+        <button onClick={onCancel} className="p-2 rounded-xl transition-all"
+                style={{ color: 'var(--text-tertiary)' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--glass-hover)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6">
+        {/* Type selector */}
+        <div className="flex gap-3">
+          {(['SUBSCRIPTION', 'TRAFFIC_ADDON'] as const).map(t => {
+            const active = form.type === t
+            const isSub = t === 'SUBSCRIPTION'
+            return (
+              <button key={t} onClick={() => set('type', t)}
+                className="flex items-center gap-3 px-5 py-3.5 rounded-xl text-sm font-medium
+                           transition-all flex-1 justify-center"
+                style={{
+                  background: active
+                    ? isSub ? 'rgba(6,182,212,0.1)' : 'rgba(245,158,11,0.1)'
+                    : 'var(--glass-bg)',
+                  border: `1.5px solid ${active
+                    ? isSub ? 'rgba(6,182,212,0.3)' : 'rgba(245,158,11,0.3)'
+                    : 'var(--glass-border)'}`,
+                  color: active
+                    ? isSub ? 'var(--accent-1)' : 'var(--warning)'
+                    : 'var(--text-tertiary)',
+                }}>
+                {isSub ? <Shield className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                {isSub ? 'Подписка' : 'Доп. трафик'}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Mode selector (subscriptions only) */}
+        {!isAddon && (
+          <div>
+            <label className="text-xs font-medium mb-2.5 block" style={{ color: 'var(--text-secondary)' }}>
+              Режим тарифа
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {(Object.entries(MODE_META) as [keyof typeof MODE_META, typeof MODE_META[keyof typeof MODE_META]][]).map(([key, meta]) => {
+                const active = mode === key
+                const Icon = meta.icon
+                return (
+                  <button key={key} onClick={() => set('mode', key)}
+                    className="relative p-4 rounded-xl text-left transition-all duration-200"
+                    style={{
+                      background: active ? `color-mix(in srgb, ${meta.color} 10%, transparent)` : 'var(--glass-bg)',
+                      border: `1.5px solid ${active ? meta.color : 'var(--glass-border)'}`,
+                    }}>
+                    <Icon className="w-5 h-5 mb-2" style={{ color: active ? meta.color : 'var(--text-tertiary)' }} />
+                    <p className="text-sm font-semibold mb-0.5"
+                       style={{ color: active ? meta.color : 'var(--text-primary)' }}>
+                      {meta.label}
+                    </p>
+                    <p className="text-[10px] leading-snug" style={{ color: 'var(--text-tertiary)' }}>
+                      {meta.desc}
+                    </p>
+                    {active && (
+                      <div className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full"
+                           style={{ background: meta.color, boxShadow: `0 0 8px ${meta.color}` }} />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Common fields */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2 space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Название *</label>
+            <input value={form.name ?? ''} onChange={e => set('name', e.target.value)}
+              placeholder={isAddon ? '+100 ГБ трафика' : 'Базовый · 1 месяц'}
+              className="glass-input" />
+          </div>
+
+          {mode === 'simple' && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Цена ₽ *</label>
+                <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
+                  className="glass-input" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Цена USDT</label>
+                <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
+                  className="glass-input" />
+              </div>
+            </>
+          )}
+          {(mode === 'variants' || mode === 'configurator') && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Базовая цена ₽ (отображение)</label>
+                <input type="number" value={form.priceRub ?? ''} onChange={e => set('priceRub', +e.target.value)}
+                  className="glass-input" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Базовая цена USDT</label>
+                <input type="number" step="0.01" value={form.priceUsdt ?? ''} onChange={e => set('priceUsdt', +e.target.value || undefined)}
+                  className="glass-input" />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── VARIANTS MODE ── */}
+        {!isAddon && mode === 'variants' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Варианты</label>
+                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Каждый вариант — отдельный период/цена</p>
+              </div>
+              <button onClick={() => setShowPreview(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--accent-1)', border: '1px solid rgba(6,182,212,0.15)' }}>
+                <Eye className="w-3.5 h-3.5" /> {showPreview ? 'Скрыть' : 'Превью'}
+              </button>
+            </div>
+
+            {/* Variants table */}
+            {variants.length > 0 && (
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
+                {/* Table header */}
+                <div className="grid grid-cols-[1fr_80px_90px_90px_70px_70px_40px] gap-2 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider"
+                     style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--glass-border)' }}>
+                  <span>Метка</span>
+                  <span>Дней</span>
+                  <span>Цена ₽</span>
+                  <span>USDT</span>
+                  <span>ГБ</span>
+                  <span>Устр.</span>
+                  <span></span>
+                </div>
+                {variants.map((v, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_80px_90px_90px_70px_70px_40px] gap-2 px-4 py-2 items-center transition-all"
+                       style={{ borderBottom: i < variants.length - 1 ? '1px solid var(--glass-border)' : 'none' }}
+                       onMouseEnter={e => { e.currentTarget.style.background = 'var(--glass-hover)' }}
+                       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                    <input value={v.label} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], label: e.target.value }; setVariants(nv) }}
+                      placeholder="1 мес" className="glass-input !py-2 !px-2.5 !text-xs" />
+                    <input type="number" value={v.days} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], days: +e.target.value }; setVariants(nv) }}
+                      className="glass-input !py-2 !px-2.5 !text-xs" />
+                    <input type="number" value={v.priceRub} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceRub: +e.target.value }; setVariants(nv) }}
+                      className="glass-input !py-2 !px-2.5 !text-xs" />
+                    <input type="number" step="0.01" value={v.priceUsdt ?? ''} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], priceUsdt: +e.target.value || undefined }; setVariants(nv) }}
+                      className="glass-input !py-2 !px-2.5 !text-xs" placeholder="—" />
+                    <input type="number" value={v.trafficGb ?? ''} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], trafficGb: +e.target.value || undefined }; setVariants(nv) }}
+                      className="glass-input !py-2 !px-2.5 !text-xs" placeholder="∞" />
+                    <input type="number" value={v.deviceLimit ?? ''} onChange={e => { const nv = [...variants]; nv[i] = { ...nv[i], deviceLimit: +e.target.value || undefined }; setVariants(nv) }}
+                      className="glass-input !py-2 !px-2.5 !text-xs" placeholder="—" />
+                    <button onClick={() => setVariants(v => v.filter((_, j) => j !== i))}
+                      className="p-1.5 rounded-lg transition-all"
+                      style={{ color: 'var(--text-tertiary)' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add variant button */}
+            <button onClick={() => setVariants(v => [...v, { ...EMPTY_VARIANT }])}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-medium transition-all"
+              style={{
+                border: '2px dashed var(--glass-border)',
+                color: 'var(--text-tertiary)',
+                background: 'transparent',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--accent-2)'
+                e.currentTarget.style.color = 'var(--accent-2)'
+                e.currentTarget.style.background = 'rgba(139,92,246,0.05)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--glass-border)'
+                e.currentTarget.style.color = 'var(--text-tertiary)'
+                e.currentTarget.style.background = 'transparent'
+              }}>
+              <Plus className="w-4 h-4" /> Вариант
+            </button>
+
+            {variants.length === 0 && (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Добавьте хотя бы один вариант</p>
+            )}
+
+            {/* Preview */}
+            {showPreview && variants.length > 0 && (
+              <div className="rounded-xl p-4 space-y-3 animate-slide-up"
+                   style={{ background: 'var(--surface-3)', border: '1px solid var(--glass-border)' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                  Превью для пользователя
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {variants.map((v, i) => (
+                    <button key={i}
+                      className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                      style={{
+                        background: i === 0 ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
+                        border: `1.5px solid ${i === 0 ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                        color: i === 0 ? 'var(--accent-1)' : 'var(--text-secondary)',
+                      }}>
+                      {v.label || `${v.days} дн.`}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                    {(variants[0]?.priceRub ?? 0).toLocaleString('ru')}
+                  </span>
+                  <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── CONFIGURATOR MODE ── */}
+        {!isAddon && mode === 'configurator' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Параметры конфигуратора</label>
+                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Включите параметры, которые может настроить пользователь</p>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                   style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                ~ {calcCfgPrice().toLocaleString('ru')} ₽
+              </div>
+            </div>
+
+            {([
+              { key: 'traffic' as const, label: 'Трафик (ГБ)', icon: Wifi, state: cfgTraffic, setState: setCfgTraffic, color: 'var(--accent-1)' },
+              { key: 'days' as const, label: 'Период (дни)', icon: Calendar, state: cfgDays, setState: setCfgDays, color: 'var(--accent-2)' },
+              { key: 'devices' as const, label: 'Устройства', icon: Smartphone, state: cfgDevices, setState: setCfgDevices, color: 'var(--warning)' },
+            ]).map(p => {
+              const enabled = cfgEnabled[p.key]
+              const Icon = p.icon
+              return (
+                <div key={p.key} className="rounded-xl overflow-hidden transition-all duration-200"
+                     style={{
+                       background: enabled ? `color-mix(in srgb, ${p.color} 5%, transparent)` : 'var(--glass-bg)',
+                       border: `1px solid ${enabled ? p.color : 'var(--glass-border)'}`,
+                       borderColor: enabled ? `color-mix(in srgb, ${p.color} 30%, transparent)` : 'var(--glass-border)',
+                     }}>
+                  <button
+                    className="w-full flex items-center gap-3 px-4 py-3 transition-all"
+                    onClick={() => setCfgEnabled(prev => ({ ...prev, [p.key]: !prev[p.key] }))}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                         style={{ background: `color-mix(in srgb, ${p.color} 12%, transparent)` }}>
+                      <Icon className="w-4 h-4" style={{ color: p.color }} />
+                    </div>
+                    <span className="text-sm font-medium flex-1 text-left" style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                      {p.label}
+                    </span>
+                    {enabled
+                      ? <ToggleRight className="w-6 h-6" style={{ color: p.color }} />
+                      : <ToggleLeft className="w-6 h-6" style={{ color: 'var(--text-tertiary)' }} />}
+                  </button>
+                  {enabled && (
+                    <div className="px-4 pb-4 pt-1 animate-slide-up">
+                      <div className="grid grid-cols-5 gap-3">
+                        {(['pricePerUnit', 'min', 'max', 'step', 'default'] as const).map(f => (
+                          <div key={f} className="space-y-1">
+                            <label className="text-[10px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+                              {f === 'pricePerUnit' ? '₽ / ед.' : f === 'min' ? 'Мин' : f === 'max' ? 'Макс' : f === 'step' ? 'Шаг' : 'По умолч.'}
+                            </label>
+                            <input type="number" value={p.state[f]} onChange={e => p.setState(prev => ({ ...prev, [f]: +e.target.value }))}
+                              className="glass-input !py-2 !px-2.5 !text-xs" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Configurator preview */}
+            <div className="rounded-xl p-4 space-y-3"
+                 style={{ background: 'var(--surface-3)', border: '1px solid var(--glass-border)' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                Превью для пользователя
+              </p>
+              <div className="space-y-3">
+                {cfgEnabled.traffic && (
+                  <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span style={{ color: 'var(--text-tertiary)' }}>Трафик</span>
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{cfgTraffic.default} ГБ</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                      <div className="h-full rounded-full" style={{
+                        width: `${((cfgTraffic.default - cfgTraffic.min) / (cfgTraffic.max - cfgTraffic.min)) * 100}%`,
+                        background: 'var(--accent-1)',
+                      }} />
+                    </div>
+                  </div>
+                )}
+                {cfgEnabled.days && (
+                  <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span style={{ color: 'var(--text-tertiary)' }}>Период</span>
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{cfgDays.default} дн.</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                      <div className="h-full rounded-full" style={{
+                        width: `${((cfgDays.default - cfgDays.min) / (cfgDays.max - cfgDays.min)) * 100}%`,
+                        background: 'var(--accent-2)',
+                      }} />
+                    </div>
+                  </div>
+                )}
+                {cfgEnabled.devices && (
+                  <div>
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span style={{ color: 'var(--text-tertiary)' }}>Устройства</span>
+                      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{cfgDevices.default}</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
+                      <div className="h-full rounded-full" style={{
+                        width: `${((cfgDevices.default - cfgDevices.min) / (cfgDevices.max - cfgDevices.min)) * 100}%`,
+                        background: 'var(--warning)',
+                      }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2 pt-1">
+                <span className="text-2xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                  {calcCfgPrice().toLocaleString('ru')}
+                </span>
+                <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subscription fields */}
+        {!isAddon && (
+          <>
+            {mode === 'simple' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Дней *</label>
+                  <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
+                    className="glass-input" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Устройств</label>
+                  <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
+                    className="glass-input" />
+                </div>
+              </div>
+            )}
+
+            {(mode === 'variants' || mode === 'configurator') && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Базовые дни (fallback)</label>
+                  <input type="number" value={form.durationDays ?? ''} onChange={e => set('durationDays', +e.target.value)}
+                    className="glass-input" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Базовые устройства</label>
+                  <input type="number" value={form.deviceLimit ?? 3} onChange={e => set('deviceLimit', +e.target.value)}
+                    className="glass-input" />
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Трафик ГБ (пусто = безлимит)</label>
+                <input type="number" value={form.trafficGb ?? ''} onChange={e => set('trafficGb', +e.target.value || undefined)}
+                  className="glass-input" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Стратегия трафика</label>
+                <select value={form.trafficStrategy ?? 'MONTH'} onChange={e => set('trafficStrategy', e.target.value)}
+                  className="glass-input">
+                  <option value="MONTH">MONTH -- сброс раз в месяц</option>
+                  <option value="NO_RESET">NO_RESET -- не сбрасывается</option>
+                  <option value="WEEK">WEEK -- сброс раз в неделю</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Tag в Remnawave</label>
+              <input value={form.remnawaveTag ?? ''} onChange={e => set('remnawaveTag', e.target.value || undefined)}
+                placeholder="premium / basic / ..."
+                className="glass-input font-mono" />
+            </div>
+
+            {/* Squads */}
+            {squads.length > 0 && (
+              <div className="space-y-2.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  Серверные группы Remnawave
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {squads.map(sq => {
+                    const checked = (form.remnawaveSquads ?? []).includes(sq.uuid)
+                    return (
+                      <label key={sq.uuid} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200"
+                             style={{
+                               background: checked ? 'rgba(6,182,212,0.06)' : 'var(--glass-bg)',
+                               border: `1px solid ${checked ? 'rgba(6,182,212,0.2)' : 'var(--glass-border)'}`,
+                             }}>
+                        <input type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSquad(sq.uuid)}
+                          className="w-4 h-4 rounded accent-[var(--accent-1)] shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{sq.name}</div>
+                          <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{sq.info?.membersCount ?? 0} участников</div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Addon fields */}
+        {isAddon && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Объём трафика ГБ *</label>
+            <input type="number" value={form.trafficAddonGb ?? ''} onChange={e => set('trafficAddonGb', +e.target.value)}
+              placeholder="100" className="glass-input" />
+          </div>
+        )}
+
+        {/* Options */}
+        <div className="flex items-center gap-6 py-1">
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.isActive ?? true} onChange={e => set('isActive', e.target.checked)}
+              className="w-4 h-4 rounded accent-[var(--accent-1)]" />
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Активен</span>
+          </label>
+          {!isAddon && (
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={form.isFeatured ?? false} onChange={e => set('isFeatured', e.target.checked)}
+                className="w-4 h-4 rounded accent-[var(--warning)]" />
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный</span>
+            </label>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-2" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
+          <button onClick={save} disabled={saving} className="btn-primary flex-1 justify-center">
+            <Save className="w-4 h-4" />
+            {saving ? 'Сохранение...' : 'Сохранить'}
           </button>
-          <button onClick={onDelete}
-            className="p-2 rounded-xl hover:text-red-400 hover:bg-red-500/10 transition-all"
-            style={{ color: 'var(--text-tertiary)' }}>
-            <Trash2 className="w-4 h-4" />
+          <button onClick={onCancel} className="btn-secondary flex-1 justify-center">
+            Отмена
           </button>
         </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{tariff.priceRub}₽</span>
-        {tariff.priceUsdt && <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>${tariff.priceUsdt}</span>}
       </div>
     </div>
   )
 }
 
-// ── Main ──────────────────────────────────────────────────────
+/* ================================================================
+   TARIFF CARD (expandable)
+   ================================================================ */
+function TariffCard({ tariff, squads, expanded, onToggle, onSave, onDelete }: {
+  tariff: Tariff
+  squads: Squad[]
+  expanded: boolean
+  onToggle: () => void
+  onSave: (t: Tariff) => void
+  onDelete: () => void
+}) {
+  const isAddon = tariff.type === 'TRAFFIC_ADDON'
+  const mode = tariff.mode ?? 'simple'
+  const modeMeta = MODE_META[mode as keyof typeof MODE_META] ?? MODE_META.simple
+
+  const priceRange = () => {
+    if (mode === 'variants' && tariff.variants?.length) {
+      const prices = tariff.variants.map(v => v.priceRub)
+      const min = Math.min(...prices)
+      const max = Math.max(...prices)
+      return min === max ? `${min.toLocaleString('ru')} ₽` : `${min.toLocaleString('ru')} — ${max.toLocaleString('ru')} ₽`
+    }
+    return `${tariff.priceRub.toLocaleString('ru')} ₽`
+  }
+
+  return (
+    <div className={`rounded-2xl overflow-hidden transition-all duration-300 animate-slide-up
+                     ${!tariff.isActive ? 'opacity-60' : ''}`}
+         style={{
+           background: expanded ? 'var(--glass-hover)' : 'var(--glass-bg)',
+           border: `1px solid ${expanded ? 'var(--accent-1)' : tariff.isFeatured ? 'rgba(6,182,212,0.2)' : 'var(--glass-border)'}`,
+           boxShadow: tariff.isFeatured && !expanded ? '0 0 30px rgba(6,182,212,0.06)' : 'none',
+         }}>
+      {/* Card header — clickable */}
+      <div className="flex items-center gap-4 px-5 py-4 cursor-pointer transition-all"
+           onClick={onToggle}>
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0`}
+             style={{
+               background: isAddon ? 'rgba(245,158,11,0.1)' : `color-mix(in srgb, ${modeMeta.color} 12%, transparent)`,
+             }}>
+          {isAddon
+            ? <Zap className="w-5 h-5" style={{ color: 'var(--warning)' }} />
+            : <modeMeta.icon className="w-5 h-5" style={{ color: modeMeta.color }} />}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{tariff.name}</span>
+            {tariff.isFeatured && (
+              <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--warning)' }} fill="currentColor" />
+            )}
+            {!isAddon && (
+              <span className="badge text-[10px]" style={{
+                background: `color-mix(in srgb, ${modeMeta.color} 12%, transparent)`,
+                color: modeMeta.color,
+              }}>
+                {modeMeta.label}
+              </span>
+            )}
+            {!tariff.isActive && <span className="badge-gray text-[10px]">Неактивен</span>}
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            {isAddon
+              ? `+${tariff.trafficAddonGb} ГБ`
+              : `${tariff.durationDays} дн. · ${tariff.trafficGb ? tariff.trafficGb + ' ГБ' : '∞'} · ${tariff.deviceLimit} устр.`}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+            {priceRange()}
+          </span>
+          <button onClick={e => { e.stopPropagation(); onDelete() }}
+            className="p-2 rounded-lg transition-all flex-shrink-0"
+            style={{ color: 'var(--text-tertiary)' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <div className="transition-transform duration-200" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0)' }}>
+            <ChevronDown className="w-5 h-5" style={{ color: 'var(--text-tertiary)' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded form */}
+      {expanded && (
+        <div style={{ borderTop: '1px solid var(--glass-border)' }}>
+          <TariffForm
+            initial={{ ...tariff }}
+            squads={squads}
+            onSave={onSave}
+            onCancel={onToggle}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ================================================================
+   MAIN PAGE
+   ================================================================ */
 export default function AdminTariffsPage() {
   const [tariffs, setTariffs] = useState<Tariff[]>([])
   const [squads,  setSquads]  = useState<Squad[]>([])
   const [loading, setLoading] = useState(true)
-  const [form,    setForm]    = useState<{ open: boolean; data: Partial<Tariff> }>({ open: false, data: {} })
-  const [tab,     setTab]     = useState<'SUBSCRIPTION' | 'TRAFFIC_ADDON'>('SUBSCRIPTION')
+  const [creating, setCreating] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'SUBSCRIPTION' | 'TRAFFIC_ADDON'>('SUBSCRIPTION')
 
   useEffect(() => {
     Promise.all([
@@ -479,71 +744,132 @@ export default function AdminTariffsPage() {
   }
 
   const filtered = tariffs.filter(t => t.type === tab)
-  const subs     = tariffs.filter(t => t.type === 'SUBSCRIPTION')
-  const addons   = tariffs.filter(t => t.type === 'TRAFFIC_ADDON')
+  const subs   = tariffs.filter(t => t.type === 'SUBSCRIPTION')
+  const addons = tariffs.filter(t => t.type === 'TRAFFIC_ADDON')
 
-  if (loading) return <div className="animate-pulse space-y-3">{[1,2,3].map(i => <div key={i} className="h-24 rounded-3xl bg-white/4" />)}</div>
+  if (loading) return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      {[1,2,3].map(i => (
+        <div key={i} className="h-20 skeleton rounded-2xl" style={{ animationDelay: `${i * 100}ms` }} />
+      ))}
+    </div>
+  )
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between animate-slide-up">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Тарифы</h1>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            Тарифы
+          </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
             {subs.length} подписок · {addons.length} пакетов трафика
           </p>
         </div>
-        <button onClick={() => setForm({ open: true, data: tab === 'SUBSCRIPTION' ? { ...EMPTY_SUB } : { ...EMPTY_ADDON } })}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold text-white
-                     bg-gradient-to-r from-violet-600 to-blue-600 hover:opacity-90 transition-all">
+        <button onClick={() => { setCreating(true); setExpandedId(null) }}
+          className="btn-primary">
           <Plus className="w-4 h-4" />
-          Добавить
+          Создать тариф
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
-        {(['SUBSCRIPTION', 'TRAFFIC_ADDON'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium
-                        border transition-all
-                        ${tab === t
-                          ? 'bg-white/10 border-white/20'
-                          : 'bg-white/3 border-white/8 hover:bg-white/6'}`}
-            style={{ color: tab === t ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-            {t === 'SUBSCRIPTION' ? <><Shield className="w-4 h-4" />Подписки</> : <><Zap className="w-4 h-4" />Доп. трафик</>}
-            <span className="text-xs opacity-60">
-              {t === 'SUBSCRIPTION' ? subs.length : addons.length}
-            </span>
-          </button>
-        ))}
+      <div className="flex gap-2 animate-slide-up" style={{ animationDelay: '50ms' }}>
+        {(['SUBSCRIPTION', 'TRAFFIC_ADDON'] as const).map(t => {
+          const active = tab === t
+          const isSub = t === 'SUBSCRIPTION'
+          const count = isSub ? subs.length : addons.length
+          return (
+            <button key={t} onClick={() => setTab(t)}
+              className="flex items-center gap-2.5 px-5 py-3 rounded-xl text-sm font-medium transition-all duration-200"
+              style={{
+                background: active ? 'var(--glass-hover)' : 'var(--glass-bg)',
+                border: `1.5px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              }}>
+              {isSub ? <Shield className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+              {isSub ? 'Подписки' : 'Доп. трафик'}
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                    style={{
+                      background: active ? 'rgba(6,182,212,0.15)' : 'var(--glass-bg)',
+                      color: active ? 'var(--accent-1)' : 'var(--text-tertiary)',
+                    }}>
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
-      {form.open && (
+      {/* Create form (inline) */}
+      {creating && (
         <TariffForm
-          initial={form.data}
+          initial={tab === 'SUBSCRIPTION' ? { ...EMPTY_SUB } : { ...EMPTY_ADDON }}
           squads={squads}
           onSave={saved => {
-            setTariffs(t => form.data.id
-              ? t.map(x => x.id === saved.id ? saved : x)
-              : [...t, saved])
-            setForm({ open: false, data: {} })
+            setTariffs(t => [...t, saved])
+            setCreating(false)
           }}
-          onCancel={() => setForm({ open: false, data: {} })}
+          onCancel={() => setCreating(false)}
         />
       )}
 
-      <div className="space-y-3">
+      {/* Tariff list */}
+      <div className="space-y-3 stagger">
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-            {tab === 'SUBSCRIPTION' ? 'Нет подписок' : 'Нет пакетов доп. трафика'}
+          <div className="flex flex-col items-center py-20 animate-slide-up">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                 style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+              {tab === 'SUBSCRIPTION'
+                ? <Shield className="w-8 h-8" style={{ color: 'var(--text-tertiary)' }} />
+                : <Zap className="w-8 h-8" style={{ color: 'var(--text-tertiary)' }} />}
+            </div>
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+              {tab === 'SUBSCRIPTION' ? 'Нет подписок' : 'Нет пакетов доп. трафика'}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Создайте первый тариф, чтобы начать
+            </p>
           </div>
         ) : filtered.map(t => (
-          <TariffCard key={t.id} tariff={t}
-            onEdit={() => setForm({ open: true, data: { ...t } })}
-            onDelete={() => deleteTariff(t.id)} />
+          <TariffCard
+            key={t.id}
+            tariff={t}
+            squads={squads}
+            expanded={expandedId === t.id}
+            onToggle={() => setExpandedId(expandedId === t.id ? null : t.id)}
+            onSave={saved => {
+              setTariffs(list => list.map(x => x.id === saved.id ? saved : x))
+              setExpandedId(null)
+            }}
+            onDelete={() => deleteTariff(t.id)}
+          />
         ))}
       </div>
+
+      {/* Bottom create button when items exist */}
+      {filtered.length > 0 && !creating && (
+        <button onClick={() => { setCreating(true); setExpandedId(null) }}
+          className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl text-sm font-semibold transition-all duration-200 animate-slide-up"
+          style={{
+            border: '2px dashed var(--glass-border)',
+            color: 'var(--text-tertiary)',
+            background: 'transparent',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.borderColor = 'var(--accent-1)'
+            e.currentTarget.style.color = 'var(--accent-1)'
+            e.currentTarget.style.background = 'rgba(6,182,212,0.04)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = 'var(--glass-border)'
+            e.currentTarget.style.color = 'var(--text-tertiary)'
+            e.currentTarget.style.background = 'transparent'
+          }}>
+          <Plus className="w-5 h-5" /> Создать тариф
+        </button>
+      )}
     </div>
   )
 }

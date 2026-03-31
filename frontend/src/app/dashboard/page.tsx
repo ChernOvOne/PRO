@@ -812,252 +812,422 @@ export default function DashboardPage() {
         </Modal>
       )}
 
-      {/* ── TARIFFS MODAL ── */}
-      {showTariffs && (
+      {/* ── TARIFFS MODAL (Wizard) ── */}
+      {showTariffs && (() => {
+        /* Wizard step: 1=choose tariff, 2=configure, 3=payment */
+        const wizardStep = !payTariff ? 1 : provider ? 3 : 2
+        const currentStep = !payTariff ? 1 : 3  /* We combine configure+payment into step 2/3 */
+
+        /* Helper: compute current price */
+        const getCurrentPrice = () => {
+          if (!payTariff) return 0
+          if (payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx]) {
+            return payTariff.variants[selectedVariantIdx].priceRub
+          }
+          if (payTariff.mode === 'configurator' && payTariff.configurator) {
+            const cfg = payTariff.configurator
+            let p = 0
+            if (cfg.traffic) p += cfgValues.trafficGb * (cfg.traffic.pricePerUnit || 0)
+            if (cfg.days) p += cfgValues.days * (cfg.days.pricePerUnit || 0)
+            if (cfg.devices) p += cfgValues.devices * (cfg.devices.pricePerUnit || 0)
+            return Math.round(p)
+          }
+          return payTariff.priceRub
+        }
+
+        return (
         <Modal close={() => { setShowTariffs(false); setPayTariff(null) }} wide>
+          {/* Progress indicator */}
+          <div className="flex items-center gap-2 mb-6">
+            {[
+              { n: 1, label: 'Тариф' },
+              { n: 2, label: 'Настройка' },
+              { n: 3, label: 'Оплата' },
+            ].map((s, i) => {
+              const isActive = (!payTariff && s.n === 1) || (payTariff && s.n >= 2)
+              const isCurrent = (!payTariff && s.n === 1) || (payTariff && s.n === 3)
+              return (
+                <div key={s.n} className="flex items-center gap-2 flex-1">
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all duration-300"
+                         style={{
+                           background: isActive ? (isCurrent ? 'var(--accent-gradient)' : 'rgba(6,182,212,0.15)') : 'var(--glass-bg)',
+                           color: isActive ? (isCurrent ? '#fff' : 'var(--accent-1)') : 'var(--text-tertiary)',
+                           border: isActive ? 'none' : '1px solid var(--glass-border)',
+                         }}>
+                      {s.n}
+                    </div>
+                    <span className="text-xs font-medium hidden sm:block"
+                          style={{ color: isCurrent ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                      {s.label}
+                    </span>
+                  </div>
+                  {i < 2 && (
+                    <div className="h-px flex-1 mx-1" style={{
+                      background: isActive && s.n < 3 ? 'var(--accent-1)' : 'var(--glass-border)',
+                      opacity: isActive ? 0.4 : 1,
+                    }} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* ══ STEP 1: Choose tariff ══ */}
           {!payTariff ? (
-            <div className="space-y-4">
-              <h3 className="font-semibold text-lg flex items-center gap-2">
-                <CreditCard className="w-5 h-5" style={{ color: 'var(--accent-1)' }} /> Выберите тариф
-              </h3>
+            <div className="space-y-4 animate-fade-in">
+              <div className="text-center mb-2">
+                <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Выберите тариф</h3>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Подберите оптимальный план для ваших задач</p>
+              </div>
+
               {tariffs.length > 0 ? (
-                <div className="grid sm:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto">
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                   {tariffs.map((t: any) => {
                     const tMode = t.mode || 'simple'
+                    const startPrice = tMode === 'variants' && t.variants?.length
+                      ? Math.min(...t.variants.map((v: any) => v.priceRub))
+                      : t.priceRub
+
                     return (
-                    <div key={t.id} className="rounded-xl p-4 flex flex-col transition-all duration-300"
-                         style={{
-                           background: 'var(--glass-bg)',
-                           border: t.isFeatured ? '1px solid rgba(6,182,212,0.3)' : '1px solid var(--glass-border)',
-                           boxShadow: t.isFeatured ? '0 0 30px rgba(6,182,212,0.06)' : 'none',
-                         }}>
-                      {t.isFeatured && (
-                        <span className="badge-blue text-[10px] w-fit mb-2">
-                          <Zap className="w-3 h-3" /> Популярный
-                        </span>
-                      )}
-                      <p className="font-semibold text-base">{t.name}</p>
-
-                      {/* ── SIMPLE mode ── */}
-                      {tMode === 'simple' && (
-                        <>
-                          <p className="text-2xl font-extrabold mt-1 tracking-tight">
-                            {t.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                          </p>
-                          {t.priceUsdt && (
-                            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>~ {t.priceUsdt} USDT</p>
-                          )}
-                          <div className="text-xs mt-3 space-y-1.5 flex-1" style={{ color: 'var(--text-secondary)' }}>
-                            <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.durationDays} дней</div>
-                            <div className="flex items-center gap-2"><Smartphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.deviceLimit === 0 ? 'Безлимит' : t.deviceLimit} устр.</div>
-                            <div className="flex items-center gap-2"><Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {t.trafficGb ? `${t.trafficGb} ГБ` : 'Безлимит'}</div>
+                      <div key={t.id}
+                           className="rounded-xl p-4 transition-all duration-300 cursor-pointer group"
+                           style={{
+                             background: 'var(--glass-bg)',
+                             border: t.isFeatured ? '1.5px solid rgba(6,182,212,0.3)' : '1.5px solid var(--glass-border)',
+                             boxShadow: t.isFeatured ? '0 0 30px rgba(6,182,212,0.06)' : 'none',
+                           }}
+                           onMouseEnter={e => {
+                             e.currentTarget.style.background = 'var(--glass-hover)'
+                             e.currentTarget.style.borderColor = 'var(--accent-1)'
+                             e.currentTarget.style.transform = 'translateY(-1px)'
+                           }}
+                           onMouseLeave={e => {
+                             e.currentTarget.style.background = 'var(--glass-bg)'
+                             e.currentTarget.style.borderColor = t.isFeatured ? 'rgba(6,182,212,0.3)' : 'var(--glass-border)'
+                             e.currentTarget.style.transform = 'translateY(0)'
+                           }}
+                           onClick={() => {
+                             setPayTariff(t); setProvider('YUKASSA')
+                             if (tMode === 'variants') setSelectedVariantIdx(0)
+                             if (tMode === 'configurator' && t.configurator) {
+                               setCfgValues({
+                                 trafficGb: t.configurator.traffic?.default ?? 50,
+                                 days: t.configurator.days?.default ?? 30,
+                                 devices: t.configurator.devices?.default ?? 3,
+                               })
+                             }
+                           }}>
+                        <div className="flex items-center gap-4">
+                          {/* Icon */}
+                          <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                               style={{
+                                 background: t.type === 'TRAFFIC_ADDON' ? 'rgba(245,158,11,0.1)' : 'rgba(6,182,212,0.1)',
+                               }}>
+                            {t.type === 'TRAFFIC_ADDON'
+                              ? <Zap className="w-6 h-6" style={{ color: 'var(--warning)' }} />
+                              : <Shield className="w-6 h-6" style={{ color: 'var(--accent-1)' }} />}
                           </div>
-                        </>
-                      )}
 
-                      {/* ── VARIANTS mode ── */}
-                      {tMode === 'variants' && t.variants?.length > 0 && (() => {
-                        const vi = payTariff?.id === t.id ? selectedVariantIdx : 0
-                        const v = t.variants[vi] || t.variants[0]
-                        return (
-                          <>
-                            <div className="flex gap-1 mt-2 flex-wrap">
-                              {t.variants.map((vr: any, idx: number) => (
-                                <button key={idx} onClick={(e) => { e.stopPropagation(); setSelectedVariantIdx(idx) }}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all
-                                    ${(payTariff?.id === t.id ? selectedVariantIdx : 0) === idx
-                                      ? 'bg-[rgba(6,182,212,0.12)] border-[rgba(6,182,212,0.3)]'
-                                      : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06]'}`}
-                                  style={{ color: (payTariff?.id === t.id ? selectedVariantIdx : 0) === idx ? 'var(--accent-1)' : 'var(--text-tertiary)' }}>
-                                  {vr.label}
-                                </button>
-                              ))}
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{t.name}</p>
+                              {t.isFeatured && (
+                                <span className="badge-blue text-[10px]">
+                                  <Zap className="w-3 h-3" /> Популярный
+                                </span>
+                              )}
                             </div>
-                            <p className="text-2xl font-extrabold mt-2 tracking-tight">
-                              {v.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                            <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                              {t.type !== 'TRAFFIC_ADDON' && (
+                                <>
+                                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {t.durationDays} дн.</span>
+                                  <span className="flex items-center gap-1"><Smartphone className="w-3 h-3" /> {t.deviceLimit === 0 ? '∞' : t.deviceLimit} устр.</span>
+                                  <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> {t.trafficGb ? `${t.trafficGb} ГБ` : '∞'}</span>
+                                </>
+                              )}
+                              {t.type === 'TRAFFIC_ADDON' && (
+                                <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> +{t.trafficAddonGb} ГБ</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Price + actions */}
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-lg font-extrabold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                              {tMode === 'variants' ? 'от ' : ''}{startPrice.toLocaleString('ru')}
+                              <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
                             </p>
-                            {v.priceUsdt && (
-                              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>~ {v.priceUsdt} USDT</p>
+                            {t.priceUsdt && (
+                              <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>~ {t.priceUsdt} USDT</p>
                             )}
-                            <div className="text-xs mt-2 space-y-1.5 flex-1" style={{ color: 'var(--text-secondary)' }}>
-                              <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {v.days} дней</div>
-                              <div className="flex items-center gap-2"><Smartphone className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {v.deviceLimit ?? t.deviceLimit ?? 3} устр.</div>
-                              <div className="flex items-center gap-2"><Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-tertiary)' }} /> {(v.trafficGb ?? t.trafficGb) ? `${v.trafficGb ?? t.trafficGb} ГБ` : 'Безлимит'}</div>
-                            </div>
-                          </>
-                        )
-                      })()}
+                          </div>
 
-                      {/* ── CONFIGURATOR mode ── */}
-                      {tMode === 'configurator' && t.configurator && (() => {
-                        const cfg = t.configurator
-                        const cv = payTariff?.id === t.id ? cfgValues : {
-                          trafficGb: cfg.traffic?.default ?? 50,
-                          days: cfg.days?.default ?? 30,
-                          devices: cfg.devices?.default ?? 3,
-                        }
-                        let calcPrice = 0
-                        if (cfg.traffic) calcPrice += cv.trafficGb * (cfg.traffic.pricePerUnit || 0)
-                        if (cfg.days) calcPrice += cv.days * (cfg.days.pricePerUnit || 0)
-                        if (cfg.devices) calcPrice += cv.devices * (cfg.devices.pricePerUnit || 0)
-                        return (
-                          <>
-                            <div className="mt-3 space-y-3">
-                              {cfg.traffic && (
-                                <div>
-                                  <div className="flex justify-between text-[11px] mb-1">
-                                    <span style={{ color: 'var(--text-tertiary)' }}>Трафик</span>
-                                    <span className="font-medium">{cv.trafficGb} ГБ</span>
-                                  </div>
-                                  <input type="range" min={cfg.traffic.min} max={cfg.traffic.max} step={cfg.traffic.step}
-                                    value={cv.trafficGb}
-                                    onChange={e => { setSelectedVariantIdx(0); setCfgValues(prev => ({ ...prev, trafficGb: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
-                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
-                                </div>
-                              )}
-                              {cfg.days && (
-                                <div>
-                                  <div className="flex justify-between text-[11px] mb-1">
-                                    <span style={{ color: 'var(--text-tertiary)' }}>Период</span>
-                                    <span className="font-medium">{cv.days} дн.</span>
-                                  </div>
-                                  <input type="range" min={cfg.days.min} max={cfg.days.max} step={cfg.days.step}
-                                    value={cv.days}
-                                    onChange={e => { setCfgValues(prev => ({ ...prev, days: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
-                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
-                                </div>
-                              )}
-                              {cfg.devices && (
-                                <div>
-                                  <div className="flex justify-between text-[11px] mb-1">
-                                    <span style={{ color: 'var(--text-tertiary)' }}>Устройства</span>
-                                    <span className="font-medium">{cv.devices}</span>
-                                  </div>
-                                  <input type="range" min={cfg.devices.min} max={cfg.devices.max} step={cfg.devices.step}
-                                    value={cv.devices}
-                                    onChange={e => { setCfgValues(prev => ({ ...prev, devices: +e.target.value })); if (payTariff?.id !== t.id) { setPayTariff(t); setProvider('YUKASSA') } }}
-                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                                    style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-2xl font-extrabold mt-3 tracking-tight">
-                              {Math.round(calcPrice).toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                            </p>
-                          </>
-                        )
-                      })()}
-
-                      <div className="flex gap-2 mt-4">
-                        <button onClick={() => {
-                          setPayTariff(t); setProvider('YUKASSA')
-                          if (tMode === 'variants') setSelectedVariantIdx(0)
-                          if (tMode === 'configurator' && t.configurator) {
-                            setCfgValues({
-                              trafficGb: t.configurator.traffic?.default ?? 50,
-                              days: t.configurator.days?.default ?? 30,
-                              devices: t.configurator.devices?.default ?? 3,
-                            })
-                          }
-                        }}
-                                className={`${t.isFeatured ? 'btn-primary' : 'btn-secondary'} text-xs py-2.5 flex-1 justify-center`}>
-                          Оплатить
-                        </button>
-                        <button onClick={() => { setGiftTariff(t); setGiftProvider('YUKASSA'); setGiftLink(null) }}
-                                className="btn-secondary text-xs py-2.5 justify-center"
-                                style={{ color: 'var(--accent-2, #a78bfa)' }}
-                                title="Подарить другу">
-                          <Gift className="w-3.5 h-3.5" />
-                        </button>
+                          {/* Gift button */}
+                          <button onClick={(e) => { e.stopPropagation(); setGiftTariff(t); setGiftProvider('YUKASSA'); setGiftLink(null) }}
+                                  className="p-2.5 rounded-xl transition-all flex-shrink-0"
+                                  style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--accent-2, #a78bfa)' }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.3)' }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--glass-bg)'; e.currentTarget.style.borderColor = 'var(--glass-border)' }}
+                                  title="Подарить другу">
+                            <Gift className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
                     )
                   })}
                 </div>
               ) : (
-                <p className="text-sm py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>Тарифы загружаются...</p>
+                <div className="flex flex-col items-center py-10 animate-slide-up">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <CreditCard className="w-7 h-7" style={{ color: 'var(--text-tertiary)' }} />
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Тарифы загружаются...</p>
+                </div>
               )}
             </div>
           ) : (
-            /* ── Nested: provider selection ── */
+            /* ══ STEPS 2+3: Configure & Pay ══ */
             <div className="space-y-5 animate-fade-in">
+              {/* Back button */}
               <button onClick={() => setPayTariff(null)}
-                      className="flex items-center gap-1 text-xs font-medium transition-colors"
-                      style={{ color: 'var(--text-tertiary)' }}>
+                      className="flex items-center gap-1.5 text-xs font-medium transition-all rounded-lg px-2 py-1 -ml-2"
+                      style={{ color: 'var(--text-tertiary)' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-1)'; e.currentTarget.style.background = 'rgba(6,182,212,0.06)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
                 <ChevronLeft className="w-4 h-4" /> Назад к тарифам
               </button>
 
-              <h3 className="font-semibold text-lg">Оплата</h3>
-
-              <div className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                <p className="text-sm font-medium">{payTariff.name}</p>
-                {payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx] ? (
-                  <>
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{payTariff.variants[selectedVariantIdx].label} -- {payTariff.variants[selectedVariantIdx].days} дн.</p>
-                    <p className="text-xl font-extrabold mt-0.5">
-                      {payTariff.variants[selectedVariantIdx].priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+              {/* Tariff summary card */}
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
+                <div className="flex items-center gap-3 px-4 py-3"
+                     style={{ background: 'var(--glass-bg)' }}>
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                       style={{ background: 'rgba(6,182,212,0.1)' }}>
+                    <Shield className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{payTariff.name}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx]
+                        ? `${payTariff.variants[selectedVariantIdx].label} · ${payTariff.variants[selectedVariantIdx].days} дн.`
+                        : payTariff.mode === 'configurator'
+                          ? `${cfgValues.days} дн. / ${cfgValues.trafficGb} ГБ / ${cfgValues.devices} устр.`
+                          : `${payTariff.durationDays} дн.`}
                     </p>
-                  </>
-                ) : payTariff.mode === 'configurator' && payTariff.configurator ? (() => {
-                  const cfg = payTariff.configurator
-                  let p = 0
-                  if (cfg.traffic) p += cfgValues.trafficGb * (cfg.traffic.pricePerUnit || 0)
-                  if (cfg.days) p += cfgValues.days * (cfg.days.pricePerUnit || 0)
-                  if (cfg.devices) p += cfgValues.devices * (cfg.devices.pricePerUnit || 0)
-                  return (
-                    <>
-                      <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                        {cfgValues.days} дн. / {cfgValues.trafficGb} ГБ / {cfgValues.devices} устр.
-                      </p>
-                      <p className="text-xl font-extrabold mt-0.5">
-                        {Math.round(p).toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                      </p>
-                    </>
-                  )
-                })() : (
-                  <p className="text-xl font-extrabold mt-0.5">
-                    {payTariff.priceRub.toLocaleString('ru')} <span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                  </div>
+                  <p className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                    {getCurrentPrice().toLocaleString('ru')}
+                    <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
                   </p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Способ оплаты</p>
-                <div className="flex gap-2">
-                  {([
-                    { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта / СБП', icon: <CreditCard className="w-4 h-4" /> },
-                    { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'USDT / BTC', icon: <Wallet className="w-4 h-4" /> },
-                    { key: 'BALANCE', label: 'С баланса', sub: `${(balance?.balance ?? 0).toFixed(0)} ₽`, icon: <Wallet className="w-4 h-4" /> },
-                  ] as const).map(p => (
-                    <button key={p.key} onClick={() => setProvider(p.key)}
-                            className="flex-1 p-3 rounded-xl text-left transition-all duration-200"
-                            style={{
-                              background: provider === p.key ? 'rgba(6,182,212,0.08)' : 'var(--glass-bg)',
-                              border: `1.5px solid ${provider === p.key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
-                            }}>
-                      <div className="flex items-center gap-2 mb-0.5"
-                           style={{ color: provider === p.key ? 'var(--accent-1)' : 'var(--text-primary)' }}>
-                        {p.icon}
-                        <span className="text-sm font-medium">{p.label}</span>
-                      </div>
-                      <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{p.sub}</p>
-                    </button>
-                  ))}
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setPayTariff(null)} className="btn-secondary flex-1 justify-center text-sm">Отмена</button>
+              {/* ── Configure: Variants mode ── */}
+              {payTariff.mode === 'variants' && payTariff.variants?.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                    Выберите период
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    {payTariff.variants.map((vr: any, idx: number) => {
+                      const active = selectedVariantIdx === idx
+                      return (
+                        <button key={idx} onClick={() => setSelectedVariantIdx(idx)}
+                          className="px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
+                          style={{
+                            background: active ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
+                            border: `1.5px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                            color: active ? 'var(--accent-1)' : 'var(--text-secondary)',
+                          }}>
+                          {vr.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Selected variant details */}
+                  {(() => {
+                    const v = payTariff.variants[selectedVariantIdx]
+                    if (!v) return null
+                    return (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                          <Clock className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--accent-1)' }} />
+                          <p className="text-sm font-bold">{v.days}</p>
+                          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>дней</p>
+                        </div>
+                        <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                          <Zap className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--accent-2)' }} />
+                          <p className="text-sm font-bold">{(v.trafficGb ?? payTariff.trafficGb) ? `${v.trafficGb ?? payTariff.trafficGb}` : '∞'}</p>
+                          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>ГБ трафика</p>
+                        </div>
+                        <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                          <Smartphone className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--warning)' }} />
+                          <p className="text-sm font-bold">{v.deviceLimit ?? payTariff.deviceLimit ?? 3}</p>
+                          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>устройств</p>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+
+              {/* ── Configure: Configurator mode ── */}
+              {payTariff.mode === 'configurator' && payTariff.configurator && (() => {
+                const cfg = payTariff.configurator
+                return (
+                  <div className="space-y-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                      Настройте параметры
+                    </p>
+
+                    {cfg.traffic && (
+                      <div className="p-4 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Wifi className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Трафик</span>
+                          </div>
+                          <span className="text-sm font-bold" style={{ color: 'var(--accent-1)' }}>{cfgValues.trafficGb} ГБ</span>
+                        </div>
+                        <input type="range" min={cfg.traffic.min} max={cfg.traffic.max} step={cfg.traffic.step}
+                          value={cfgValues.trafficGb}
+                          onChange={e => setCfgValues(prev => ({ ...prev, trafficGb: +e.target.value }))}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-1, #06b6d4)' }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                          <span>{cfg.traffic.min} ГБ</span>
+                          <span>{cfg.traffic.max} ГБ</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {cfg.days && (
+                      <div className="p-4 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4" style={{ color: 'var(--accent-2)' }} />
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Период</span>
+                          </div>
+                          <span className="text-sm font-bold" style={{ color: 'var(--accent-2)' }}>{cfgValues.days} дн.</span>
+                        </div>
+                        <input type="range" min={cfg.days.min} max={cfg.days.max} step={cfg.days.step}
+                          value={cfgValues.days}
+                          onChange={e => setCfgValues(prev => ({ ...prev, days: +e.target.value }))}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: 'var(--accent-2, #8b5cf6)' }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                          <span>{cfg.days.min} дн.</span>
+                          <span>{cfg.days.max} дн.</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {cfg.devices && (
+                      <div className="p-4 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="w-4 h-4" style={{ color: 'var(--warning)' }} />
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Устройства</span>
+                          </div>
+                          <span className="text-sm font-bold" style={{ color: 'var(--warning)' }}>{cfgValues.devices}</span>
+                        </div>
+                        <input type="range" min={cfg.devices.min} max={cfg.devices.max} step={cfg.devices.step}
+                          value={cfgValues.devices}
+                          onChange={e => setCfgValues(prev => ({ ...prev, devices: +e.target.value }))}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: 'var(--warning, #f59e0b)' }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                          <span>{cfg.devices.min}</span>
+                          <span>{cfg.devices.max}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Real-time price */}
+                    <div className="text-center py-2">
+                      <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>Итого</p>
+                      <p className="text-3xl font-extrabold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                        {getCurrentPrice().toLocaleString('ru')}
+                        <span className="text-base font-normal ml-1" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                      </p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* ── Simple mode: just show features ── */}
+              {(!payTariff.mode || payTariff.mode === 'simple') && payTariff.type !== 'TRAFFIC_ADDON' && (
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Clock className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--accent-1)' }} />
+                    <p className="text-sm font-bold">{payTariff.durationDays}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>дней</p>
+                  </div>
+                  <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Zap className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--accent-2)' }} />
+                    <p className="text-sm font-bold">{payTariff.trafficGb ?? '∞'}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>ГБ трафика</p>
+                  </div>
+                  <div className="p-3 rounded-xl text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Smartphone className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--warning)' }} />
+                    <p className="text-sm font-bold">{payTariff.deviceLimit === 0 ? '∞' : payTariff.deviceLimit}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>устройств</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Payment provider selection ── */}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Способ оплаты
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта / СБП', icon: <CreditCard className="w-5 h-5" />, color: 'var(--accent-1)' },
+                    { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'USDT / BTC', icon: <Wallet className="w-5 h-5" />, color: 'var(--accent-2)' },
+                    { key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)} ₽`, icon: <Wallet className="w-5 h-5" />, color: 'var(--success)' },
+                  ] as const).map(p => {
+                    const active = provider === p.key
+                    return (
+                      <button key={p.key} onClick={() => setProvider(p.key)}
+                              className="p-3.5 rounded-xl text-center transition-all duration-200"
+                              style={{
+                                background: active ? `color-mix(in srgb, ${p.color} 8%, transparent)` : 'var(--glass-bg)',
+                                border: `1.5px solid ${active ? p.color : 'var(--glass-border)'}`,
+                              }}>
+                        <div className="flex justify-center mb-1.5"
+                             style={{ color: active ? p.color : 'var(--text-tertiary)' }}>
+                          {p.icon}
+                        </div>
+                        <p className="text-xs font-semibold mb-0.5"
+                           style={{ color: active ? p.color : 'var(--text-primary)' }}>
+                          {p.label}
+                        </p>
+                        <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{p.sub}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+                <button onClick={() => setPayTariff(null)} className="btn-secondary flex-1 justify-center text-sm">
+                  Назад
+                </button>
                 <button onClick={handleBuy} disabled={paying} className="btn-primary flex-1 justify-center text-sm">
-                  {paying ? 'Переход...' : 'Оплатить'}
+                  {paying ? 'Переход к оплате...' : `Оплатить ${getCurrentPrice().toLocaleString('ru')} ₽`}
                 </button>
               </div>
             </div>
           )}
         </Modal>
-      )}
+        )
+      })()}
 
       {/* ── TOPUP MODAL ── */}
       {showTopup && (
