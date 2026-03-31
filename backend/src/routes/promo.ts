@@ -19,15 +19,15 @@ export async function adminPromoRoutes(app: FastifyInstance) {
     const schema = z.object({
       code:          z.string().min(1).transform(v => v.toUpperCase()),
       type:          z.enum(['bonus_days', 'discount', 'balance', 'trial']).default('bonus_days'),
-      bonusDays:     z.number().int().positive().optional(),
-      discountPct:   z.number().int().min(1).max(100).optional(),
+      bonusDays:     z.coerce.number().int().positive().optional().nullable(),
+      discountPct:   z.coerce.number().int().min(1).max(100).optional().nullable(),
       tariffIds:     z.array(z.string()).default([]),
-      balanceAmount: z.number().positive().optional(),
-      maxUses:       z.number().int().positive().optional().nullable(),
-      maxUsesPerUser: z.number().int().positive().default(1),
-      expiresAt:     z.string().datetime().optional().nullable(),
-      isActive:      z.boolean().default(true),
-      description:   z.string().optional(),
+      balanceAmount: z.coerce.number().positive().optional().nullable(),
+      maxUses:       z.coerce.number().int().positive().optional().nullable(),
+      maxUsesPerUser: z.coerce.number().int().positive().default(1),
+      expiresAt:     z.string().optional().nullable(),
+      isActive:      z.coerce.boolean().default(true),
+      description:   z.string().optional().nullable(),
     })
     const data = schema.parse(req.body)
 
@@ -37,6 +37,9 @@ export async function adminPromoRoutes(app: FastifyInstance) {
     const promo = await prisma.promoCode.create({
       data: {
         ...data,
+        bonusDays: data.bonusDays || null,
+        discountPct: data.discountPct || null,
+        balanceAmount: data.balanceAmount || null,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
       },
     })
@@ -49,14 +52,14 @@ export async function adminPromoRoutes(app: FastifyInstance) {
     const schema = z.object({
       code:          z.string().min(1).transform(v => v.toUpperCase()).optional(),
       type:          z.enum(['bonus_days', 'discount', 'balance', 'trial']).optional(),
-      bonusDays:     z.number().int().positive().optional().nullable(),
-      discountPct:   z.number().int().min(1).max(100).optional().nullable(),
+      bonusDays:     z.coerce.number().int().positive().optional().nullable(),
+      discountPct:   z.coerce.number().int().min(1).max(100).optional().nullable(),
       tariffIds:     z.array(z.string()).optional(),
-      balanceAmount: z.number().positive().optional().nullable(),
-      maxUses:       z.number().int().positive().optional().nullable(),
-      maxUsesPerUser: z.number().int().positive().optional(),
-      expiresAt:     z.string().datetime().optional().nullable(),
-      isActive:      z.boolean().optional(),
+      balanceAmount: z.coerce.number().positive().optional().nullable(),
+      maxUses:       z.coerce.number().int().positive().optional().nullable(),
+      maxUsesPerUser: z.coerce.number().int().positive().optional(),
+      expiresAt:     z.string().optional().nullable(),
+      isActive:      z.coerce.boolean().optional(),
       description:   z.string().optional().nullable(),
     })
     const data = schema.parse(req.body)
@@ -130,6 +133,24 @@ export async function adminPromoRoutes(app: FastifyInstance) {
 // ── User endpoints ──────────────────────────────────────────
 export async function userPromoRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] }
+
+  // Get active discount for user
+  app.get('/active-discount', auth, async (req) => {
+    const userId = (req.user as any).sub
+    const usage = await prisma.promoUsage.findFirst({
+      where: { userId, promo: { type: 'discount', isActive: true } },
+      include: { promo: true },
+      orderBy: { usedAt: 'desc' },
+    })
+    if (!usage) return { active: false }
+    return {
+      active: true,
+      code: usage.promo.code,
+      discountPct: usage.promo.discountPct,
+      tariffIds: usage.promo.tariffIds,
+      description: usage.promo.description,
+    }
+  })
 
   // Check promo code validity
   app.post('/check', auth, async (req, reply) => {
