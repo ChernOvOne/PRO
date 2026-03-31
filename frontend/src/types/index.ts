@@ -24,6 +24,9 @@ export interface Tariff {
   id:              string
   name:            string
   description?:    string
+  countries?:      string
+  protocol?:       string
+  speed?:          string
   type?:           TariffType
   durationDays:    number
   priceRub:        number

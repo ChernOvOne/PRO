@@ -77,6 +77,9 @@ model Tariff {
   id              String      @id @default(uuid())
   name            String
   description     String?
+  countries       String?     @map("countries")       // "🇷🇺 Россия, 🇳🇱 Нидерланды, 🇫🇮 Финляндия"
+  protocol        String?     @map("protocol")        // "VLESS + XTLS Reality"
+  speed           String?     @map("speed")            // "до 1 Гбит/с"
   type            TariffType  @default(SUBSCRIPTION) @map("type")
 
   // SUBSCRIPTION fields

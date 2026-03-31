@@ -10,8 +10,10 @@ export async function publicRoutes(app: FastifyInstance) {
       orderBy: [{ sortOrder: 'asc' }],
       select: {
         id: true, name: true, description: true,
+        countries: true, protocol: true, speed: true,
         durationDays: true, priceRub: true, priceUsdt: true,
         deviceLimit: true, trafficGb: true, isFeatured: true,
+        mode: true, variants: true, configurator: true,
       },
     }),
   )

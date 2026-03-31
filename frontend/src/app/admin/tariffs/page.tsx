@@ -22,6 +22,7 @@ interface Tariff {
   mode?: 'simple' | 'variants' | 'configurator'
   variants?: TariffVariant[]
   configurator?: TariffConfigurator
+  countries?: string; protocol?: string; speed?: string
 }
 
 const EMPTY_SUB: Partial<Tariff> = {
@@ -64,6 +65,9 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
 }) {
   const [form, setForm] = useState<Partial<Tariff>>(initial)
   const [saving, setSaving] = useState(false)
+  const [countries, setCountries] = useState(initial.countries ?? '')
+  const [protocol, setProtocol] = useState(initial.protocol ?? '')
+  const [speed, setSpeed] = useState(initial.speed ?? '')
   const [variants, setVariants] = useState<TariffVariant[]>(initial.variants ?? [])
   const [cfgTraffic, setCfgTraffic] = useState<ConfiguratorParam>(initial.configurator?.traffic ?? { ...EMPTY_CFG_PARAM, max: 500, default: 50, pricePerUnit: 2 })
   const [cfgDays, setCfgDays] = useState<ConfiguratorParam>(initial.configurator?.days ?? { ...EMPTY_CFG_PARAM, min: 7, max: 365, step: 1, default: 30, pricePerUnit: 5 })
@@ -83,7 +87,7 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
     setSaving(true)
     try {
       const isEdit = !!initial.id
-      const payload: any = { ...form }
+      const payload: any = { ...form, countries: countries || undefined, protocol: protocol || undefined, speed: speed || undefined }
       if (mode === 'variants') {
         payload.variants = variants
         payload.configurator = null
@@ -220,6 +224,36 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
             <input value={form.name ?? ''} onChange={e => set('name', e.target.value)}
               placeholder={isAddon ? '+100 ГБ трафика' : 'Базовый · 1 месяц'}
               className="glass-input" />
+          </div>
+
+          {/* Description */}
+          <div className="col-span-2 space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Описание</label>
+            <textarea value={form.description ?? ''} onChange={e => set('description', e.target.value)}
+              placeholder="Краткое описание тарифа"
+              className="glass-input !min-h-[60px]" rows={2} />
+          </div>
+
+          {/* Countries picker */}
+          <div className="col-span-2 space-y-2">
+            <label className="text-xs" style={{color:'var(--text-tertiary)'}}>Локации (необязательно)</label>
+            <CountryPicker value={countries} onChange={setCountries} />
+          </div>
+
+          {/* Protocol */}
+          <div className="space-y-1">
+            <label className="text-xs" style={{color:'var(--text-tertiary)'}}>Протокол (необязательно)</label>
+            <input value={protocol} onChange={e => setProtocol(e.target.value)}
+              placeholder="VLESS + XTLS Reality"
+              className="glass-input text-sm w-full" />
+          </div>
+
+          {/* Speed */}
+          <div className="space-y-1">
+            <label className="text-xs" style={{color:'var(--text-tertiary)'}}>Скорость (необязательно)</label>
+            <input value={speed} onChange={e => setSpeed(e.target.value)}
+              placeholder="до 1 Гбит/с"
+              className="glass-input text-sm w-full" />
           </div>
 
           {mode === 'simple' && (
@@ -599,6 +633,12 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Рекомендованный</span>
             </label>
           )}
+          <div className="flex items-center gap-2">
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Порядок:</span>
+            <input type="number" value={form.sortOrder ?? 0} onChange={e => set('sortOrder', +e.target.value)}
+                   className="w-16 text-sm text-center rounded-lg py-1"
+                   style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          </div>
         </div>
 
         {/* Actions */}
@@ -870,6 +910,108 @@ export default function AdminTariffsPage() {
           <Plus className="w-5 h-5" /> Создать тариф
         </button>
       )}
+    </div>
+  )
+}
+
+/* ── Country list with flag URLs from flagcdn.com ── */
+const COUNTRIES = [
+  { code: 'ru', name: 'Россия' }, { code: 'us', name: 'США' }, { code: 'gb', name: 'Великобритания' },
+  { code: 'de', name: 'Германия' }, { code: 'nl', name: 'Нидерланды' }, { code: 'fi', name: 'Финляндия' },
+  { code: 'pl', name: 'Польша' }, { code: 'fr', name: 'Франция' }, { code: 'jp', name: 'Япония' },
+  { code: 'sg', name: 'Сингапур' }, { code: 'kr', name: 'Южная Корея' }, { code: 'ca', name: 'Канада' },
+  { code: 'au', name: 'Австралия' }, { code: 'se', name: 'Швеция' }, { code: 'ch', name: 'Швейцария' },
+  { code: 'at', name: 'Австрия' }, { code: 'it', name: 'Италия' }, { code: 'es', name: 'Испания' },
+  { code: 'pt', name: 'Португалия' }, { code: 'br', name: 'Бразилия' }, { code: 'in', name: 'Индия' },
+  { code: 'tr', name: 'Турция' }, { code: 'ae', name: 'ОАЭ' }, { code: 'il', name: 'Израиль' },
+  { code: 'kz', name: 'Казахстан' }, { code: 'ua', name: 'Украина' }, { code: 'by', name: 'Беларусь' },
+  { code: 'cz', name: 'Чехия' }, { code: 'ro', name: 'Румыния' }, { code: 'bg', name: 'Болгария' },
+  { code: 'hu', name: 'Венгрия' }, { code: 'no', name: 'Норвегия' }, { code: 'dk', name: 'Дания' },
+  { code: 'ie', name: 'Ирландия' }, { code: 'hk', name: 'Гонконг' }, { code: 'tw', name: 'Тайвань' },
+  { code: 'th', name: 'Таиланд' }, { code: 'mx', name: 'Мексика' }, { code: 'ar', name: 'Аргентина' },
+  { code: 'za', name: 'ЮАР' }, { code: 'ee', name: 'Эстония' }, { code: 'lv', name: 'Латвия' },
+  { code: 'lt', name: 'Литва' }, { code: 'md', name: 'Молдова' }, { code: 'ge', name: 'Грузия' },
+  { code: 'al', name: 'Албания' }, { code: 'rs', name: 'Сербия' }, { code: 'lu', name: 'Люксембург' },
+]
+
+function flagUrl(code: string) {
+  return `https://flagcdn.com/24x18/${code}.png`
+}
+
+function parseCountries(str: string): Array<{ code: string; name: string }> {
+  if (!str) return []
+  return str.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+    const found = COUNTRIES.find(c => s.toLowerCase().includes(c.name.toLowerCase()) || s.toLowerCase().includes(c.code))
+    return found || { code: 'xx', name: s }
+  })
+}
+
+function serializeCountries(items: Array<{ code: string; name: string }>): string {
+  return items.map(c => c.name).join(', ')
+}
+
+function CountryPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const selected = parseCountries(value)
+  const selectedCodes = new Set(selected.map(c => c.code))
+
+  const filtered = COUNTRIES.filter(c =>
+    !selectedCodes.has(c.code) &&
+    (c.name.toLowerCase().includes(search.toLowerCase()) || c.code.includes(search.toLowerCase()))
+  )
+
+  const add = (country: typeof COUNTRIES[0]) => {
+    const newList = [...selected, country]
+    onChange(serializeCountries(newList))
+    setSearch('')
+  }
+
+  const remove = (code: string) => {
+    const newList = selected.filter(c => c.code !== code)
+    onChange(serializeCountries(newList))
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Selected countries */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map(c => (
+            <span key={c.code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                  style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+              <img src={flagUrl(c.code)} alt={c.code} className="w-4 h-3 rounded-sm object-cover" />
+              {c.name}
+              <button onClick={() => remove(c.code)} className="ml-0.5 hover:opacity-60" style={{ color: 'var(--text-tertiary)' }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Search input */}
+      <div className="relative">
+        <input value={search}
+               onChange={e => { setSearch(e.target.value); setOpen(true) }}
+               onFocus={() => setOpen(true)}
+               placeholder="Поиск страны..."
+               className="glass-input text-sm w-full" />
+
+        {/* Dropdown */}
+        {open && search.length > 0 && filtered.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-xl z-20"
+               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
+            {filtered.slice(0, 10).map(c => (
+              <button key={c.code} onClick={() => { add(c); setOpen(false) }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all hover:bg-white/[0.03]"
+                      style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                <img src={flagUrl(c.code)} alt={c.code} className="w-5 h-4 rounded-sm object-cover flex-shrink-0" />
+                <span style={{ color: 'var(--text-primary)' }}>{c.name}</span>
+                <span className="text-[10px] ml-auto" style={{ color: 'var(--text-tertiary)' }}>{c.code.toUpperCase()}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

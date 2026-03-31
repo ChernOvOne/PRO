@@ -39,6 +39,9 @@ async function getGeoInfo(ip: string | null): Promise<any> {
 const TariffSchema = z.object({
   name:             z.string(),
   description:      z.string().optional().nullable(),
+  countries:        z.string().optional().nullable(),
+  protocol:         z.string().optional().nullable(),
+  speed:            z.string().optional().nullable(),
   type:             z.enum(['SUBSCRIPTION', 'TRAFFIC_ADDON']).default('SUBSCRIPTION'),
   durationDays:     z.coerce.number().default(0),
   priceRub:         z.coerce.number(),
