@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { prisma } from '../db'
 import { inAppNotifications } from '../services/notification-service'
 
 export async function notificationRoutes(app: FastifyInstance) {
@@ -75,5 +76,40 @@ export async function adminNotificationRoutes(app: FastifyInstance) {
 
     const count = await inAppNotifications.sendToUsers({ ...data, userIds })
     return { ok: true, sent: count }
+  })
+
+  // List all notifications (admin)
+  app.get('/list', admin, async (req) => {
+    const { page = '1', limit = '30' } = req.query as Record<string, string>
+    const skip = (Number(page) - 1) * Number(limit)
+
+    const [notifications, total] = await Promise.all([
+      prisma.notification.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+        select: {
+          id: true, title: true, message: true, type: true,
+          userId: true, isRead: true, createdAt: true, linkUrl: true,
+          user: { select: { telegramName: true, email: true } },
+        },
+      }),
+      prisma.notification.count(),
+    ])
+
+    return { notifications, total }
+  })
+
+  // Delete single notification
+  app.delete('/:id', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    await prisma.notification.delete({ where: { id } })
+    return { ok: true }
+  })
+
+  // Delete all notifications
+  app.delete('/all', admin, async () => {
+    const result = await prisma.notification.deleteMany()
+    return { ok: true, deleted: result.count }
   })
 }
