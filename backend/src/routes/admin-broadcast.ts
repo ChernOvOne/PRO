@@ -93,6 +93,13 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
         audience:     z.enum(['all', 'active', 'inactive', 'expiring', 'with_email', 'with_telegram']),
         tgText:       z.string().optional(),
         tgButtons:    z.array(z.object({ label: z.string(), url: z.string() })).optional(),
+        tgMediaType:    z.enum(['photo', 'video', 'animation', 'document']).optional(),
+        tgMediaUrl:     z.string().optional(),
+        tgParseMode:    z.enum(['Markdown', 'HTML']).default('Markdown'),
+        tgPollQuestion: z.string().optional(),
+        tgPollOptions:  z.array(z.string()).optional(),
+        tgPollAnonymous: z.boolean().default(true),
+        tgPollMultiple:  z.boolean().default(false),
         emailSubject: z.string().optional(),
         emailHtml:    z.string().optional(),
         emailBtnText: z.string().optional(),
@@ -110,6 +117,13 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
         audience:     body.audience,
         tgText:       body.tgText,
         tgButtons:    body.tgButtons ?? undefined,
+        tgMediaType:    body.tgMediaType,
+        tgMediaUrl:     body.tgMediaUrl,
+        tgParseMode:    body.tgParseMode,
+        tgPollQuestion: body.tgPollQuestion,
+        tgPollOptions:  body.tgPollOptions ?? undefined,
+        tgPollAnonymous: body.tgPollAnonymous,
+        tgPollMultiple:  body.tgPollMultiple,
         emailSubject: body.emailSubject,
         emailHtml:    body.emailHtml,
         emailBtnText: body.emailBtnText,
@@ -162,20 +176,67 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
           const sendEmail = broadcast.channel === 'email' || broadcast.channel === 'both'
 
           // Send Telegram
-          if (sendTelegram && user.telegramId && broadcast.tgText) {
+          if (sendTelegram && user.telegramId) {
             try {
-              const opts: any = {}
-
+              // Build inline keyboard
+              let reply_markup: InlineKeyboard | undefined
               if (broadcast.tgButtons && Array.isArray(broadcast.tgButtons)) {
-                const kb = new InlineKeyboard()
+                reply_markup = new InlineKeyboard()
                 for (const btn of broadcast.tgButtons as Array<{ label: string; url: string }>) {
-                  kb.url(btn.label, btn.url).row()
+                  reply_markup.url(btn.label, btn.url).row()
                 }
-                opts.reply_markup = kb
               }
 
-              opts.parse_mode = 'HTML'
-              await bot.api.sendMessage(user.telegramId, broadcast.tgText, opts)
+              const parseMode = (broadcast.tgParseMode as 'Markdown' | 'HTML') || 'Markdown'
+
+              // Send based on content type
+              if (broadcast.tgPollQuestion && broadcast.tgPollOptions) {
+                // Send poll
+                const pollMsg = await bot.api.sendPoll(
+                  user.telegramId,
+                  broadcast.tgPollQuestion,
+                  (broadcast.tgPollOptions as string[]).map(o => ({ text: o })),
+                  {
+                    is_anonymous: broadcast.tgPollAnonymous ?? true,
+                    allows_multiple_answers: broadcast.tgPollMultiple ?? false,
+                  }
+                )
+                // Capture poll_id from first successful send
+                if (!broadcast.tgPollId && pollMsg.poll) {
+                  await prisma.broadcast.update({
+                    where: { id },
+                    data: { tgPollId: pollMsg.poll.id },
+                  }).catch(() => {})
+                  // Update local reference so we don't try again
+                  ;(broadcast as any).tgPollId = pollMsg.poll.id
+                }
+                // Send text after poll if exists
+                if (broadcast.tgText) {
+                  await bot.api.sendMessage(user.telegramId, broadcast.tgText, { parse_mode: parseMode, reply_markup })
+                }
+              } else if (broadcast.tgMediaUrl && broadcast.tgMediaType) {
+                // Send media with caption
+                const caption = broadcast.tgText || undefined
+                const mediaOpts: any = { caption, parse_mode: parseMode, reply_markup }
+
+                switch (broadcast.tgMediaType) {
+                  case 'photo':
+                    await bot.api.sendPhoto(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
+                    break
+                  case 'video':
+                    await bot.api.sendVideo(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
+                    break
+                  case 'animation':
+                    await bot.api.sendAnimation(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
+                    break
+                  case 'document':
+                    await bot.api.sendDocument(user.telegramId, broadcast.tgMediaUrl, mediaOpts)
+                    break
+                }
+              } else if (broadcast.tgText) {
+                // Text only
+                await bot.api.sendMessage(user.telegramId, broadcast.tgText, { parse_mode: parseMode, reply_markup })
+              }
             } catch (err) {
               logger.warn('Broadcast TG send failed', { err, userId: user.id, telegramId: user.telegramId })
               failedCount++
@@ -252,6 +313,36 @@ export async function adminBroadcastRoutes(app: FastifyInstance) {
     })
 
     return { ok: true }
+  })
+
+  // ── GET /:id/poll-results — poll results for a broadcast ────
+  app.get('/:id/poll-results', admin, async (req, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params)
+    const broadcast = await prisma.broadcast.findUnique({ where: { id } })
+    if (!broadcast) return reply.status(404).send({ error: 'Broadcast not found' })
+    if (!broadcast.tgPollOptions) return reply.status(400).send({ error: 'No poll in this broadcast' })
+    if (!broadcast.tgPollId) return reply.status(400).send({ error: 'Poll has not been sent yet' })
+
+    const setting = await prisma.setting.findUnique({
+      where: { key: `poll_results_${broadcast.tgPollId}` },
+    })
+    const answers: Record<string, number[]> = setting ? JSON.parse(setting.value) : {}
+
+    // Aggregate: count votes per option index
+    const options = broadcast.tgPollOptions as string[]
+    const voteCounts = options.map(() => 0)
+    for (const optionIds of Object.values(answers)) {
+      for (const idx of optionIds) {
+        if (idx >= 0 && idx < voteCounts.length) voteCounts[idx]++
+      }
+    }
+
+    return {
+      pollId: broadcast.tgPollId,
+      options,
+      voteCounts,
+      totalVoters: Object.keys(answers).length,
+    }
   })
 
   // ── DELETE /:id — delete broadcast (DRAFT/CANCELLED only) ──
