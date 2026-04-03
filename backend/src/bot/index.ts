@@ -1322,15 +1322,26 @@ bot.on('message:text', async (ctx) => {
     }
 
     if (emailUser && !emailUser.telegramId) {
-      // Link telegram to existing email account
+      // Remove orphan tg-only account FIRST to free the telegramId unique constraint
+      if (currentUser && currentUser.id !== emailUser.id) {
+        try {
+          // Clean up orphan relations before delete
+          await prisma.session.deleteMany({ where: { userId: currentUser.id } })
+          await prisma.botMessage.deleteMany({ where: { userId: currentUser.id } })
+          await prisma.notification.deleteMany({ where: { userId: currentUser.id } })
+          await prisma.notificationRead.deleteMany({ where: { userId: currentUser.id } })
+          await prisma.user.delete({ where: { id: currentUser.id } })
+          logger.info(`Deleted orphan account ${currentUser.id} during email linking`)
+        } catch {
+          // Fallback: just unlink telegramId
+          await prisma.user.update({ where: { id: currentUser.id }, data: { telegramId: null } }).catch(() => {})
+        }
+      }
+      // Now link telegram to existing email account
       await prisma.user.update({
         where: { id: emailUser.id },
         data: { telegramId, telegramName: ctx.from.username || ctx.from.first_name || telegramId },
       })
-      // Delete the orphan tg-only account if it exists and is different
-      if (currentUser && currentUser.id !== emailUser.id) {
-        await prisma.user.delete({ where: { id: currentUser.id } }).catch(() => {})
-      }
       const linked = await syncUserSub(emailUser)
       const hasActive = linked?.remnawaveUuid && linked?.subStatus === 'ACTIVE'
       await ctx.reply(

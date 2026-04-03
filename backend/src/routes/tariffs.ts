@@ -12,7 +12,7 @@ export async function tariffRoutes(app: FastifyInstance) {
   // Public: all active SUBSCRIPTION tariffs
   app.get('/', async () => {
     return prisma.tariff.findMany({
-      where:   { isActive: true, type: 'SUBSCRIPTION' },
+      where:   { isActive: true, type: 'SUBSCRIPTION', isTrial: false },
       orderBy: [{ sortOrder: 'asc' }, { durationDays: 'asc' }],
       select:  PUBLIC_FIELDS,
     })

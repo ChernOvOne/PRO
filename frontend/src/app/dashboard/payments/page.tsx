@@ -33,12 +33,25 @@ export default function PaymentHistoryPage() {
 
   useEffect(() => {
     userApi.payments()
-      .then(d => { setPayments(d); setLoading(false) })
+      .then(d => {
+        // Filter out non-payment entries (trial, bonus redeem, referral redeem)
+        const real = d.filter((p: any) => {
+          if (p.provider === 'MANUAL' && p.amount === 0) {
+            try {
+              const meta = JSON.parse(p.yukassaStatus || '{}')
+              if (['trial', 'bonus_redeem', 'referral_redeem'].includes(meta?._type)) return false
+            } catch {}
+          }
+          return true
+        })
+        setPayments(real)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [])
 
   const totalSpent = payments
-    .filter(p => p.status === 'PAID' && p.currency === 'RUB')
+    .filter(p => p.status === 'PAID' && p.currency === 'RUB' && p.amount > 0)
     .reduce((s, p) => s + p.amount, 0)
 
   return (
@@ -96,7 +109,11 @@ export default function PaymentHistoryPage() {
                       </span>
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                      {PROVIDER_LABEL[p.provider]} ·{' '}
+                      {(() => {
+                        let m: any = null; try { m = JSON.parse((p as any).yukassaStatus || '{}') } catch {}
+                        if (m?._type === 'trial') return 'Тестовый период'
+                        return PROVIDER_LABEL[p.provider] || p.provider
+                      })()} ·{' '}
                       {new Date(p.createdAt).toLocaleDateString('ru', {
                         day: 'numeric', month: 'long', year: 'numeric',
                       })}
@@ -116,6 +133,7 @@ export default function PaymentHistoryPage() {
                         let meta: any = null
                         try { meta = JSON.parse((p as any).yukassaStatus || '{}') } catch {}
 
+                        if (meta?._type === 'trial') return `Тестовый период: ${meta.days || '?'} дн.`
                         if (meta?._type === 'referral_redeem') return `Реф. дни: +${meta.days} дн.`
                         if (meta?._type === 'bonus_redeem') return `Бонус дни: +${meta.days} дн.`
                         if (p.purpose === 'GIFT' && p.amount === 0) return 'Подарок'
