@@ -1402,10 +1402,29 @@ bot.on('message:text', async (ctx) => {
     return
   }
 
-  // No active state — show main menu for any text
+  // No active state — try engine text trigger, then /start trigger, then hardcoded menu
+  try {
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+    if (user) {
+      // Try text trigger first
+      const textBlockId = await findTriggerBlock('text', ctx.message.text)
+      if (textBlockId) {
+        await executeBlock(textBlockId, ctx, user.id, chatId)
+        return
+      }
+      // Fall back to /start trigger (show main menu)
+      const startBlockId = await findTriggerBlock('command', '/start')
+      if (startBlockId) {
+        await executeBlock(startBlockId, ctx, user.id, chatId)
+        return
+      }
+    }
+  } catch { /* fall through to hardcoded */ }
+
+  const staff = await isStaffUser(chatId)
   await ctx.reply(
     msg('bot_welcome', '👋 Добро пожаловать в *HIDEYOU VPN*!\n\nВыберите нужный раздел:'),
-    { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+    { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard(staff) },
   )
 })
 
@@ -1481,6 +1500,198 @@ bot.on('poll_answer', async (ctx) => {
 // ── Bot Constructor: handle block button callbacks ──────────
 import { executeBlock, findTriggerBlock, loadBlockCache, subscribeCacheInvalidation, trackClick } from './engine'
 import { getUserState as getEngineState, clearUserState as clearEngineState } from './state'
+
+// ── Engine: tariff selection ─────────────────────────────────
+bot.callbackQuery(/^engine:tariff:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const tariffId = ctx.match[1]
+  const chatId = String(ctx.from.id)
+
+  try {
+    const tariff = await prisma.tariff.findUnique({ where: { id: tariffId } })
+    if (!tariff) { await ctx.editMessageText('❌ Тариф не найден'); return }
+
+    const text = `💳 *${tariff.name}*\n\n` +
+      `💰 Цена: ${tariff.priceRub} ₽${tariff.priceUsdt ? ` / ${tariff.priceUsdt} USDT` : ''}\n` +
+      `📅 Срок: ${tariff.durationDays} дней\n` +
+      `${tariff.trafficGb ? `📶 Трафик: ${tariff.trafficGb} ГБ\n` : '📶 Трафик: Безлимит\n'}` +
+      `📱 Устройства: ${tariff.deviceLimit}\n\n` +
+      `Выберите способ оплаты:`
+
+    const payButtons: any[][] = []
+
+    // YuKassa
+    if (config.yukassa.enabled) {
+      payButtons.push([{
+        text: '💳 Банковская карта',
+        callback_data: `engine:pay:YUKASSA:${tariffId}`,
+        style: 'success',
+      }])
+    }
+
+    // CryptoPay
+    if (config.cryptopay.enabled) {
+      payButtons.push([{
+        text: '🪙 Криптовалюта',
+        callback_data: `engine:pay:CRYPTOPAY:${tariffId}`,
+      }])
+    }
+
+    // Balance
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { balance: true } })
+    if (user && Number(user.balance) >= tariff.priceRub) {
+      payButtons.push([{
+        text: `💰 С баланса (${user.balance} ₽)`,
+        callback_data: `engine:pay:BALANCE:${tariffId}`,
+      }])
+    }
+
+    payButtons.push([{ text: '◀️ Назад к тарифам', callback_data: `engine:back:tariffs` }])
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: payButtons },
+    })
+  } catch (err) {
+    logger.warn('Tariff selection error:', err)
+  }
+})
+
+// ── Engine: payment creation ────────────────────────────────
+bot.callbackQuery(/^engine:pay:(\w+):(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const provider = ctx.match[1] as 'YUKASSA' | 'CRYPTOPAY' | 'BALANCE'
+  const tariffId = ctx.match[2]
+  const chatId = String(ctx.from.id)
+
+  try {
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId } })
+    if (!user) { await ctx.editMessageText('❌ Пользователь не найден'); return }
+
+    const tariff = await prisma.tariff.findUnique({ where: { id: tariffId } })
+    if (!tariff) { await ctx.editMessageText('❌ Тариф не найден'); return }
+
+    if (provider === 'BALANCE') {
+      // Pay from balance directly
+      try {
+        const { balanceService } = await import('../services/balance')
+        await balanceService.debit({
+          userId: user.id,
+          amount: tariff.priceRub,
+          type: 'PURCHASE',
+          description: `Оплата тарифа: ${tariff.name}`,
+        })
+        // Create payment record
+        const payment = await prisma.payment.create({
+          data: {
+            userId: user.id,
+            tariffId: tariff.id,
+            provider: 'BALANCE',
+            amount: tariff.priceRub,
+            currency: 'RUB',
+            status: 'PAID',
+            purpose: 'SUBSCRIPTION',
+            confirmedAt: new Date(),
+          },
+        })
+        // Confirm payment (activates subscription)
+        await paymentService.confirmPayment(payment.id)
+        await ctx.editMessageText(
+          `✅ *Оплата прошла!*\n\nТариф: ${tariff.name}\nСпособ: Баланс\n\nПодписка активирована!`,
+          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
+        )
+      } catch (err: any) {
+        await ctx.editMessageText('❌ ' + (err.message || 'Ошибка оплаты'))
+      }
+      return
+    }
+
+    // YuKassa or CryptoPay — create payment order
+    const result = await paymentService.createOrder({
+      user: user as any,
+      tariff: tariff as any,
+      provider,
+    })
+
+    if (result.paymentUrl) {
+      await ctx.editMessageText(
+        `💳 *Оплата тарифа "${tariff.name}"*\n\n` +
+        `Сумма: ${tariff.priceRub} ₽\n\n` +
+        `Нажмите кнопку ниже для оплаты:`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '💳 Перейти к оплате', url: result.paymentUrl }],
+              [{ text: '✅ Я оплатил', callback_data: `engine:verify:${result.orderId}` }],
+              [{ text: '◀️ Отмена', callback_data: `engine:back:tariffs` }],
+            ],
+          },
+        }
+      )
+    }
+  } catch (err) {
+    logger.warn('Payment creation error:', err)
+    await ctx.editMessageText('❌ Ошибка создания платежа. Попробуйте позже.').catch(() => {})
+  }
+})
+
+// ── Engine: verify payment ──────────────────────────────────
+bot.callbackQuery(/^engine:verify:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const orderId = ctx.match[1]
+
+  try {
+    const payment = await prisma.payment.findUnique({ where: { id: orderId } })
+    if (!payment) { await ctx.editMessageText('❌ Платёж не найден'); return }
+
+    if (payment.status === 'PAID') {
+      await ctx.editMessageText(
+        '✅ *Оплата подтверждена!*\n\nПодписка активирована.',
+        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
+      )
+      return
+    }
+
+    // Check with provider
+    if (payment.provider === 'YUKASSA' && payment.yukassaPaymentId) {
+      const yp = await paymentService.yukassa.getPayment(payment.yukassaPaymentId)
+      if (yp.paid || yp.status === 'succeeded') {
+        await paymentService.confirmPayment(orderId)
+        await ctx.editMessageText(
+          '✅ *Оплата подтверждена!*\n\nПодписка активирована.',
+          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
+        )
+        return
+      }
+    }
+
+    await ctx.answerCallbackQuery({ text: '⏳ Платёж ещё не получен. Подождите немного.', show_alert: true })
+  } catch (err) {
+    logger.warn('Payment verify error:', err)
+    await ctx.answerCallbackQuery({ text: '❌ Ошибка проверки', show_alert: true })
+  }
+})
+
+// ── Engine: back navigation ─────────────────────────────────
+bot.callbackQuery(/^engine:back:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const target = ctx.match[1]
+  const chatId = String(ctx.from.id)
+  const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+  if (!user) return
+
+  try {
+    if (target === 'start') {
+      const blockId = await findTriggerBlock('command', '/start')
+      if (blockId) await executeBlock(blockId, ctx, user.id, chatId)
+    } else if (target === 'tariffs') {
+      // Find tariff block by name
+      const tariffBlock = await prisma.botBlock.findFirst({ where: { name: { contains: 'Тариф' }, type: 'MESSAGE', isDraft: false } })
+      if (tariffBlock) await executeBlock(tariffBlock.id, ctx, user.id, chatId)
+    }
+  } catch { /* ignore */ }
+})
 
 bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery()

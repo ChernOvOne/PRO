@@ -407,8 +407,22 @@ export default function BotConstructorPage() {
     setEditDirty(true)
   }
 
-  const saveBlock = async () => {
+  // Auto-save + auto-publish with debounce
+  const autoSaveTimer = useRef<any>(null)
+  const [autoSaving, setAutoSaving] = useState(false)
+
+  useEffect(() => {
+    if (!editDirty || !selectedBlockId) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => {
+      autoSaveAndPublish()
+    }, 1200)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [editForm, editDirty, selectedBlockId, conditionRows])
+
+  const autoSaveAndPublish = async () => {
     if (!selectedBlockId || !editDirty) return
+    setAutoSaving(true)
     try {
       const payload = { ...editForm }
       delete payload.id
@@ -420,7 +434,27 @@ export default function BotConstructorPage() {
         payload.conditionValue = conditionRows[0]?.value
       }
       await adminApi.updateBotBlock(selectedBlockId, payload)
-      toast.success('Блок сохранён')
+      await adminApi.publishBotBlock(selectedBlockId)
+      setEditDirty(false)
+    } catch { /* silent auto-save */ }
+    setAutoSaving(false)
+  }
+
+  const saveBlock = async () => {
+    if (!selectedBlockId) return
+    try {
+      const payload = { ...editForm }
+      delete payload.id
+      delete payload.buttons
+      delete payload.triggers
+      if (conditionRows.length > 0 && editForm.type === 'CONDITION') {
+        payload.conditions = conditionRows
+        payload.conditionType = conditionRows[0]?.type
+        payload.conditionValue = conditionRows[0]?.value
+      }
+      await adminApi.updateBotBlock(selectedBlockId, payload)
+      await adminApi.publishBotBlock(selectedBlockId)
+      toast.success('Сохранено и опубликовано')
       setEditDirty(false)
       fetchData()
     } catch (e: any) {
@@ -432,7 +466,7 @@ export default function BotConstructorPage() {
     if (!selectedBlockId) return
     try {
       await adminApi.publishBotBlock(selectedBlockId)
-      toast.success('Блок опубликован')
+      toast.success('Опубликовано')
       fetchData()
     } catch (e: any) {
       toast.error('Ошибка: ' + (e.message || ''))
@@ -1453,15 +1487,23 @@ export default function BotConstructorPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={saveBlock} disabled={!editDirty}
-                          className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1 transition-colors disabled:opacity-40"
-                          style={{ background: editDirty ? '#8b5cf6' : 'var(--surface-2)', color: editDirty ? '#fff' : 'var(--text-tertiary)' }}>
-                    <Save className="w-3 h-3" /> Сохранить
-                  </button>
-                  <button onClick={publishBlock}
+                  {autoSaving ? (
+                    <span className="text-[10px] flex items-center gap-1 px-2 py-1.5" style={{ color: '#f59e0b' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" /> Сохранение...
+                    </span>
+                  ) : editDirty ? (
+                    <span className="text-[10px] flex items-center gap-1 px-2 py-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" /> Не сохранено
+                    </span>
+                  ) : (
+                    <span className="text-[10px] flex items-center gap-1 px-2 py-1.5" style={{ color: '#22c55e' }}>
+                      <Check className="w-3 h-3" /> Авто
+                    </span>
+                  )}
+                  <button onClick={saveBlock}
                           className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1"
-                          style={{ background: '#22c55e22', color: '#22c55e' }}>
-                    <Check className="w-3 h-3" /> Опубликовать
+                          style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                    <Save className="w-3 h-3" /> Сохранить
                   </button>
                   <button onClick={() => setRightPanelOpen(false)}
                           className="p-1.5 rounded-lg hover:bg-white/5"
