@@ -436,4 +436,41 @@ export const adminApi = {
     apiFetch<any>('/admin/webhook-keys', { method: 'POST', body: JSON.stringify(data) }),
   deleteBuhWebhookKey: (id: string) =>
     apiFetch<void>(`/admin/webhook-keys/${id}`, { method: 'DELETE' }),
+
+  // ── Bot Constructor ─────────────────────────────────────
+  botBlockGroups: () => apiFetch<any[]>('/admin/bot-blocks/groups'),
+  botBlocks: (params: { groupId?: string; type?: string; search?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
+    return apiFetch<{ blocks: any[]; total: number }>(`/admin/bot-blocks/blocks?${q}`)
+  },
+  botBlockById: (id: string) => apiFetch<any>(`/admin/bot-blocks/blocks/${id}`),
+  botBlocksList: () => apiFetch<any[]>('/admin/bot-blocks/blocks-list'),
+  createBotBlock: (data: any) =>
+    apiFetch<any>('/admin/bot-blocks/blocks', { method: 'POST', body: JSON.stringify(data) }),
+  updateBotBlock: (id: string, data: any) =>
+    apiFetch<any>(`/admin/bot-blocks/blocks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  publishBotBlock: (id: string) =>
+    apiFetch<any>(`/admin/bot-blocks/blocks/${id}/publish`, { method: 'PUT' }),
+  deleteBotBlock: (id: string) =>
+    apiFetch<void>(`/admin/bot-blocks/blocks/${id}`, { method: 'DELETE' }),
+  createBotGroup: (data: any) =>
+    apiFetch<any>('/admin/bot-blocks/groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateBotGroup: (id: string, data: any) =>
+    apiFetch<any>(`/admin/bot-blocks/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBotGroup: (id: string) =>
+    apiFetch<void>(`/admin/bot-blocks/groups/${id}`, { method: 'DELETE' }),
+  createBotButton: (blockId: string, data: any) =>
+    apiFetch<any>(`/admin/bot-blocks/blocks/${blockId}/buttons`, { method: 'POST', body: JSON.stringify(data) }),
+  updateBotButton: (id: string, data: any) =>
+    apiFetch<any>(`/admin/bot-blocks/buttons/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBotButton: (id: string) =>
+    apiFetch<void>(`/admin/bot-blocks/buttons/${id}`, { method: 'DELETE' }),
+  botTriggers: () => apiFetch<any[]>('/admin/bot-blocks/triggers'),
+  createBotTrigger: (data: any) =>
+    apiFetch<any>('/admin/bot-blocks/triggers', { method: 'POST', body: JSON.stringify(data) }),
+  updateBotTrigger: (id: string, data: any) =>
+    apiFetch<any>(`/admin/bot-blocks/triggers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBotTrigger: (id: string) =>
+    apiFetch<void>(`/admin/bot-blocks/triggers/${id}`, { method: 'DELETE' }),
+  botBlockStats: () => apiFetch<any>('/admin/bot-blocks/stats'),
 }

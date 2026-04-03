@@ -1186,7 +1186,44 @@ bot.on('message:text', async (ctx) => {
   const chatId = String(ctx.from.id)
   const state = await redis.get(`bot:state:${chatId}`)
 
-  // Check admin commands first (buhgalteria)
+  // Check bot constructor engine input state first
+  const engineState = await getEngineState(chatId)
+  if (engineState?.waitingInput) {
+    const text = ctx.message.text.trim()
+    const validation = engineState.inputValidation
+    // Validate input
+    if (validation === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+      await ctx.reply('❌ Введите корректный email.')
+      return
+    }
+    if (validation === 'phone' && !/^\+?\d{7,15}$/.test(text.replace(/[\s()-]/g, ''))) {
+      await ctx.reply('❌ Введите корректный номер телефона.')
+      return
+    }
+    if (validation === 'number' && isNaN(Number(text))) {
+      await ctx.reply('❌ Введите число.')
+      return
+    }
+    // Save variable
+    if (engineState.inputVar) {
+      const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+      if (user) {
+        await prisma.userVariable.upsert({
+          where: { userId_key: { userId: user.id, key: engineState.inputVar } },
+          create: { userId: user.id, key: engineState.inputVar, value: text },
+          update: { value: text },
+        })
+        await clearEngineState(chatId)
+        // Execute next block if configured
+        if (engineState.nextBlockId) {
+          await executeBlock(engineState.nextBlockId, ctx, user.id, chatId)
+        }
+      }
+    }
+    return
+  }
+
+  // Check admin commands (buhgalteria)
   if (state?.startsWith('awaiting_income') || state?.startsWith('awaiting_expense')) {
     const handled = await handleAdminTextInput(ctx)
     if (handled) return
@@ -1397,6 +1434,32 @@ bot.on('poll_answer', async (ctx) => {
   }
 })
 
+// ── Bot Constructor: handle block button callbacks ──────────
+import { executeBlock, findTriggerBlock, loadBlockCache, trackClick } from './engine'
+import { getUserState as getEngineState, clearUserState as clearEngineState } from './state'
+
+bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery()
+  const buttonId = ctx.match[1]
+  const chatId = String(ctx.from.id)
+
+  try {
+    // Track button click
+    trackClick(buttonId).catch(() => {})
+
+    // Find button and execute its next block
+    const button = await prisma.botButton.findUnique({ where: { id: buttonId } })
+    if (button?.nextBlockId) {
+      const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+      if (user) {
+        await executeBlock(button.nextBlockId, ctx, user.id, chatId)
+      }
+    }
+  } catch (err) {
+    logger.warn('Bot constructor callback error:', err)
+  }
+})
+
 // ── Catch-all for unknown callbacks ──────────────────────────
 bot.on('callback_query:data', async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Неизвестное действие' })
@@ -1482,6 +1545,9 @@ export async function startBot() {
 
   // Load bot messages from Settings table
   await loadBotSettings()
+
+  // Load bot constructor block cache
+  await loadBlockCache().catch(err => logger.warn('Failed to load block cache:', err))
 
   // Setup daily financial report cron
   setupDailyReportCron()

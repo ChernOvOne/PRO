@@ -19,6 +19,7 @@ import { adminReportsExportRoutes } from './admin-reports-export'
 import { uploadRoutes }           from './upload'
 import { adminPromoRoutes, userPromoRoutes } from './promo'
 import { adminBotRoutes }     from './admin-bot'
+import { adminBotBlockRoutes } from './admin-bot-blocks'
 import { adminBroadcastRoutes } from './admin-broadcast'
 import { adminFunnelRoutes }    from './admin-funnels'
 import { adminPartnerRoutes }       from './admin-partners'
@@ -79,6 +80,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminLandingRoutes,       { prefix: '/api/admin/landing'       })
   await app.register(adminPromoRoutes,         { prefix: '/api/admin/promos'        })
   await app.register(adminBotRoutes,            { prefix: '/api/admin/bot'           })
+  await app.register(adminBotBlockRoutes,      { prefix: '/api/admin/bot-blocks'    })
   await app.register(adminBroadcastRoutes,     { prefix: '/api/admin/broadcast'     })
   await app.register(adminFunnelRoutes,        { prefix: '/api/admin/communications'})
   await app.register(adminPartnerRoutes,       { prefix: '/api/admin/partners'      })
