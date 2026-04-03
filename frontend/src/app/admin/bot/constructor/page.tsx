@@ -61,7 +61,7 @@ interface BotBlock {
   mediaUrl?: string | null
   mediaType?: string | null
   pinMessage?: boolean
-  deletePrevious?: string | null
+  deletePrev?: string | null
   messageEffectId?: string | null
   nextBlockId?: string | null
   nextBlockTrue?: string | null
@@ -94,7 +94,9 @@ type BlockType =
 
 interface DraggingConnection {
   sourceId: string
-  sourcePort: 'next' | 'true' | 'false'
+  sourcePort: 'next' | 'true' | 'false' | 'button'
+  buttonId?: string
+  buttonIndex?: number
   mouseX: number
   mouseY: number
 }
@@ -227,8 +229,20 @@ const EMOJI_CATEGORIES: Record<string, string[]> = {
   'Символы': ['❤','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣','💕','💞','💓','💗','💖','💘','💝','💟','☮','✝','☪','🕉','☸','✡','🔯','🕎','☯','☦','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','✅','❌','⭕','❗','❓','💯','🔥','⭐','🌟','✨','💫','💥','💢','💤'],
 }
 
-const NODE_W = 180
-const NODE_H = 60
+const NODE_W = 200
+const NODE_HEADER_H = 44
+const NODE_TYPE_LABEL_H = 16
+const NODE_BTN_ROW_H = 24
+const NODE_BOTTOM_PAD = 8
+
+const getNodeHeight = (block: { type: string; buttons?: any[] }) => {
+  const btnCount = block.buttons?.length ?? 0
+  const hasButtons = block.type === 'MESSAGE' || block.type === 'MEDIA_GROUP' || block.type === 'STREAMING'
+  if (hasButtons && btnCount > 0) {
+    return NODE_HEADER_H + NODE_TYPE_LABEL_H + btnCount * NODE_BTN_ROW_H + NODE_BOTTOM_PAD
+  }
+  return NODE_HEADER_H + NODE_TYPE_LABEL_H + NODE_BOTTOM_PAD
+}
 
 /* ================================================================
    Component
@@ -249,7 +263,24 @@ export default function BotConstructorPage() {
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [emojiCategory, setEmojiCategory] = useState('Смайлики')
   const [variableDropdownOpen, setVariableDropdownOpen] = useState(false)
+  const [premiumEmojiOpen, setPremiumEmojiOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+
+  // Saved premium emoji (localStorage)
+  const [savedEmojis, setSavedEmojis] = useState<Array<{ id: string; fallback: string; name: string }>>(() => {
+    if (typeof window === 'undefined') return []
+    try { return JSON.parse(localStorage.getItem('bot_premium_emojis') || '[]') } catch { return [] }
+  })
+  const savePremiumEmoji = (id: string, fallback: string, name: string) => {
+    const updated = [{ id, fallback, name }, ...savedEmojis.filter(e => e.id !== id)].slice(0, 30)
+    setSavedEmojis(updated)
+    localStorage.setItem('bot_premium_emojis', JSON.stringify(updated))
+  }
+  const removeSavedEmoji = (id: string) => {
+    const updated = savedEmojis.filter(e => e.id !== id)
+    setSavedEmojis(updated)
+    localStorage.setItem('bot_premium_emojis', JSON.stringify(updated))
+  }
 
   /* ── Canvas state ───────────────────────────────────────── */
   const [zoom, setZoom] = useState(1)
@@ -263,6 +294,7 @@ export default function BotConstructorPage() {
   /* ── Connection dragging state ──────────────────────────── */
   const [draggingConnection, setDraggingConnection] = useState<DraggingConnection | null>(null)
   const [hoveredInputPort, setHoveredInputPort] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
 
   /* ── Editor form state ──────────────────────────────────── */
   const [editForm, setEditForm] = useState<Partial<BotBlock>>({})
@@ -280,6 +312,7 @@ export default function BotConstructorPage() {
   const [triggerForm, setTriggerForm] = useState({ type: 'command' as string, value: '', priority: 0 })
 
   /* ── Button form ────────────────────────────────────────── */
+  const [editingButtonId, setEditingButtonId] = useState<string | null>(null)
   const [showButtonForm, setShowButtonForm] = useState(false)
   const [buttonForm, setButtonForm] = useState({
     label: '', type: 'block' as string, nextBlockId: '' as string,
@@ -345,13 +378,22 @@ export default function BotConstructorPage() {
   }, [filteredBlocks])
 
   /* ── Select block ────────────────────────────────────────── */
-  const selectBlock = useCallback((block: BotBlock | null) => {
+  const selectBlock = useCallback(async (block: BotBlock | null) => {
     if (block) {
       setSelectedBlockId(block.id)
       setEditForm({ ...block })
       setEditDirty(false)
       setRightPanelOpen(true)
       setConditionRows(block.conditions || (block.conditionType ? [{ type: block.conditionType, value: block.conditionValue || '' }] : []))
+
+      // Fetch full block detail (with buttons & triggers) from API
+      try {
+        const full = await adminApi.botBlockById(block.id) as BotBlock
+        setBlocks(prev => prev.map(b => b.id === full.id ? { ...b, buttons: full.buttons, triggers: full.triggers } : b))
+        setEditForm(prev => ({ ...prev, buttons: full.buttons, triggers: full.triggers }))
+      } catch {
+        // If detail fetch fails, keep what we have from list
+      }
     } else {
       setSelectedBlockId(null)
       setEditForm({})
@@ -463,6 +505,7 @@ export default function BotConstructorPage() {
     try {
       await adminApi.createBotButton(selectedBlockId, {
         ...buttonForm,
+        iconCustomEmojiId: buttonForm.iconEmojiId || null,
         nextBlockId: buttonForm.type === 'block' ? buttonForm.nextBlockId || null : null,
         url: buttonForm.type === 'url' || buttonForm.type === 'webapp' ? buttonForm.url : null,
         copyText: buttonForm.type === 'copy_text' ? buttonForm.copyText : null,
@@ -564,15 +607,19 @@ export default function BotConstructorPage() {
       }
     }
     if (draggingConnection && hoveredInputPort) {
-      const { sourceId, sourcePort } = draggingConnection
+      const { sourceId, sourcePort, buttonId } = draggingConnection
       const targetId = hoveredInputPort
       if (sourceId !== targetId) {
         try {
-          const updatePayload: Record<string, string | null> = {}
-          if (sourcePort === 'next') updatePayload.nextBlockId = targetId
-          else if (sourcePort === 'true') updatePayload.nextBlockTrue = targetId
-          else if (sourcePort === 'false') updatePayload.nextBlockFalse = targetId
-          await adminApi.updateBotBlock(sourceId, updatePayload)
+          if (sourcePort === 'button' && buttonId) {
+            await adminApi.updateBotButton(buttonId, { nextBlockId: targetId })
+          } else {
+            const updatePayload: Record<string, string | null> = {}
+            if (sourcePort === 'next') updatePayload.nextBlockId = targetId
+            else if (sourcePort === 'true') updatePayload.nextBlockTrue = targetId
+            else if (sourcePort === 'false') updatePayload.nextBlockFalse = targetId
+            await adminApi.updateBotBlock(sourceId, updatePayload)
+          }
           toast.success('Связь создана')
           fetchData()
         } catch (e: any) {
@@ -593,7 +640,7 @@ export default function BotConstructorPage() {
   }
 
   /* ── Output port drag start ─────────────────────────────── */
-  const handleOutputPortMouseDown = (e: React.MouseEvent, blockId: string, port: 'next' | 'true' | 'false') => {
+  const handleOutputPortMouseDown = (e: React.MouseEvent, blockId: string, port: 'next' | 'true' | 'false' | 'button', buttonId?: string, buttonIndex?: number) => {
     e.stopPropagation()
     e.preventDefault()
     const canvas = canvasRef.current
@@ -602,6 +649,8 @@ export default function BotConstructorPage() {
       setDraggingConnection({
         sourceId: blockId,
         sourcePort: port,
+        buttonId,
+        buttonIndex,
         mouseX: e.clientX - rect.left,
         mouseY: e.clientY - rect.top,
       })
@@ -620,8 +669,14 @@ export default function BotConstructorPage() {
   }
 
   /* ── Delete a connection ────────────────────────────────── */
-  const deleteConnection = async (sourceId: string, type: 'next' | 'true' | 'false' | 'button') => {
+  const deleteConnection = async (sourceId: string, type: 'next' | 'true' | 'false' | 'button', buttonId?: string) => {
     try {
+      if (type === 'button' && buttonId) {
+        await adminApi.updateBotButton(buttonId, { nextBlockId: null })
+        toast.success('Связь кнопки удалена')
+        fetchData()
+        return
+      }
       const updatePayload: Record<string, null> = {}
       if (type === 'next') updatePayload.nextBlockId = null
       else if (type === 'true') updatePayload.nextBlockTrue = null
@@ -713,7 +768,7 @@ export default function BotConstructorPage() {
 
   /* ── Connection lines calculation (memoized) ────────────── */
   const getConnections = useMemo(() => {
-    const conns: { from: string; to: string; type: 'next' | 'true' | 'false' | 'button' }[] = []
+    const conns: { from: string; to: string; type: 'next' | 'true' | 'false' | 'button'; buttonId?: string; buttonIndex?: number; isSelectedBlock?: boolean }[] = []
     blocks.forEach(b => {
       if (b.nextBlockId && blockMap.has(b.nextBlockId))
         conns.push({ from: b.id, to: b.nextBlockId, type: 'next' })
@@ -721,13 +776,14 @@ export default function BotConstructorPage() {
         conns.push({ from: b.id, to: b.nextBlockTrue, type: 'true' })
       if (b.nextBlockFalse && blockMap.has(b.nextBlockFalse))
         conns.push({ from: b.id, to: b.nextBlockFalse, type: 'false' })
-      b.buttons?.forEach(btn => {
+      // Show button connections for ALL blocks
+      b.buttons?.forEach((btn, idx) => {
         if (btn.nextBlockId && blockMap.has(btn.nextBlockId))
-          conns.push({ from: b.id, to: btn.nextBlockId, type: 'button' })
+          conns.push({ from: b.id, to: btn.nextBlockId, type: 'button', buttonId: btn.id, buttonIndex: idx, isSelectedBlock: selectedBlockId === b.id })
       })
     })
     return conns
-  }, [blocks, blockMap])
+  }, [blocks, blockMap, selectedBlockId])
 
   /* ── Connection line label helper ───────────────────────── */
   const connectionLabel = (type: 'next' | 'true' | 'false' | 'button') => {
@@ -785,12 +841,19 @@ export default function BotConstructorPage() {
 
   const getOutputPortPos = (block: BotBlock, port: 'next' | 'true' | 'false') => {
     const baseX = block.posX * zoom + panX
-    const baseY = block.posY * zoom + panY + NODE_H * zoom
+    const nodeH = getNodeHeight(block)
+    const baseY = block.posY * zoom + panY + nodeH * zoom
     if (block.type === 'CONDITION') {
       if (port === 'true') return { x: baseX + (NODE_W * zoom) * 0.33, y: baseY }
       if (port === 'false') return { x: baseX + (NODE_W * zoom) * 0.67, y: baseY }
     }
     return { x: baseX + (NODE_W * zoom) / 2, y: baseY }
+  }
+
+  const getButtonPortPos = (block: BotBlock, buttonIndex: number) => {
+    const baseX = block.posX * zoom + panX + NODE_W * zoom
+    const baseY = block.posY * zoom + panY + (NODE_HEADER_H + NODE_TYPE_LABEL_H + buttonIndex * NODE_BTN_ROW_H + NODE_BTN_ROW_H / 2) * zoom
+    return { x: baseX, y: baseY }
   }
 
   /* ================================================================
@@ -1009,6 +1072,25 @@ export default function BotConstructorPage() {
               <rect width="100%" height="100%" fill="url(#grid)" />
             </svg>
 
+            {/* Подсказка для пустого canvas */}
+            {blocks.length === 0 && !loading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center space-y-2" style={{ color: 'var(--text-tertiary)' }}>
+                  <Workflow className="w-12 h-12 mx-auto" style={{ opacity: 0.3 }} />
+                  <p className="text-sm font-medium">Конструктор пуст</p>
+                  <p className="text-xs">Создайте группу и добавьте блоки через панель слева</p>
+                </div>
+              </div>
+            )}
+
+            {/* Мини-подсказка внизу */}
+            {blocks.length > 0 && !draggingConnection && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 text-[10px] px-3 py-1 rounded-full"
+                   style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
+                Потяните от цветного порта ● к другому блоку для создания связи
+              </div>
+            )}
+
             {/* SVG Линии связей */}
             <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 1, pointerEvents: 'none' }}>
               {getConnections.map((conn, i) => {
@@ -1016,45 +1098,73 @@ export default function BotConstructorPage() {
                 const toBlock = blockMap.get(conn.to)
                 if (!fromBlock || !toBlock) return null
 
-                const sourcePort = conn.type === 'button' ? 'next' : conn.type
-                const from = getOutputPortPos(fromBlock, sourcePort as 'next' | 'true' | 'false')
+                let from: { x: number; y: number }
+                if (conn.type === 'button' && conn.buttonIndex !== undefined) {
+                  from = getButtonPortPos(fromBlock, conn.buttonIndex)
+                } else {
+                  const sourcePort = conn.type === 'button' ? 'next' : conn.type
+                  from = getOutputPortPos(fromBlock, sourcePort as 'next' | 'true' | 'false')
+                }
                 const to = getInputPortPos(toBlock)
 
                 const x1 = from.x
                 const y1 = from.y
                 const x2 = to.x
                 const y2 = to.y
-                const midY = (y1 + y2) / 2
+
+                // Highlight connections for hovered or selected node
+                const isHighlighted = hoveredNodeId === conn.from || hoveredNodeId === conn.to ||
+                  selectedBlockId === conn.from || selectedBlockId === conn.to
 
                 let strokeColor = '#6b7280'
                 let dashArray = ''
+                let lineOpacity = isHighlighted ? 0.9 : 0.3
+                let lineWidth = isHighlighted ? 2 : 1.5
                 if (conn.type === 'true') { strokeColor = '#22c55e'; dashArray = '6,3' }
                 else if (conn.type === 'false') { strokeColor = '#ef4444'; dashArray = '6,3' }
-                else if (conn.type === 'button') { strokeColor = '#8b5cf6'; dashArray = '4,2' }
+                else if (conn.type === 'button') {
+                  strokeColor = '#8b5cf6'; dashArray = '4,2'
+                  lineWidth = isHighlighted ? 1.5 : 1
+                  lineOpacity = isHighlighted ? 0.7 : 0.15
+                }
+
+                // For button connections from right side, use horizontal-first bezier
+                let pathD: string
+                if (conn.type === 'button') {
+                  const dx = x2 - x1
+                  const cpOffset = Math.max(Math.abs(dx) * 0.5, 40)
+                  pathD = `M ${x1} ${y1} C ${x1 + cpOffset} ${y1} ${x2 - cpOffset} ${y2} ${x2} ${y2}`
+                } else {
+                  const midY = (y1 + y2) / 2
+                  pathD = `M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`
+                }
 
                 const midX = (x1 + x2) / 2
+                const midY = (y1 + y2) / 2
                 const labelY = midY - 8
 
                 return (
                   <g key={`${conn.from}-${conn.to}-${conn.type}-${i}`}>
                     <path
-                      d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
+                      d={pathD}
                       fill="none"
                       stroke={strokeColor}
-                      strokeWidth={1.5}
+                      strokeWidth={lineWidth}
                       strokeDasharray={dashArray}
-                      opacity={0.6}
+                      opacity={lineOpacity}
                     />
                     {/* Невидимая толстая линия для клика */}
                     <path
-                      d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
+                      d={pathD}
                       fill="none"
                       stroke="transparent"
                       strokeWidth={12}
                       style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (conn.type !== 'button') {
+                        if (conn.type === 'button') {
+                          deleteConnection(conn.from, conn.type, conn.buttonId)
+                        } else {
                           deleteConnection(conn.from, conn.type)
                         }
                       }}
@@ -1063,12 +1173,12 @@ export default function BotConstructorPage() {
                     <polygon
                       points={`${x2 - 4},${y2 - 8} ${x2 + 4},${y2 - 8} ${x2},${y2}`}
                       fill={strokeColor}
-                      opacity={0.6}
+                      opacity={lineOpacity}
                     />
-                    {/* Кнопка удаления на линии */}
-                    {conn.type !== 'button' && (
+                    {/* Кнопка удаления на линии (for non-button or selected block's button connections) */}
+                    {(conn.type !== 'button' || conn.isSelectedBlock) && (
                       <g style={{ pointerEvents: 'all', cursor: 'pointer' }}
-                         onClick={(e) => { e.stopPropagation(); deleteConnection(conn.from, conn.type) }}>
+                         onClick={(e) => { e.stopPropagation(); deleteConnection(conn.from, conn.type, conn.buttonId) }}>
                         <circle cx={midX} cy={labelY} r={8} fill="rgba(0,0,0,0.6)" stroke={strokeColor} strokeWidth={1} />
                         <line x1={midX - 3} y1={labelY - 3} x2={midX + 3} y2={labelY + 3} stroke="#fff" strokeWidth={1.5} />
                         <line x1={midX + 3} y1={labelY - 3} x2={midX - 3} y2={labelY + 3} stroke="#fff" strokeWidth={1.5} />
@@ -1088,20 +1198,34 @@ export default function BotConstructorPage() {
               {draggingConnection && (() => {
                 const sourceBlock = blockMap.get(draggingConnection.sourceId)
                 if (!sourceBlock) return null
-                const from = getOutputPortPos(sourceBlock, draggingConnection.sourcePort)
+                let from: { x: number; y: number }
+                if (draggingConnection.sourcePort === 'button' && draggingConnection.buttonIndex !== undefined) {
+                  from = getButtonPortPos(sourceBlock, draggingConnection.buttonIndex)
+                } else {
+                  from = getOutputPortPos(sourceBlock, draggingConnection.sourcePort as 'next' | 'true' | 'false')
+                }
                 const x1 = from.x
                 const y1 = from.y
                 const x2 = draggingConnection.mouseX
                 const y2 = draggingConnection.mouseY
-                const midY = (y1 + y2) / 2
 
                 let strokeColor = '#8b5cf6'
                 if (draggingConnection.sourcePort === 'true') strokeColor = '#22c55e'
                 else if (draggingConnection.sourcePort === 'false') strokeColor = '#ef4444'
 
+                let pathD: string
+                if (draggingConnection.sourcePort === 'button') {
+                  const dx = x2 - x1
+                  const cpOffset = Math.max(Math.abs(dx) * 0.5, 40)
+                  pathD = `M ${x1} ${y1} C ${x1 + cpOffset} ${y1} ${x2 - cpOffset} ${y2} ${x2} ${y2}`
+                } else {
+                  const midY = (y1 + y2) / 2
+                  pathD = `M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`
+                }
+
                 return (
                   <path
-                    d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
+                    d={pathD}
                     fill="none"
                     stroke={strokeColor}
                     strokeWidth={2}
@@ -1118,38 +1242,62 @@ export default function BotConstructorPage() {
               const color = BLOCK_TYPE_COLORS[block.type] || '#6b7280'
               const label = BLOCK_TYPE_LABELS[block.type] || block.type
               const isSelected = block.id === selectedBlockId
+              const isHovered = hoveredNodeId === block.id
               const isCondition = block.type === 'CONDITION'
               const isHoveredInput = hoveredInputPort === block.id && draggingConnection
+              const hasButtonSlots = block.type === 'MESSAGE' || block.type === 'MEDIA_GROUP' || block.type === 'STREAMING'
+              const nodeH = getNodeHeight(block)
+              const styleColors: Record<string, string> = {
+                default: '#6b7280', success: '#22c55e', danger: '#ef4444', primary: '#3b82f6',
+              }
+
+              // Preview text for message blocks
+              const previewText = block.text
+                ? block.text.replace(/[*_`\[\]()#]/g, '').slice(0, 40) + (block.text.length > 40 ? '...' : '')
+                : null
 
               return (
                 <div
                   key={block.id}
                   data-block-node
-                  className="absolute rounded-xl shadow-lg transition-shadow duration-150 cursor-pointer select-none"
+                  className="absolute rounded-xl shadow-lg cursor-pointer select-none"
                   style={{
                     transform: `translate(${block.posX * zoom + panX}px, ${block.posY * zoom + panY}px)`,
                     width: NODE_W * zoom,
-                    height: NODE_H * zoom,
+                    height: nodeH * zoom,
                     background: 'var(--glass-bg)',
                     border: isSelected
                       ? `2px solid ${color}`
-                      : block.isDraft
-                        ? '1.5px dashed var(--glass-border)'
-                        : '1px solid var(--glass-border)',
+                      : isHovered
+                        ? `1.5px solid ${color}88`
+                        : block.isDraft
+                          ? '1.5px dashed var(--glass-border)'
+                          : '1px solid var(--glass-border)',
                     boxShadow: isSelected
                       ? `0 0 20px ${color}33`
                       : isHoveredInput
                         ? `0 0 16px ${color}55`
-                        : undefined,
-                    zIndex: isSelected ? 10 : 2,
+                        : isHovered
+                          ? `0 4px 12px rgba(0,0,0,0.2)`
+                          : undefined,
+                    zIndex: isSelected ? 10 : isHovered ? 5 : 2,
+                    transition: 'border 0.15s, box-shadow 0.15s',
                   }}
                   onMouseDown={e => handleNodeMouseDown(e, block)}
                   onClick={e => { e.stopPropagation(); selectBlock(block) }}
+                  onMouseEnter={() => !dragging && setHoveredNodeId(block.id)}
+                  onMouseLeave={() => setHoveredNodeId(null)}
                 >
                   {/* Цветная полоска сверху */}
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl" style={{ background: color }} />
+                  <div className="absolute top-0 left-0 right-0 rounded-t-xl" style={{ background: color, height: 3 * zoom }} />
 
-                  <div className="flex items-center gap-1.5 h-full px-2 pt-1" style={{ transform: `scale(${Math.min(zoom, 1.2)})`, transformOrigin: 'left center' }}>
+                  {/* Header: icon + name */}
+                  <div className="flex items-center gap-1.5 px-2" style={{
+                    height: NODE_HEADER_H * zoom,
+                    paddingTop: 4 * zoom,
+                    transform: `scale(${Math.min(zoom, 1.2)})`,
+                    transformOrigin: 'left center',
+                  }}>
                     <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
                          style={{ background: color + '22' }}>
                       <Icon className="w-3.5 h-3.5" style={{ color }} />
@@ -1158,12 +1306,59 @@ export default function BotConstructorPage() {
                       <div className="text-[11px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                         {block.name}
                       </div>
-                      <div className="text-[8px]" style={{ color }}>{label}</div>
+                      {/* Превью текста сообщения */}
+                      {previewText && (
+                        <div className="text-[8px] truncate mt-[-1px]" style={{ color: 'var(--text-tertiary)' }}>
+                          {previewText}
+                        </div>
+                      )}
                     </div>
                     {block.isDraft && (
                       <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" title="Черновик" />
                     )}
                   </div>
+
+                  {/* Type label row */}
+                  <div className="px-2" style={{
+                    height: NODE_TYPE_LABEL_H * zoom,
+                    transform: `scale(${Math.min(zoom, 1.2)})`,
+                    transformOrigin: 'left center',
+                  }}>
+                    <div className="text-[8px] font-bold tracking-wider uppercase" style={{ color, opacity: 0.7 }}>{label}</div>
+                  </div>
+
+                  {/* Separator + Button rows with output ports */}
+                  {hasButtonSlots && block.buttons && block.buttons.length > 0 && (
+                    <div style={{ transform: `scale(${Math.min(zoom, 1.2)})`, transformOrigin: 'left top' }}>
+                      <div className="mx-2 mb-0.5" style={{ height: 1, background: 'var(--glass-border)' }} />
+                      {block.buttons.map((btn, idx) => (
+                        <div key={btn.id} className="flex items-center pl-2 pr-1 relative" style={{ height: NODE_BTN_ROW_H }}>
+                          {btn.iconEmojiId && <span className="text-[9px] mr-0.5 flex-shrink-0">{btn.iconEmojiId}</span>}
+                          <span className="text-[9px] truncate flex-1" style={{ color: 'var(--text-secondary)' }}>{btn.label}</span>
+                          {btn.nextBlockId && (
+                            <span className="text-[7px] mr-0.5 px-0.5 rounded" style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                              {blocks.find(b => b.id === btn.nextBlockId)?.name?.slice(0, 6) || '...'}
+                            </span>
+                          )}
+                          {/* Button output port circle */}
+                          <div
+                            data-port={`button-${btn.id}`}
+                            className="flex-shrink-0 rounded-full hover:scale-150 transition-transform"
+                            style={{
+                              width: 8,
+                              height: 8,
+                              background: styleColors[btn.style] || '#8b5cf6',
+                              border: '1.5px solid var(--surface-1)',
+                              cursor: 'crosshair',
+                              zIndex: 20,
+                            }}
+                            title={`${btn.label} -> перетащите к блоку`}
+                            onMouseDown={e => handleOutputPortMouseDown(e, block.id, 'button', btn.id, idx)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Входной порт (сверху по центру) */}
                   <div
@@ -1198,6 +1393,8 @@ export default function BotConstructorPage() {
                         title="Да (true)"
                         onMouseDown={e => handleOutputPortMouseDown(e, block.id, 'true')}
                       />
+                      {/* Метка Да */}
+                      <div className="absolute -bottom-[16px] text-[7px] font-bold" style={{ left: '33%', transform: 'translateX(-50%)', color: '#22c55e' }}>Да</div>
                       {/* Порт FALSE (красный) */}
                       <div
                         data-port="output-false"
@@ -1213,6 +1410,8 @@ export default function BotConstructorPage() {
                         title="Нет (false)"
                         onMouseDown={e => handleOutputPortMouseDown(e, block.id, 'false')}
                       />
+                      {/* Метка Нет */}
+                      <div className="absolute -bottom-[16px] text-[7px] font-bold" style={{ left: '67%', transform: 'translateX(-50%)', color: '#ef4444' }}>Нет</div>
                     </>
                   ) : (
                     /* Обычный выходной порт (синий) */
@@ -1347,21 +1546,33 @@ export default function BotConstructorPage() {
                         <Smile className="w-3.5 h-3.5" />
                       </button>
                       {emojiPickerOpen && (
-                        <div className="absolute top-8 left-0 z-50 w-[280px] rounded-xl shadow-2xl p-2"
-                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                        <div className="fixed z-[100] w-[300px] rounded-xl shadow-2xl p-3"
+                             style={{
+                               background: 'var(--surface-2)',
+                               border: '1px solid var(--glass-border)',
+                               bottom: '60px',
+                               right: '20px',
+                               maxHeight: '350px',
+                             }}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>Эмодзи</span>
+                            <button onClick={() => setEmojiPickerOpen(false)} className="p-0.5 rounded hover:bg-white/10">
+                              <X className="w-3.5 h-3.5" style={{ color: 'var(--text-tertiary)' }} />
+                            </button>
+                          </div>
                           <div className="flex gap-1 mb-2 flex-wrap">
                             {Object.keys(EMOJI_CATEGORIES).map(cat => (
                               <button key={cat} onClick={() => setEmojiCategory(cat)}
-                                      className="px-2 py-1 rounded text-[10px]"
+                                      className="px-2 py-1 rounded text-[10px] transition-colors"
                                       style={{ background: emojiCategory === cat ? '#8b5cf622' : 'transparent', color: emojiCategory === cat ? '#a78bfa' : 'var(--text-tertiary)' }}>
                                 {cat}
                               </button>
                             ))}
                           </div>
-                          <div className="grid grid-cols-8 gap-0.5 max-h-[180px] overflow-y-auto">
+                          <div className="grid grid-cols-8 gap-0.5 max-h-[200px] overflow-y-auto">
                             {EMOJI_CATEGORIES[emojiCategory]?.map((emoji, i) => (
                               <button key={i} onClick={() => { insertAtCursor(emoji, ''); setEmojiPickerOpen(false) }}
-                                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 text-[16px]">
+                                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 text-[18px]">
                                 {emoji}
                               </button>
                             ))}
@@ -1376,8 +1587,8 @@ export default function BotConstructorPage() {
                         <Variable className="w-3.5 h-3.5" />
                       </button>
                       {variableDropdownOpen && (
-                        <div className="absolute top-8 left-0 z-50 w-[180px] rounded-lg shadow-2xl py-1"
-                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                        <div className="fixed z-[100] w-[200px] rounded-lg shadow-2xl py-1 max-h-[250px] overflow-y-auto"
+                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', bottom: '60px', right: '20px' }}>
                           {VARIABLES.map(v => (
                             <button key={v} onClick={() => { insertAtCursor(v, ''); setVariableDropdownOpen(false) }}
                                     className="w-full text-left px-3 py-1.5 text-[12px] hover:bg-white/5 font-mono"
@@ -1385,6 +1596,95 @@ export default function BotConstructorPage() {
                               {v}
                             </button>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Premium emoji в текст */}
+                    <div className="relative">
+                      <button onClick={() => setPremiumEmojiOpen(!premiumEmojiOpen)}
+                              className="p-1.5 rounded hover:bg-white/10" style={{ color: premiumEmojiOpen ? '#a78bfa' : 'var(--text-tertiary)' }} title="Premium Emoji">
+                        <span className="text-[12px]">💎</span>
+                      </button>
+                      {premiumEmojiOpen && (
+                        <div className="fixed z-[100] w-[320px] rounded-xl shadow-2xl p-3"
+                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', bottom: '60px', right: '20px', maxHeight: '400px', overflowY: 'auto' }}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>💎 Premium Emoji</span>
+                            <button onClick={() => setPremiumEmojiOpen(false)} className="p-0.5 rounded hover:bg-white/10">
+                              <X className="w-3.5 h-3.5" style={{ color: 'var(--text-tertiary)' }} />
+                            </button>
+                          </div>
+
+                          {/* Добавить новый */}
+                          <div className="space-y-1.5 mb-3 p-2 rounded-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
+                            <div className="text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>Добавить новый emoji</div>
+                            <input id="new-emoji-id" type="text" placeholder="Emoji ID (число)"
+                                   className="w-full px-2 py-1.5 rounded text-[11px]"
+                                   style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                            <div className="flex gap-1.5">
+                              <input id="new-emoji-fallback" type="text" placeholder="Иконка 🔥" maxLength={4}
+                                     className="w-24 px-2 py-1.5 rounded text-[11px]"
+                                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                              <input id="new-emoji-name" type="text" placeholder="Название"
+                                     className="flex-1 px-2 py-1.5 rounded text-[11px]"
+                                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                            </div>
+                            <button onClick={() => {
+                              const idEl = document.getElementById('new-emoji-id') as HTMLInputElement
+                              const fbEl = document.getElementById('new-emoji-fallback') as HTMLInputElement
+                              const nmEl = document.getElementById('new-emoji-name') as HTMLInputElement
+                              if (idEl?.value.trim()) {
+                                savePremiumEmoji(idEl.value.trim(), fbEl?.value || '❔', nmEl?.value || 'Emoji')
+                                idEl.value = ''; if (fbEl) fbEl.value = ''; if (nmEl) nmEl.value = ''
+                                toast.success('Emoji сохранён')
+                              } else {
+                                toast.error('Введите Emoji ID')
+                              }
+                            }} className="w-full py-1.5 rounded text-[11px] font-medium" style={{ background: '#8b5cf6', color: '#fff' }}>
+                              Сохранить emoji
+                            </button>
+                          </div>
+
+                          {/* Инструкция */}
+                          <div className="text-[9px] mb-3 p-2 rounded-lg" style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
+                            📋 <strong>Как узнать ID:</strong> перешлите сообщение с emoji в <strong>@JsonDumpBot</strong> → скопируйте <code style={{ background: 'var(--surface-2)', padding: '0 2px', borderRadius: 2 }}>custom_emoji_id</code>
+                          </div>
+
+                          {/* Список сохранённых */}
+                          {savedEmojis.length > 0 ? (
+                            <div className="space-y-1">
+                              <div className="text-[10px] font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Сохранённые ({savedEmojis.length})</div>
+                              {savedEmojis.map(em => (
+                                <div key={em.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:brightness-110 transition-all"
+                                     style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
+                                  <span className="text-[16px] flex-shrink-0">{em.fallback}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[10px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{em.name}</div>
+                                    <div className="text-[8px] font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>{em.id}</div>
+                                  </div>
+                                  <button onClick={() => {
+                                    const tag = `<tg-emoji emoji-id="${em.id}">${em.fallback}</tg-emoji>`
+                                    insertAtCursor(tag, '')
+                                    if (editForm.parseMode !== 'HTML') {
+                                      updateField('parseMode', 'HTML')
+                                      toast.success('Режим → HTML')
+                                    }
+                                    setPremiumEmojiOpen(false)
+                                  }} className="px-2 py-1 rounded text-[9px] font-medium flex-shrink-0"
+                                         style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                                    В текст
+                                  </button>
+                                  <button onClick={() => removeSavedEmoji(em.id)} className="p-0.5 rounded hover:bg-red-500/20 flex-shrink-0">
+                                    <Trash2 className="w-3 h-3 text-red-400" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-center py-4" style={{ color: 'var(--text-tertiary)' }}>
+                              Нет сохранённых emoji. Добавьте ID выше.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1402,7 +1702,10 @@ export default function BotConstructorPage() {
                       style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                       placeholder="Текст сообщения с Markdown/HTML разметкой..."
                     />
-                    <HintText>Поддерживается Markdown. Переменные: {'{name}'}, {'{email}'}, {'{balance}'}, {'{bonusDays}'}, {'{subStatus}'}, {'{daysLeft}'}</HintText>
+                    <HintText>
+                      Переменные: {'{name}'}, {'{balance}'}, {'{bonusDays}'}, {'{subStatus}'}, {'{daysLeft}'}{'\n'}
+                      💎 Premium emoji: нажмите 💎 в toolbar и вставьте ID (узнать через @JsonDumpBot)
+                    </HintText>
                   </div>
 
                   {/* Режим парсинга */}
@@ -1424,13 +1727,53 @@ export default function BotConstructorPage() {
                   </div>
 
                   {/* Медиа */}
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     <div>
-                      <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>URL медиа</label>
-                      <input type="text" value={editForm.mediaUrl || ''} onChange={e => updateField('mediaUrl', e.target.value)}
-                             className="w-full px-2 py-1.5 rounded-lg text-[12px]"
-                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
-                             placeholder="https://..." />
+                      <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Медиа файл</label>
+                      <div className="flex gap-1">
+                        <input type="text" value={editForm.mediaUrl || ''} onChange={e => updateField('mediaUrl', e.target.value)}
+                               className="flex-1 px-2 py-1.5 rounded-lg text-[11px]"
+                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                               placeholder="URL или загрузите" />
+                        <label className="px-2 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer flex items-center gap-1 flex-shrink-0"
+                               style={{ background: '#8b5cf622', color: '#a78bfa', border: '1px solid #8b5cf633' }}>
+                          <ArrowUp className="w-3 h-3" />
+                          <input type="file" className="hidden" accept="image/*,video/*,.gif,.mp4,.webm,.pdf,.doc,.docx"
+                                 onChange={async (e) => {
+                                   const file = e.target.files?.[0]
+                                   if (!file) return
+                                   if (file.size > 20 * 1024 * 1024) { toast.error('Макс 20 МБ'); return }
+                                   const formData = new FormData()
+                                   formData.append('file', file)
+                                   try {
+                                     const res = await fetch('/api/admin/upload', {
+                                       method: 'POST', body: formData, credentials: 'include',
+                                     })
+                                     const data = await res.json()
+                                     if (data.url) {
+                                       updateField('mediaUrl', data.url)
+                                       // Auto-detect media type
+                                       const ext = file.name.split('.').pop()?.toLowerCase() || ''
+                                       if (['jpg','jpeg','png','webp','svg'].includes(ext)) updateField('mediaType', 'photo')
+                                       else if (['mp4','webm'].includes(ext)) updateField('mediaType', 'video')
+                                       else if (['gif'].includes(ext)) updateField('mediaType', 'animation')
+                                       else updateField('mediaType', 'document')
+                                       toast.success('Файл загружен')
+                                     } else {
+                                       toast.error(data.error || 'Ошибка загрузки')
+                                     }
+                                   } catch { toast.error('Ошибка загрузки') }
+                                   e.target.value = ''
+                                 }} />
+                        </label>
+                      </div>
+                      {editForm.mediaUrl && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-[9px] truncate flex-1" style={{ color: 'var(--text-tertiary)' }}>{editForm.mediaUrl}</span>
+                          <button onClick={() => { updateField('mediaUrl', null); updateField('mediaType', null) }}
+                                  className="text-[9px] px-1 rounded" style={{ color: '#f87171' }}>✕</button>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Тип медиа</label>
@@ -1456,37 +1799,58 @@ export default function BotConstructorPage() {
                     </label>
                   </div>
 
-                  {/* Удалить предыдущее */}
+                  {/* Предыдущее сообщение */}
                   <div>
-                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Удалить предыдущее</label>
-                    <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
+                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Предыдущее сообщение</label>
+                    <div className="grid grid-cols-4 gap-1.5">
                       {[
-                        { key: 'none', label: 'Нет' },
-                        { key: 'buttons', label: 'Кнопки' },
-                        { key: 'full', label: 'Полностью' },
+                        { key: 'none', emoji: '—', label: 'Оставить' },
+                        { key: 'replace', emoji: '🔄', label: 'Заменить' },
+                        { key: 'buttons', emoji: '🔘', label: 'Кнопки' },
+                        { key: 'full', emoji: '🗑', label: 'Удалить' },
                       ].map(m => (
                         <button key={m.key}
-                                onClick={() => updateField('deletePrevious', m.key === 'none' ? null : m.key)}
-                                className="px-3 py-1 text-[11px] flex-1"
+                                onClick={() => updateField('deletePrev', m.key)}
+                                className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-center transition-all"
                                 style={{
-                                  background: (editForm.deletePrevious || 'none') === (m.key === 'none' ? null : m.key) || (!editForm.deletePrevious && m.key === 'none')
-                                    ? '#8b5cf622' : 'transparent',
-                                  color: (editForm.deletePrevious || 'none') === (m.key === 'none' ? null : m.key) || (!editForm.deletePrevious && m.key === 'none')
-                                    ? '#a78bfa' : 'var(--text-tertiary)',
+                                  background: (editForm.deletePrev || 'none') === m.key ? '#8b5cf622' : 'var(--surface-2)',
+                                  border: `1.5px solid ${(editForm.deletePrev || 'none') === m.key ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                  color: 'var(--text-primary)',
                                 }}>
-                          {m.label}
+                          <span className="text-[14px]">{m.emoji}</span>
+                          <span className="text-[8px]" style={{ color: 'var(--text-tertiary)' }}>{m.label}</span>
                         </button>
                       ))}
                     </div>
+                    <HintText>🔄 Заменить — текст и кнопки обновляются на месте (как было раньше). 🗑 Удалить — сообщение полностью исчезает</HintText>
                   </div>
 
-                  {/* ID эффекта сообщения */}
+                  {/* Эффект сообщения */}
                   <div>
-                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>ID эффекта сообщения (необязательно)</label>
-                    <input type="text" value={editForm.messageEffectId || ''} onChange={e => updateField('messageEffectId', e.target.value)}
-                           className="w-full px-2 py-1.5 rounded-lg text-[12px]"
-                           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
-                           placeholder="5104841245755180586" />
+                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Эффект при отправке</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { id: '', emoji: '—', label: 'Нет' },
+                        { id: '5104841245755180586', emoji: '🔥', label: 'Огонь' },
+                        { id: '5046509860389126442', emoji: '🎉', label: 'Конфетти' },
+                        { id: '5159385139981059251', emoji: '❤️', label: 'Сердце' },
+                        { id: '5107584321108051014', emoji: '👍', label: 'Лайк' },
+                        { id: '5104858069142078462', emoji: '👎', label: 'Дизлайк' },
+                        { id: '5046589136895476101', emoji: '💩', label: 'Какашка' },
+                      ].map(eff => (
+                        <button key={eff.id} onClick={() => updateField('messageEffectId', eff.id || null)}
+                                className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-center transition-all"
+                                style={{
+                                  background: editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? '#8b5cf622' : 'var(--surface-2)',
+                                  border: `1.5px solid ${editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                  color: 'var(--text-primary)',
+                                }}>
+                          <span className="text-[16px]">{eff.emoji}</span>
+                          <span className="text-[8px]" style={{ color: 'var(--text-tertiary)' }}>{eff.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <HintText>Анимация появится при получении сообщения</HintText>
                   </div>
 
                   {/* Следующий блок */}
@@ -1504,24 +1868,140 @@ export default function BotConstructorPage() {
                     </div>
                     <HintText>Кнопки отображаются под сообщением. Можно задать цвет и иконку</HintText>
 
-                    {/* Существующие кнопки */}
+                    {/* Существующие кнопки — кликабельные для редактирования */}
                     {selectedBlock.buttons && selectedBlock.buttons.length > 0 && (
                       <div className="space-y-1 mb-2 mt-2">
                         {selectedBlock.buttons.map(btn => {
                           const styleColors: Record<string, string> = {
                             default: '#6b7280', success: '#22c55e', danger: '#ef4444', primary: '#3b82f6',
                           }
+                          const isEditing = editingButtonId === btn.id
                           return (
-                            <div key={btn.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
-                                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-                              <div className="w-1.5 h-4 rounded-full" style={{ background: styleColors[btn.style] || '#6b7280' }} />
-                              <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{btn.label}</span>
-                              <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
-                                {BUTTON_TYPE_LABELS[btn.type] || btn.type} р{btn.row}к{btn.col}
-                              </span>
-                              <button onClick={() => removeButton(btn.id)} className="p-0.5 rounded hover:bg-red-500/20">
-                                <Trash2 className="w-3 h-3 text-red-400" />
-                              </button>
+                            <div key={btn.id}>
+                              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all hover:brightness-110"
+                                   onClick={() => {
+                                     if (isEditing) { setEditingButtonId(null) } else {
+                                       setEditingButtonId(btn.id)
+                                       setButtonForm({ label: btn.label, type: btn.type, nextBlockId: btn.nextBlockId || '', url: btn.url || '', copyText: btn.copyText || '', style: btn.style || 'default', iconEmojiId: btn.iconEmojiId || '', row: btn.row, col: btn.col })
+                                     }
+                                   }}
+                                   style={{ background: isEditing ? 'rgba(139,92,246,0.1)' : 'var(--surface-2)', border: `1px solid ${isEditing ? '#8b5cf6' : 'var(--glass-border)'}` }}>
+                                <div className="w-1.5 h-4 rounded-full" style={{ background: styleColors[btn.style] || '#6b7280' }} />
+                                <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{btn.label}</span>
+                                <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
+                                  {BUTTON_TYPE_LABELS[btn.type] || btn.type}
+                                </span>
+                                {btn.nextBlockId && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                                    → {blocks.find(b => b.id === btn.nextBlockId)?.name?.slice(0, 12) || '...'}
+                                  </span>
+                                )}
+                                <button onClick={(e) => { e.stopPropagation(); removeButton(btn.id) }} className="p-0.5 rounded hover:bg-red-500/20">
+                                  <Trash2 className="w-3 h-3 text-red-400" />
+                                </button>
+                              </div>
+                              {/* Inline edit form */}
+                              {isEditing && (
+                                <div className="p-2 mt-1 rounded-lg space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid #8b5cf644' }}>
+                                  <input type="text" value={buttonForm.label} onChange={e => setButtonForm(p => ({ ...p, label: e.target.value }))}
+                                         placeholder="Текст кнопки" className="w-full px-2 py-1 rounded text-[11px]"
+                                         style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <select value={buttonForm.type} onChange={e => setButtonForm(p => ({ ...p, type: e.target.value }))}
+                                            className="px-2 py-1 rounded text-[10px]"
+                                            style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                                      <option value="block">Переход к блоку</option>
+                                      <option value="url">Ссылка</option>
+                                      <option value="webapp">Web-приложение</option>
+                                      <option value="copy_text">Копировать текст</option>
+                                      <option value="pay">Оплата</option>
+                                    </select>
+                                    <select value={buttonForm.style} onChange={e => setButtonForm(p => ({ ...p, style: e.target.value }))}
+                                            className="px-2 py-1 rounded text-[10px]"
+                                            style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                                      <option value="default">Обычный</option>
+                                      <option value="success">Зелёный ⏳</option>
+                                      <option value="danger">Красный ⏳</option>
+                                      <option value="primary">Синий ⏳</option>
+                                    </select>
+                                  </div>
+                                  {buttonForm.style && buttonForm.style !== 'default' && (
+                                    <div className="text-[9px] px-2 py-1 rounded" style={{ background: '#f59e0b15', color: '#f59e0b', border: '1px solid #f59e0b22' }}>
+                                      ⏳ Цвет сохранён. Telegram пока раскатывает поддержку цветных кнопок — заработает автоматически.
+                                    </div>
+                                  )}
+                                  {buttonForm.type === 'block' && (
+                                    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
+                                         style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
+                                      <span style={{ color: '#a78bfa' }}>
+                                        {btn.nextBlockId
+                                          ? `-> ${blocks.find(b => b.id === btn.nextBlockId)?.name || '...'}`
+                                          : 'не подключена -- перетащите на холсте'}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {(buttonForm.type === 'url' || buttonForm.type === 'webapp') && (
+                                    <input type="text" value={buttonForm.url} onChange={e => setButtonForm(p => ({ ...p, url: e.target.value }))}
+                                           placeholder="https://..." className="w-full px-2 py-1 rounded text-[10px]"
+                                           style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                  )}
+                                  {buttonForm.type === 'copy_text' && (
+                                    <input type="text" value={buttonForm.copyText} onChange={e => setButtonForm(p => ({ ...p, copyText: e.target.value }))}
+                                           placeholder="Текст для копирования" className="w-full px-2 py-1 rounded text-[10px]"
+                                           style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                  )}
+                                  <div className="space-y-1">
+                                    <div className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>💎 Premium Emoji на кнопке</div>
+                                    <input type="text" value={buttonForm.iconEmojiId} onChange={e => setButtonForm(p => ({ ...p, iconEmojiId: e.target.value }))}
+                                           placeholder="Emoji ID или выберите ниже"
+                                           className="w-full px-2 py-1 rounded text-[10px]"
+                                           style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                    {savedEmojis.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {buttonForm.iconEmojiId && (
+                                          <button onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: '' }))}
+                                                  className="px-1.5 py-0.5 rounded text-[9px]"
+                                                  style={{ background: '#ef444422', color: '#f87171', border: '1px solid #ef444433' }}>
+                                            ✕ Убрать
+                                          </button>
+                                        )}
+                                        {savedEmojis.map(em => (
+                                          <button key={em.id} onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: em.id }))}
+                                                  className="px-1.5 py-0.5 rounded text-[9px] transition-all"
+                                                  style={{
+                                                    background: buttonForm.iconEmojiId === em.id ? '#8b5cf622' : 'var(--surface-1)',
+                                                    color: buttonForm.iconEmojiId === em.id ? '#a78bfa' : 'var(--text-secondary)',
+                                                    border: `1px solid ${buttonForm.iconEmojiId === em.id ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                                  }}>
+                                            {em.fallback} {em.name}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await adminApi.updateBotButton(btn.id, {
+                                          label: buttonForm.label,
+                                          type: buttonForm.type,
+                                          style: buttonForm.style,
+                                          iconCustomEmojiId: buttonForm.iconEmojiId || null,
+                                          nextBlockId: buttonForm.type === 'block' ? buttonForm.nextBlockId || null : null,
+                                          url: ['url', 'webapp'].includes(buttonForm.type) ? buttonForm.url || null : null,
+                                          copyText: buttonForm.type === 'copy_text' ? buttonForm.copyText || null : null,
+                                        })
+                                        toast.success('Кнопка обновлена')
+                                        setEditingButtonId(null)
+                                        await selectBlock(selectedBlock)
+                                      } catch { toast.error('Ошибка обновления кнопки') }
+                                    }}
+                                    className="w-full py-1.5 rounded text-[11px] font-medium"
+                                    style={{ background: '#8b5cf6', color: '#fff' }}>
+                                    Сохранить кнопку
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -1560,14 +2040,9 @@ export default function BotConstructorPage() {
                           </div>
                         </div>
                         {buttonForm.type === 'block' && (
-                          <div>
-                            <label className="text-[10px] mb-0.5 block" style={{ color: 'var(--text-tertiary)' }}>Целевой блок</label>
-                            <select value={buttonForm.nextBlockId} onChange={e => setButtonForm(p => ({ ...p, nextBlockId: e.target.value }))}
-                                    className="w-full px-2 py-1.5 rounded text-[11px]"
-                                    style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
-                              <option value="">-- выберите блок --</option>
-                              {allBlocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                            </select>
+                          <div className="px-2 py-1.5 rounded text-[10px]"
+                               style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
+                            Связь с блоком задается перетаскиванием порта на холсте
                           </div>
                         )}
                         {(buttonForm.type === 'url' || buttonForm.type === 'webapp') && (
@@ -1593,11 +2068,45 @@ export default function BotConstructorPage() {
                                    className="w-full px-2 py-1 rounded text-[11px]"
                                    style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
                           </div>
-                          <div>
-                            <label className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Иконка</label>
-                            <input type="text" value={buttonForm.iconEmojiId} onChange={e => setButtonForm(p => ({ ...p, iconEmojiId: e.target.value }))}
-                                   className="w-full px-2 py-1 rounded text-[11px]"
-                                   style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                        </div>
+                        {/* Premium emoji для кнопки */}
+                        <div className="p-2 rounded-lg" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[12px]">💎</span>
+                            <label className="text-[10px] font-medium" style={{ color: '#a78bfa' }}>Premium Emoji на кнопке</label>
+                          </div>
+                          <input type="text" value={buttonForm.iconEmojiId} onChange={e => setButtonForm(p => ({ ...p, iconEmojiId: e.target.value }))}
+                                 placeholder="Emoji ID или выберите ниже"
+                                 className="w-full px-2 py-1.5 rounded text-[11px] mb-1.5"
+                                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                          {savedEmojis.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-1.5">
+                              {buttonForm.iconEmojiId && (
+                                <button onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: '' }))}
+                                        className="px-2 py-1 rounded text-[9px]"
+                                        style={{ background: '#ef444422', color: '#f87171', border: '1px solid #ef444433' }}>
+                                  ✕ Убрать
+                                </button>
+                              )}
+                              {savedEmojis.map(em => (
+                                <button key={em.id} onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: em.id }))}
+                                        className="px-2 py-1 rounded text-[9px] transition-all"
+                                        style={{
+                                          background: buttonForm.iconEmojiId === em.id ? '#8b5cf622' : 'var(--surface-1)',
+                                          color: buttonForm.iconEmojiId === em.id ? '#a78bfa' : 'var(--text-secondary)',
+                                          border: `1px solid ${buttonForm.iconEmojiId === em.id ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                        }}>
+                                  {em.fallback} {em.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="text-[9px] space-y-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                            <p>Emoji отобразится слева от текста кнопки</p>
+                            <p>📋 <strong>Как узнать ID:</strong></p>
+                            <p>1. Найдите нужный premium emoji в Telegram</p>
+                            <p>2. Отправьте сообщение с ним боту <strong>@JsonDumpBot</strong></p>
+                            <p>3. В ответе найдите <code style={{ background: 'var(--surface-2)', padding: '0 3px', borderRadius: 3 }}>custom_emoji_id</code> — это и есть ID</p>
                           </div>
                         </div>
                         <div className="flex gap-2">

@@ -14,6 +14,14 @@ const redis = new Redis(config.redis.url)
 // Use a placeholder token when none is configured to prevent crash on import
 export const bot = new Bot(config.telegram.botToken || 'placeholder:token')
 
+// ── Global middleware: log all incoming updates ──────────────
+bot.use(async (ctx, next) => {
+  const type = ctx.update.message ? 'msg:' + (ctx.update.message.text?.slice(0, 20) || 'media') :
+    ctx.update.callback_query ? 'cb:' + ctx.update.callback_query.data?.slice(0, 30) : 'other'
+  logger.info(`[bot] Update #${ctx.update.update_id}: ${type} from ${ctx.from?.id}`)
+  await next()
+})
+
 // ── Settings cache ───────────────────────────────────────────
 const settingsCache = new Map<string, string>()
 let settingsLoaded = false
@@ -253,6 +261,31 @@ bot.command('start', async (ctx) => {
 
   // Find or create user
   let user = await prisma.user.findUnique({ where: { telegramId } })
+
+  // ── Try engine first (no-code constructor) ──
+  // If engine has a /start trigger block, use it instead of hardcoded logic
+  try {
+    const engineBlockId = await findTriggerBlock('command', '/start')
+    if (engineBlockId) {
+      // Still need to ensure user exists for engine
+      if (!user) {
+        let referredById: string | undefined
+        if (args && args.startsWith('ref_')) {
+          const refCode = args.replace('ref_', '')
+          const referrer = await prisma.user.findUnique({ where: { referralCode: refCode }, select: { id: true } })
+          if (referrer) referredById = referrer.id
+        }
+        user = await prisma.user.create({ data: { telegramId, telegramName: tgName, referredById } })
+        logger.info(`New bot user: ${telegramId} (@${tgName})`)
+      } else if (tgName !== user.telegramName) {
+        await prisma.user.update({ where: { id: user.id }, data: { telegramName: tgName } }).catch(() => {})
+      }
+      await executeBlock(engineBlockId, ctx, user.id, telegramId)
+      return
+    }
+  } catch (err) {
+    logger.warn('Engine /start failed, falling back to hardcoded:', err)
+  }
 
   if (!user) {
     // New user — create in DB
@@ -1446,7 +1479,7 @@ bot.on('poll_answer', async (ctx) => {
 })
 
 // ── Bot Constructor: handle block button callbacks ──────────
-import { executeBlock, findTriggerBlock, loadBlockCache, trackClick } from './engine'
+import { executeBlock, findTriggerBlock, loadBlockCache, subscribeCacheInvalidation, trackClick } from './engine'
 import { getUserState as getEngineState, clearUserState as clearEngineState } from './state'
 
 bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
@@ -1455,14 +1488,15 @@ bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
   const chatId = String(ctx.from.id)
 
   try {
-    // Track button click
     trackClick(buttonId).catch(() => {})
 
-    // Find button and execute its next block
     const button = await prisma.botButton.findUnique({ where: { id: buttonId } })
-    if (button?.nextBlockId) {
+    if (button) {
+      // Log incoming callback
       const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
-      if (user) {
+      logIncoming(chatId, user?.id ?? null, `Действие: ${button.label}`, `blk:${buttonId}`)
+
+      if (button.nextBlockId && user) {
         await executeBlock(button.nextBlockId, ctx, user.id, chatId)
       }
     }
@@ -1559,6 +1593,9 @@ export async function startBot() {
 
   // Load bot constructor block cache
   await loadBlockCache().catch(err => logger.warn('Failed to load block cache:', err))
+
+  // Subscribe to Redis cache invalidation from backend API
+  subscribeCacheInvalidation()
 
   // Setup daily financial report cron
   setupDailyReportCron()

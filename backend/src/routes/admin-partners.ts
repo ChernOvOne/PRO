@@ -21,14 +21,53 @@ export async function adminPartnerRoutes(app: FastifyInstance) {
 
       const partner = await prisma.buhPartner.findFirst({
         where: { id: user.buhPartnerId, isActive: true },
+        include: { inkasRecords: { select: { type: true, amount: true, date: true } } },
       })
-      return partner ? [partner] : []
+      if (!partner) return []
+
+      const sumByType = (t: string) =>
+        partner.inkasRecords.filter(r => r.type === t).reduce((s, r) => s + Number(r.amount), 0)
+
+      const { inkasRecords, ...partnerData } = partner
+      return [{
+        ...partnerData,
+        totalInvested:  partner.initialInvestment + sumByType('INVESTMENT'),
+        totalReturned:  partner.initialReturned   + sumByType('RETURN_INV'),
+        totalDividends: partner.initialDividends  + sumByType('DIVIDEND'),
+        remainingDebt:  Math.max(0, (partner.initialInvestment + sumByType('INVESTMENT')) - (partner.initialReturned + sumByType('RETURN_INV'))),
+      }]
     }
 
-    // Admin / Editor — all active
-    return prisma.buhPartner.findMany({
+    // Admin / Editor — all active with computed stats
+    const partners = await prisma.buhPartner.findMany({
       where: { isActive: true },
+      include: { inkasRecords: { select: { type: true, amount: true, date: true } } },
       orderBy: { createdAt: 'desc' },
+    })
+
+    return partners.map(p => {
+      const sumByType = (t: string) =>
+        p.inkasRecords.filter(r => r.type === t).reduce((s, r) => s + Number(r.amount), 0)
+
+      const totalInvested  = p.initialInvestment + sumByType('INVESTMENT')
+      const totalReturned  = p.initialReturned   + sumByType('RETURN_INV')
+      const totalDividends = p.initialDividends  + sumByType('DIVIDEND')
+      const remainingDebt  = Math.max(0, totalInvested - totalReturned)
+
+      const lastDiv = p.inkasRecords
+        .filter(r => r.type === 'DIVIDEND')
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+
+      const { inkasRecords, ...partnerData } = p
+      return {
+        ...partnerData,
+        totalInvested,
+        totalReturned,
+        totalDividends,
+        remainingDebt,
+        lastDividend: lastDiv ? Number(lastDiv.amount) : null,
+        lastDividendDate: lastDiv?.date ?? null,
+      }
     })
   })
 

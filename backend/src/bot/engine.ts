@@ -4,7 +4,7 @@ import { prisma } from '../db'
 import { config } from '../config'
 import { logger } from '../utils/logger'
 import { bot } from './index'
-import { getUserState, setUserState, clearUserState, scheduleBlock } from './state'
+import { getUserState, setUserState, clearUserState, scheduleBlock, setLastMessageId, getLastMessageId } from './state'
 import { createTrialForUser } from './trial'
 import { remnawave } from '../services/remnawave'
 import { balanceService } from '../services/balance'
@@ -42,6 +42,31 @@ export async function loadBlockCache(): Promise<void> {
 export function invalidateBlockCache(): void {
   blockCache = null
   cacheTime = 0
+}
+
+/**
+ * Subscribe to Redis pub/sub for cache invalidation signals
+ * from the backend API container. Call this once at bot startup.
+ */
+export function subscribeCacheInvalidation(): void {
+  try {
+    const sub = new Redis(config.redis.url)
+    sub.subscribe('bot:cache:invalidate', (err) => {
+      if (err) {
+        logger.error('Failed to subscribe to bot:cache:invalidate:', err)
+        return
+      }
+      logger.info('Subscribed to bot:cache:invalidate channel')
+    })
+    sub.on('message', (_channel: string, _message: string) => {
+      logger.info('Received cache invalidation signal — reloading block cache')
+      invalidateBlockCache()
+      // Eagerly reload cache in background
+      loadBlockCache().catch(err => logger.warn('Failed to reload block cache:', err))
+    })
+  } catch (err) {
+    logger.warn('Could not set up Redis cache invalidation subscriber:', err)
+  }
 }
 
 async function getBlock(blockId: string): Promise<any | null> {
@@ -538,38 +563,113 @@ export async function executeBlock(
 async function handleMessage(block: any, ctx: Context | null, userId: string, chatId: string) {
   const text = await resolveVariables(block.text || '', userId)
 
+  // Build resolved variables map for button URLs
+  const { config: appConfig } = await import('../config')
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { referralCode: true, subLink: true } })
+  const vars: Record<string, string> = {
+    appUrl: appConfig.appUrl,
+    referralUrl: `${appConfig.appUrl}?ref=${user?.referralCode || ''}`,
+    subLink: user?.subLink || '',
+  }
+
   // Build inline keyboard from buttons
-  const keyboard = buildKeyboard(block.buttons || [])
+  const keyboard = buildKeyboard(block.buttons || [], vars)
 
   // Delete previous message if configured
-  if (block.deletePrev === 'last' && ctx?.callbackQuery?.message) {
+  // Try callback message first, then fall back to Redis-stored last message ID
+  let prevMsgId: number | null = ctx?.callbackQuery?.message?.message_id ?? null
+  if (!prevMsgId) {
+    prevMsgId = await getLastMessageId(chatId)
+  }
+  // Handle non-replace deletePrev modes before sending
+  if (block.deletePrev && !['none', 'replace'].includes(block.deletePrev) && prevMsgId) {
     try {
-      await bot.api.deleteMessage(chatId, ctx.callbackQuery.message.message_id)
+      if (block.deletePrev === 'full') {
+        await bot.api.deleteMessage(chatId, prevMsgId)
+      } else if (block.deletePrev === 'buttons') {
+        await bot.api.editMessageReplyMarkup(chatId, prevMsgId, { reply_markup: { inline_keyboard: [] } })
+      }
     } catch { /* message may already be deleted */ }
   }
 
   // Send media or text
   let sentMessage: any
-  const parseMode = block.parseMode === 'HTML' ? 'HTML' : 'Markdown'
+  let parseMode: 'HTML' | 'Markdown' | 'MarkdownV2' = block.parseMode === 'HTML' ? 'HTML' : 'Markdown'
+  let finalText = text
+
+  // Auto-detect premium emoji in text and convert to HTML if needed
+  // Markdown ![fallback](tg://emoji?id=XXX) → HTML <tg-emoji emoji-id="XXX">fallback</tg-emoji>
+  if (finalText.includes('tg://emoji') && parseMode !== 'HTML') {
+    // Convert Markdown premium emoji syntax to HTML
+    finalText = finalText.replace(/!\[([^\]]*)\]\(tg:\/\/emoji\?id=(\d+)\)/g,
+      '<tg-emoji emoji-id="$2">$1</tg-emoji>')
+    // Convert basic Markdown to HTML
+    finalText = finalText
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')          // **bold**
+      .replace(/\*(.+?)\*/g, '<b>$1</b>')               // *bold*
+      .replace(/__(.+?)__/g, '<i>$1</i>')                // __italic__
+      .replace(/_(.+?)_/g, '<i>$1</i>')                  // _italic_
+      .replace(/~~(.+?)~~/g, '<s>$1</s>')                // ~~strike~~
+      .replace(/\|\|(.+?)\|\|/g, '<tg-spoiler>$1</tg-spoiler>') // ||spoiler||
+      .replace(/`(.+?)`/g, '<code>$1</code>')            // `code`
+    parseMode = 'HTML'
+  }
+
   const replyMarkup = keyboard.inline_keyboard.length > 0 ? keyboard : undefined
+
+  // Replace mode: edit previous message in-place instead of sending new
+  if (block.deletePrev === 'replace' && prevMsgId && !block.mediaUrl && finalText) {
+    try {
+      await bot.api.editMessageText(chatId, prevMsgId, finalText, {
+        parse_mode: parseMode,
+        reply_markup: replyMarkup as any ?? { inline_keyboard: [] },
+      })
+      setLastMessageId(chatId, prevMsgId).catch(() => {})
+      prisma.botMessage.create({
+        data: { chatId, userId, direction: 'OUT', text: finalText.slice(0, 4000) },
+      }).catch(() => {})
+      // Execute next block
+      if (block.nextBlockId) {
+        await executeBlock(block.nextBlockId, ctx, userId, chatId)
+      }
+      return // Skip sending new message
+    } catch {
+      // editMessageText failed (media msg or too old) — fall through to send new
+      try { await bot.api.deleteMessage(chatId, prevMsgId) } catch {}
+    }
+  }
+
+  // Message effect (confetti, fire, etc.)
+  const effectId = block.messageEffectId || undefined
 
   try {
     if (block.mediaUrl && block.mediaType) {
-      sentMessage = await sendMedia(chatId, block.mediaType, block.mediaUrl, text, parseMode, replyMarkup)
-    } else if (text) {
-      sentMessage = await bot.api.sendMessage(chatId, text, {
-        parse_mode: parseMode,
-        reply_markup: replyMarkup,
-      })
+      sentMessage = await sendMedia(chatId, block.mediaType, block.mediaUrl, finalText, parseMode, replyMarkup)
+    } else if (finalText) {
+      if (effectId) {
+        // Use raw API to pass message_effect_id (not in grammy typings yet)
+        sentMessage = await bot.api.raw.sendMessage({
+          chat_id: chatId,
+          text: finalText,
+          parse_mode: parseMode,
+          reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
+          message_effect_id: effectId,
+        } as any)
+      } else {
+        sentMessage = await bot.api.sendMessage(chatId, finalText, {
+          parse_mode: parseMode,
+          reply_markup: replyMarkup,
+        })
+      }
     }
   } catch (e: any) {
-    // Retry without parse_mode if Markdown fails
+    // Retry without parse_mode and effect if fails
     if (e.message?.includes('parse') || e.error_code === 400) {
       try {
         if (block.mediaUrl && block.mediaType) {
-          sentMessage = await sendMedia(chatId, block.mediaType, block.mediaUrl, text, undefined, replyMarkup)
+          sentMessage = await sendMedia(chatId, block.mediaType, block.mediaUrl, finalText, undefined, replyMarkup)
         } else {
-          sentMessage = await bot.api.sendMessage(chatId, text, { reply_markup: replyMarkup })
+          sentMessage = await bot.api.sendMessage(chatId, finalText, { reply_markup: replyMarkup })
         }
       } catch (e2) {
         logger.error(`Message send retry failed for block ${block.id}`, e2)
@@ -578,6 +678,11 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
     } else {
       throw e
     }
+  }
+
+  // Store last sent message ID for deletePrev in next block
+  if (sentMessage?.message_id) {
+    setLastMessageId(chatId, sentMessage.message_id).catch(() => {})
   }
 
   // Pin message if requested
@@ -606,6 +711,19 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
         reply_markup: { remove_keyboard: true },
       })
     } catch { /* ignore */ }
+  }
+
+  // Log outgoing message to BotMessage table
+  if (sentMessage?.message_id) {
+    prisma.botMessage.create({
+      data: {
+        chatId,
+        userId,
+        direction: 'OUT',
+        text: finalText?.slice(0, 4000) || block.name,
+        buttonsJson: block.buttons?.length ? block.buttons.map((b: any) => ({ label: b.label, type: b.type })) : undefined,
+      },
+    }).catch(() => {})
   }
 
   // Execute next block if there's one
@@ -994,6 +1112,13 @@ async function sendMedia(
   parseMode?: string,
   replyMarkup?: any,
 ): Promise<any> {
+  // Convert relative URLs to absolute (uploads stored locally)
+  let url = mediaUrl
+  if (url.startsWith('/')) {
+    const { config: appConfig } = await import('../config')
+    url = `${appConfig.appUrl}${url}`
+  }
+
   const opts: any = {
     caption: caption || undefined,
     parse_mode: parseMode || undefined,
@@ -1002,24 +1127,28 @@ async function sendMedia(
 
   switch (mediaType) {
     case 'photo':
-      return bot.api.sendPhoto(chatId, mediaUrl, opts)
+      return bot.api.sendPhoto(chatId, url, opts)
     case 'video':
-      return bot.api.sendVideo(chatId, mediaUrl, opts)
+      return bot.api.sendVideo(chatId, url, opts)
     case 'animation':
-      return bot.api.sendAnimation(chatId, mediaUrl, opts)
+      return bot.api.sendAnimation(chatId, url, opts)
     case 'document':
-      return bot.api.sendDocument(chatId, mediaUrl, opts)
+      return bot.api.sendDocument(chatId, url, opts)
     default:
-      // Fallback: try as photo
-      return bot.api.sendPhoto(chatId, mediaUrl, opts)
+      return bot.api.sendPhoto(chatId, url, opts)
   }
 }
 
 // ── Keyboard Builder ─────────────────────────────────────────
 
-function buildKeyboard(buttons: any[]): InlineKeyboard {
-  const kb = new InlineKeyboard()
-  if (!buttons.length) return kb
+function buildKeyboard(buttons: any[], resolvedVars?: Record<string, string>): { inline_keyboard: any[][] } {
+  if (!buttons.length) return { inline_keyboard: [] }
+
+  // Simple variable replacement for URLs and copyText
+  const resolve = (text: string) => {
+    if (!text || !resolvedVars) return text
+    return text.replace(/\{(\w+)\}/g, (_, key) => resolvedVars[key] ?? `{${key}}`)
+  }
 
   // Group buttons by row
   const rows = new Map<number, any[]>()
@@ -1029,31 +1158,44 @@ function buildKeyboard(buttons: any[]): InlineKeyboard {
     rows.get(row)!.push(btn)
   }
 
-  // Sort rows by key
   const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0])
+  const keyboard: any[][] = []
 
   for (const [_, rowButtons] of sortedRows) {
     rowButtons.sort((a: any, b: any) => (a.col ?? 0) - (b.col ?? 0) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 
+    const row: any[] = []
     for (const btn of rowButtons) {
-      const label = btn.iconCustomEmojiId
-        ? `${btn.label}`  // emoji handled by Telegram, label stays as-is
-        : btn.label
+      // Build raw InlineKeyboardButton with style support (Bot API 9.4)
+      const button: any = { text: btn.label }
 
+      // Set action
       if (btn.type === 'url' && btn.url) {
-        kb.url(label, btn.url)
-      } else if (btn.type === 'copy' && btn.copyText) {
-        // Copy button via callback that triggers copy
-        kb.text(label, `copy:${btn.id}`)
+        button.url = resolve(btn.url)
+      } else if (btn.type === 'webapp' && btn.url) {
+        button.web_app = { url: resolve(btn.url) }
+      } else if (btn.type === 'copy_text' && btn.copyText) {
+        button.copy_text = { text: resolve(btn.copyText) }
       } else {
-        // Default: block navigation via callback
-        kb.text(label, `blk:${btn.id}`)
+        button.callback_data = `blk:${btn.id}`
       }
+
+      // Colored buttons (Bot API 9.4) — field: "style", values: "success" | "danger" | "primary"
+      if (btn.style && btn.style !== 'default') {
+        button.style = btn.style  // success → green, danger → red, primary → blue
+      }
+
+      // Premium emoji icon on button (Bot API 9.4)
+      if (btn.iconCustomEmojiId) {
+        button.icon_custom_emoji_id = btn.iconCustomEmojiId
+      }
+
+      row.push(button)
     }
-    kb.row()
+    if (row.length > 0) keyboard.push(row)
   }
 
-  return kb
+  return { inline_keyboard: keyboard }
 }
 
 // ══════════════════════════════════════════════════════════════
