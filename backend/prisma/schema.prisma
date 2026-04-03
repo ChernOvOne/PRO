@@ -80,6 +80,10 @@ model User {
   buhAuditLogs       BuhAuditLog[]
   utmLeads           BuhUtmLead[]
 
+  // ── Bot Constructor relations ──────────────────────────
+  userTags           UserTag[]
+  userVariables      UserVariable[]
+
   @@map("users")
 }
 
@@ -929,6 +933,181 @@ model BuhWebhookPayment {
   createdAt     DateTime  @default(now()) @map("created_at")
 
   @@map("buh_webhook_payments")
+}
+
+// ============================================================
+//  BOT CONSTRUCTOR MODELS (no-code visual flow builder)
+// ============================================================
+
+model BotBlockGroup {
+  id        String     @id @default(uuid())
+  name      String
+  icon      String?
+  sortOrder Int        @default(0) @map("sort_order")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  blocks    BotBlock[]
+  @@map("bot_block_groups")
+}
+
+model BotBlock {
+  id        String        @id @default(uuid())
+  name      String
+  groupId   String?       @map("group_id")
+  group     BotBlockGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  type      BotBlockType
+  text          String?   @db.Text
+  mediaUrl      String?   @map("media_url") @db.Text
+  mediaType     String?   @map("media_type")
+  parseMode     String    @default("Markdown") @map("parse_mode")
+  pinMessage    Boolean   @default(false) @map("pin_message")
+  deletePrev    String    @default("none") @map("delete_prev")
+  replyKeyboard Json?     @map("reply_keyboard")
+  removeReplyKb Boolean   @default(false) @map("remove_reply_kb")
+  conditionType   String?  @map("condition_type")
+  conditionValue  String?  @map("condition_value")
+  conditionLogic  String   @default("AND") @map("condition_logic")
+  conditions      Json?
+  nextBlockTrue   String?  @map("next_block_true")
+  nextBlockFalse  String?  @map("next_block_false")
+  actionType    String?  @map("action_type")
+  actionValue   String?  @map("action_value")
+  nextBlockId   String?  @map("next_block_id")
+  inputPrompt     String?  @map("input_prompt") @db.Text
+  inputVar        String?  @map("input_var")
+  inputValidation String?  @map("input_validation")
+  delayMinutes  Int?     @map("delay_minutes")
+  delayUnit     String   @default("minutes") @map("delay_unit")
+  splitVariants Json?    @map("split_variants")
+  redirectBlockId String? @map("redirect_block_id")
+  reactionEmoji String?  @map("reaction_emoji")
+  notifyAdminText String? @map("notify_admin_text") @db.Text
+  httpMethod    String?  @map("http_method")
+  httpUrl       String?  @map("http_url") @db.Text
+  httpHeaders   Json?    @map("http_headers")
+  httpBody      String?  @map("http_body") @db.Text
+  httpSaveVar   String?  @map("http_save_var")
+  emailSubject  String?  @map("email_subject")
+  emailBody     String?  @map("email_body") @db.Text
+  paymentTitle       String?  @map("payment_title")
+  paymentDescription String?  @map("payment_description") @db.Text
+  paymentAmount      Int?     @map("payment_amount")
+  paymentPayload     String?  @map("payment_payload")
+  messageEffectId String?  @map("message_effect_id")
+  streamingText   String?  @map("streaming_text") @db.Text
+  giftId          String?  @map("gift_id")
+  funnelId        String?  @map("funnel_id")
+  throttleMinutes Int?     @map("throttle_minutes")
+  scheduleStart   String?  @map("schedule_start")
+  scheduleEnd     String?  @map("schedule_end")
+  scheduleDays    Json?    @map("schedule_days")
+  scheduleBlockId String?  @map("schedule_block_id")
+  posX          Float    @default(0) @map("pos_x")
+  posY          Float    @default(0) @map("pos_y")
+  isDraft       Boolean  @default(true) @map("is_draft")
+  version       Int      @default(1)
+  publishedAt   DateTime? @map("published_at")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  buttons       BotButton[]
+  triggers      BotTrigger[]
+  stats         BotBlockStat[]
+  @@index([groupId])
+  @@index([type])
+  @@map("bot_blocks")
+}
+
+model BotButton {
+  id          String   @id @default(uuid())
+  blockId     String   @map("block_id")
+  block       BotBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  label       String
+  type        String   @default("block")
+  nextBlockId String?  @map("next_block_id")
+  url         String?  @db.Text
+  copyText    String?  @map("copy_text") @db.Text
+  style              String?
+  iconCustomEmojiId  String?  @map("icon_custom_emoji_id")
+  row         Int      @default(0)
+  col         Int      @default(0)
+  sortOrder   Int      @default(0) @map("sort_order")
+  clickCount  Int      @default(0) @map("click_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@index([blockId])
+  @@map("bot_buttons")
+}
+
+model BotTrigger {
+  id        String   @id @default(uuid())
+  type      String
+  value     String
+  blockId   String   @map("block_id")
+  block     BotBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  priority  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([type, value])
+  @@index([type])
+  @@map("bot_triggers")
+}
+
+model BotBlockStat {
+  id       String   @id @default(uuid())
+  blockId  String   @map("block_id")
+  block    BotBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  date     DateTime @db.Date
+  views    Int      @default(0)
+  clicks   Int      @default(0)
+  dropoffs Int      @default(0)
+  @@unique([blockId, date])
+  @@map("bot_block_stats")
+}
+
+model UserTag {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag       String
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([userId, tag])
+  @@index([tag])
+  @@map("user_tags")
+}
+
+model UserVariable {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([userId, key])
+  @@index([key])
+  @@map("user_variables")
+}
+
+enum BotBlockType {
+  MESSAGE
+  CONDITION
+  ACTION
+  INPUT
+  DELAY
+  SPLIT
+  REDIRECT
+  PAYMENT
+  MEDIA_GROUP
+  EFFECT
+  REACTION
+  STREAMING
+  GIFT
+  HTTP
+  EMAIL
+  NOTIFY_ADMIN
+  ASSIGN
+  FUNNEL
 }
 
 // ── Enums ────────────────────────────────────────────────────
