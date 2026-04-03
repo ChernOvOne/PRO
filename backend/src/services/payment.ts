@@ -368,6 +368,20 @@ export class PaymentService {
 
     logger.info(`Payment confirmed: ${orderId}, user: ${user.id}, +${effectiveDays} days`)
 
+    // Auto-create BuhTransaction (accounting income) for confirmed payments
+    try {
+      await prisma.buhTransaction.create({
+        data: {
+          type:        'INCOME',
+          amount:      payment.amount,
+          date:        new Date(),
+          description: `Оплата подписки: ${tariff.name} (${payment.provider})`,
+        },
+      })
+    } catch (err) {
+      logger.warn('Failed to create buh transaction for payment:', err)
+    }
+
     // Send payment confirmation notifications (Telegram + Email)
     await notifications.paymentConfirmed(user.id, tariff.name, newExpireAt).catch(err =>
       logger.warn('Payment notification failed:', err)

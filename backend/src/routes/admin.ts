@@ -727,6 +727,16 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { userId: id, adminId, text: `Начислено ${days} бонусных дней${description ? ': ' + description : ''}` }
     })
 
+    // Record in balance history so user sees it in activity
+    await prisma.balanceTransaction.create({
+      data: {
+        userId: id,
+        amount: days,
+        type: 'GIFT',
+        description: `Начислено ${days} бонусных дней`,
+      },
+    })
+
     logger.info(`Admin granted ${days} bonus days to user ${id}`)
     return { ok: true, newBonusDays: user.bonusDays }
   })

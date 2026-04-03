@@ -613,14 +613,13 @@ export async function userRoutes(app: FastifyInstance) {
       })
     }
 
-    // Record in payment history
-    const tariffId = cheapestTariff?.id || (await prisma.tariff.findFirst({ select: { id: true } }))!.id
-    await prisma.payment.create({
+    // Record in user activity
+    await prisma.balanceTransaction.create({
       data: {
-        userId, tariffId,
-        provider: 'MANUAL', amount: 0, currency: 'RUB',
-        status: 'PAID', purpose: 'SUBSCRIPTION', confirmedAt: new Date(),
-        yukassaStatus: JSON.stringify({ _type: 'bonus_redeem', days }),
+        userId,
+        amount: days,
+        type: 'GIFT',
+        description: `Подписка продлена на ${days} дней (бонусные дни)`,
       },
     })
 
@@ -782,7 +781,11 @@ export async function buildActivityLog(
         case 'bonus_redeem':   desc = `Использование бонусных дней: ${meta?.days ?? '?'} дн.`; break
         case 'referral_redeem': desc = `Использование реферальных дней: ${meta?.days ?? '?'} дн.`; break
         case 'balance_purchase': desc = `Оплата с баланса: ${p.tariff?.name || 'Тариф'}`; break
-        default:               desc = p.amount > 0 ? `Оплата: ${p.tariff?.name || 'Тариф'}` : (p.tariff?.name || `Действие`); break
+        default: {
+          const statusLabel = p.status === 'PAID' ? '' : p.status === 'PENDING' ? ' (ожидание)' : p.status === 'FAILED' ? ' (не оплачен)' : p.status === 'EXPIRED' ? ' (истёк)' : ` (${p.status})`
+          desc = p.amount > 0 ? `Оплата: ${p.tariff?.name || 'Тариф'}${statusLabel}` : (p.tariff?.name || `Действие`)
+          break
+        }
       }
 
       entries.push({

@@ -35,7 +35,7 @@ interface BuhDashboard {
   balance:          number
   recentTransactions: Array<{
     id:          string
-    type:        'income' | 'expense'
+    type:        'INCOME' | 'EXPENSE'
     amount:      number
     description: string
     date:        string
@@ -85,8 +85,8 @@ function fmtShort(amount: number): string {
   if (Math.abs(amount) >= 1_000_000) {
     return (amount / 1_000_000).toFixed(1).replace('.0', '') + 'M \u20BD'
   }
-  if (Math.abs(amount) >= 1_000) {
-    return (amount / 1_000).toFixed(1).replace('.0', '') + 'K \u20BD'
+  if (Math.abs(amount) >= 100_000) {
+    return (amount / 1_000).toFixed(0) + 'K \u20BD'
   }
   return fmt(amount)
 }
@@ -171,15 +171,20 @@ export default function AdminDashboard() {
     ? Math.max(...vpnStats.revenueChart.map(d => Number(d.amount)), 1)
     : 1
 
-  // Financial KPIs
-  const income     = buhData?.period?.income ?? 0
-  const expense    = buhData?.period?.expense ?? 0
-  const profit     = buhData?.period?.profit ?? (income - expense)
+  // Financial KPIs — select data based on active period
+  const periodData = buhData
+    ? (period === 'today' ? (buhData as any).today
+     : period === 'year'  ? (buhData as any).year
+     :                      (buhData as any).month) ?? {}
+    : {}
+  const income     = periodData.income ?? 0
+  const expense    = periodData.expense ?? 0
+  const profit     = periodData.profit ?? (income - expense)
   const balance    = buhData?.balance ?? 0
-  const avgPerDay  = buhData?.period?.avgPerDay ?? 0
-  const daysInPeriod = buhData?.period?.daysInPeriod ?? 1
+  const avgPerDay  = periodData.avgPerDay ?? 0
+  const daysInPeriod = periodData.daysInPeriod ?? 1
   const expensePct = income > 0 ? Math.round((expense / income) * 100) : 0
-  const bestDay    = buhData?.period?.bestDay
+  const bestDay    = periodData.bestDay ? { date: periodData.bestDay, amount: periodData.bestDayAmount ?? 0 } : null
   const serverWarnings = buhData?.serverWarnings ?? []
 
   return (
@@ -468,10 +473,10 @@ export default function AdminDashboard() {
               <div key={tx.id} className="flex items-center gap-3 px-3 py-2 rounded-xl"
                    style={{ background: 'rgba(255,255,255,0.02)' }}>
                 <div className="w-2 h-2 rounded-full flex-shrink-0"
-                     style={{ background: tx.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }} />
+                     style={{ background: tx.type === 'INCOME' ? INCOME_COLOR : EXPENSE_COLOR }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {tx.description || (tx.type === 'income' ? 'Доход' : 'Расход')}
+                    {tx.description || (tx.type === 'INCOME' ? 'Доход' : 'Расход')}
                   </p>
                   <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                     {formatDateRu(tx.date)}
@@ -479,8 +484,8 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <span className="text-xs font-bold flex-shrink-0"
-                      style={{ color: tx.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
-                  {tx.type === 'income' ? '+' : '-'}{fmt(Math.abs(tx.amount))}
+                      style={{ color: tx.type === 'INCOME' ? INCOME_COLOR : EXPENSE_COLOR }}>
+                  {tx.type === 'INCOME' ? '+' : '-'}{fmt(Math.abs(tx.amount))}
                 </span>
               </div>
             ))}
