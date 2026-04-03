@@ -51,7 +51,7 @@ interface BuhDashboard {
     date:   string
     amount: number
   }>
-  partners: Array<{
+  partnersSummary: Array<{
     id:             string
     name:           string
     avatarColor?:   string
@@ -459,7 +459,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
               Последние операции
             </h2>
-            <Link href="/admin/buh/transactions" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <Link href="/admin/transactions" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Все &rarr;
             </Link>
           </div>
@@ -499,17 +499,17 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
               Партнёры
             </h2>
-            <Link href="/admin/buh/partners" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <Link href="/admin/partners-investors" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Все &rarr;
             </Link>
           </div>
           <div className="space-y-3">
-            {(buhData?.partners ?? []).length === 0 && (
+            {(buhData?.partnersSummary ?? []).length === 0 && (
               <p className="text-xs py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>
                 Нет партнёров
               </p>
             )}
-            {(buhData?.partners ?? []).map(p => (
+            {(buhData?.partnersSummary ?? []).map(p => (
               <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
                    style={{ background: 'rgba(255,255,255,0.02)' }}>
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"

@@ -102,3 +102,18 @@ export async function removeScheduledBlock(userId: string, blockId: string): Pro
     logger.error(`removeScheduledBlock failed for ${userId}/${blockId}`, e)
   }
 }
+
+// ── Last Message ID (for deletePrev) ────────────────────────
+
+export async function setLastMessageId(chatId: string, messageId: number): Promise<void> {
+  try {
+    await redis.set(`bot:lastmsg:${chatId}`, String(messageId), 'EX', 3600)
+  } catch {}
+}
+
+export async function getLastMessageId(chatId: string): Promise<number | null> {
+  try {
+    const val = await redis.get(`bot:lastmsg:${chatId}`)
+    return val ? parseInt(val, 10) : null
+  } catch { return null }
+}

@@ -5,7 +5,7 @@ import { join } from 'path'
 import { logger } from '../utils/logger'
 
 const UPLOAD_DIR = '/app/uploads'
-const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 
 export async function uploadRoutes(app: FastifyInstance) {
   // Upload file (admin only)
@@ -25,7 +25,7 @@ export async function uploadRoutes(app: FastifyInstance) {
 
       // Determine extension
       const ext = data.filename.split('.').pop()?.toLowerCase() || 'bin'
-      const allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico']
+      const allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'mp4', 'webm', 'mp3', 'ogg', 'pdf', 'doc', 'docx', 'zip']
       if (!allowed.includes(ext)) return reply.status(400).send({ error: `File type .${ext} not allowed` })
 
       const filename = `${randomUUID()}.${ext}`

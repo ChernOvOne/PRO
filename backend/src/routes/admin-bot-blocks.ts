@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import Redis from 'ioredis'
 import { prisma } from '../db'
+import { config } from '../config'
 
 const BotBlockTypeEnum = z.enum([
   'MESSAGE', 'CONDITION', 'ACTION', 'INPUT', 'DELAY', 'SPLIT',
@@ -105,6 +107,7 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
       include: {
         _count: { select: { buttons: true, triggers: true } },
         group:  { select: { id: true, name: true, icon: true } },
+        buttons: { orderBy: [{ row: 'asc' }, { col: 'asc' }, { sortOrder: 'asc' }] },
       },
     })
 
@@ -284,6 +287,15 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
       invalidateBlockCache()
     } catch {
       // engine module not yet available
+    }
+
+    // Notify bot container(s) via Redis pub/sub
+    try {
+      const pub = new Redis(config.redis.url)
+      await pub.publish('bot:cache:invalidate', JSON.stringify({ blockId: id, ts: Date.now() }))
+      await pub.quit()
+    } catch {
+      // Redis publish failed — bot will reload on next TTL expiry
     }
 
     return block
