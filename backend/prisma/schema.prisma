@@ -1108,6 +1108,10 @@ enum BotBlockType {
   NOTIFY_ADMIN
   ASSIGN
   FUNNEL
+  TARIFF_LIST
+  PAYMENT_SUCCESS
+  PAYMENT_FAIL
+  PROMO_ACTIVATE
 }
 
 // ── Enums ────────────────────────────────────────────────────

@@ -1402,6 +1402,35 @@ bot.on('message:text', async (ctx) => {
     return
   }
 
+  // Quick income/expense: +1000 описание / -500 описание (for admin users)
+  const quickMatch = ctx.message.text.match(/^([+\-])\s*(\d+[\d.,]*)\s*(.*)$/)
+  if (quickMatch) {
+    const userCheck = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { role: true } })
+    if (userCheck && userCheck.role !== 'USER') {
+      const sign = quickMatch[1]
+      const amount = parseFloat(quickMatch[2].replace(',', '.'))
+      const desc = quickMatch[3]?.trim() || ''
+      if (!isNaN(amount) && amount > 0) {
+        try {
+          const type = sign === '+' ? 'INCOME' : 'EXPENSE'
+          await prisma.buhTransaction.create({
+            data: { type, amount, date: new Date(), description: desc || (type === 'INCOME' ? 'Доход' : 'Расход') },
+          })
+          const emoji = type === 'INCOME' ? '💚' : '❤️'
+          const label = type === 'INCOME' ? 'Доход записан' : 'Расход записан'
+          const fmtAmt = amount.toLocaleString('ru-RU') + ' ₽'
+          await ctx.reply(
+            `${emoji} *${label}*\n\n💰 Сумма: ${fmtAmt}${desc ? `\n📝 ${desc}` : ''}`,
+            { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⚙️ Админка', callback_data: 'adm:menu' }, { text: '🏠 Меню', callback_data: 'engine:back:start' }]] } }
+          )
+          return
+        } catch (err) {
+          logger.warn('Quick income/expense error:', err)
+        }
+      }
+    }
+  }
+
   // No active state — try engine text trigger, then /start trigger, then hardcoded menu
   try {
     const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
@@ -1496,6 +1525,10 @@ bot.on('poll_answer', async (ctx) => {
     logger.warn('Failed to track poll answer:', err)
   }
 })
+
+// ── Admin Panel (inline бухгалтерия в боте) ─────────────────
+import { registerAdminPanel } from './admin-panel'
+registerAdminPanel()
 
 // ── Bot Constructor: handle block button callbacks ──────────
 import { executeBlock, findTriggerBlock, loadBlockCache, subscribeCacheInvalidation, trackClick } from './engine'
@@ -1596,10 +1629,16 @@ bot.callbackQuery(/^engine:pay:(\w+):(.+)$/, async (ctx) => {
         })
         // Confirm payment (activates subscription)
         await paymentService.confirmPayment(payment.id)
-        await ctx.editMessageText(
-          `✅ *Оплата прошла!*\n\nТариф: ${tariff.name}\nСпособ: Баланс\n\nПодписка активирована!`,
-          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
-        )
+        // Go to PAYMENT_SUCCESS block if exists
+        const successBlock = await prisma.botBlock.findFirst({ where: { type: 'PAYMENT_SUCCESS', isDraft: false } })
+        if (successBlock) {
+          await executeBlock(successBlock.id, ctx, user.id, chatId)
+        } else {
+          await ctx.editMessageText(
+            `✅ *Оплата прошла!*\n\nТариф: ${tariff.name}\nПодписка активирована!`,
+            { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Главное меню', callback_data: 'engine:back:start' }]] } }
+          )
+        }
       } catch (err: any) {
         await ctx.editMessageText('❌ ' + (err.message || 'Ошибка оплаты'))
       }
@@ -1640,16 +1679,30 @@ bot.callbackQuery(/^engine:pay:(\w+):(.+)$/, async (ctx) => {
 bot.callbackQuery(/^engine:verify:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery()
   const orderId = ctx.match[1]
+  const chatId = String(ctx.from.id)
 
   try {
     const payment = await prisma.payment.findUnique({ where: { id: orderId } })
     if (!payment) { await ctx.editMessageText('❌ Платёж не найден'); return }
 
+    const goToSuccessBlock = async () => {
+      const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+      if (!user) return
+      // Find PAYMENT_SUCCESS block in engine
+      const successBlock = await prisma.botBlock.findFirst({ where: { type: 'PAYMENT_SUCCESS', isDraft: false } })
+      if (successBlock) {
+        await executeBlock(successBlock.id, ctx, user.id, chatId)
+      } else {
+        // Fallback if no PAYMENT_SUCCESS block configured
+        await ctx.editMessageText(
+          '✅ *Оплата подтверждена!*\n\nПодписка активирована.',
+          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Главное меню', callback_data: 'engine:back:start' }]] } }
+        )
+      }
+    }
+
     if (payment.status === 'PAID') {
-      await ctx.editMessageText(
-        '✅ *Оплата подтверждена!*\n\nПодписка активирована.',
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
-      )
+      await goToSuccessBlock()
       return
     }
 
@@ -1658,10 +1711,7 @@ bot.callbackQuery(/^engine:verify:(.+)$/, async (ctx) => {
       const yp = await paymentService.yukassa.getPayment(payment.yukassaPaymentId)
       if (yp.paid || yp.status === 'succeeded') {
         await paymentService.confirmPayment(orderId)
-        await ctx.editMessageText(
-          '✅ *Оплата подтверждена!*\n\nПодписка активирована.',
-          { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔑 Моя подписка', callback_data: `engine:back:start` }]] } }
-        )
+        await goToSuccessBlock()
         return
       }
     }
