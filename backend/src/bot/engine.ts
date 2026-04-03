@@ -17,7 +17,7 @@ const redis = new Redis(config.redis.url)
 
 let blockCache: Map<string, any> | null = null
 let cacheTime = 0
-const CACHE_TTL_MS = 60_000
+const CACHE_TTL_MS = 300_000 // 5 min (invalidated by Redis pub/sub on publish)
 
 export async function loadBlockCache(): Promise<void> {
   const now = Date.now()
@@ -187,6 +187,26 @@ export async function resolveVariables(text: string, userId: string): Promise<st
     '{referralCount}':    String(referralCount),
     '{referralPaidCount}': String(referralPaidCount),
     '{appUrl}':           config.appUrl,
+  }
+
+  // Dynamic: tariff list from DB
+  if (text.includes('{tariffs}')) {
+    try {
+      const tariffs = await prisma.tariff.findMany({
+        where: { isActive: true, type: 'SUBSCRIPTION', isTrial: false },
+        orderBy: [{ sortOrder: 'asc' }, { priceRub: 'asc' }],
+      })
+      const tariffLines = tariffs.map(t => {
+        const price = `${t.priceRub} ₽`
+        const days = t.durationDays > 0 ? `${t.durationDays} дн.` : ''
+        const traffic = t.trafficGb ? `${t.trafficGb} ГБ` : '∞'
+        const devices = t.deviceLimit > 0 ? `${t.deviceLimit} устр.` : ''
+        return `▫️ *${t.name}* — ${price}${days ? ' / ' + days : ''}${traffic !== '∞' ? ' / ' + traffic : ''}${devices ? ' / ' + devices : ''}`
+      })
+      replacements['{tariffs}'] = tariffLines.length > 0 ? tariffLines.join('\n') : 'Нет доступных тарифов'
+    } catch {
+      replacements['{tariffs}'] = 'Ошибка загрузки тарифов'
+    }
   }
 
   let result = text
@@ -573,7 +593,27 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
   }
 
   // Build inline keyboard from buttons
-  const keyboard = buildKeyboard(block.buttons || [], vars)
+  let keyboard = buildKeyboard(block.buttons || [], vars)
+
+  // Auto-generate tariff buttons if text contains {tariffs}
+  if (block.text?.includes('{tariffs}')) {
+    try {
+      const tariffs = await prisma.tariff.findMany({
+        where: { isActive: true, type: 'SUBSCRIPTION', isTrial: false },
+        orderBy: [{ sortOrder: 'asc' }, { priceRub: 'asc' }],
+      })
+      if (tariffs.length > 0) {
+        const tariffRows = tariffs.map(t => [{
+          text: `${t.name} — ${t.priceRub} ₽`,
+          callback_data: `engine:tariff:${t.id}`,
+          style: 'success',
+        }])
+        // Append tariff buttons before existing buttons
+        const existingRows = keyboard.inline_keyboard || []
+        keyboard = { inline_keyboard: [...tariffRows, ...existingRows] }
+      }
+    } catch { /* ignore tariff load errors */ }
+  }
 
   // Delete previous message if configured
   // Try callback message first, then fall back to Redis-stored last message ID
@@ -618,23 +658,27 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
   const replyMarkup = keyboard.inline_keyboard.length > 0 ? keyboard : undefined
 
   // Replace mode: edit previous message in-place instead of sending new
-  if (block.deletePrev === 'replace' && prevMsgId && !block.mediaUrl && finalText) {
-    try {
-      await bot.api.editMessageText(chatId, prevMsgId, finalText, {
-        parse_mode: parseMode,
-        reply_markup: replyMarkup as any ?? { inline_keyboard: [] },
-      })
-      setLastMessageId(chatId, prevMsgId).catch(() => {})
-      prisma.botMessage.create({
-        data: { chatId, userId, direction: 'OUT', text: finalText.slice(0, 4000) },
-      }).catch(() => {})
-      // Execute next block
-      if (block.nextBlockId) {
-        await executeBlock(block.nextBlockId, ctx, userId, chatId)
+  if (block.deletePrev === 'replace' && prevMsgId && finalText) {
+    if (!block.mediaUrl) {
+      try {
+        await bot.api.editMessageText(chatId, prevMsgId, finalText, {
+          parse_mode: parseMode,
+          reply_markup: replyMarkup as any ?? { inline_keyboard: [] },
+        })
+        logger.info('Replace OK: edited message ' + prevMsgId)
+        setLastMessageId(chatId, prevMsgId).catch(() => {})
+        prisma.botMessage.create({
+          data: { chatId, userId, direction: 'OUT', text: finalText.slice(0, 4000) },
+        }).catch(() => {})
+        if (block.nextBlockId) {
+          await executeBlock(block.nextBlockId, ctx, userId, chatId)
+        }
+        return
+      } catch (replaceErr: any) {
+        logger.warn('Replace FAILED: ' + (replaceErr?.description || replaceErr?.message || 'unknown'))
+        try { await bot.api.deleteMessage(chatId, prevMsgId) } catch {}
       }
-      return // Skip sending new message
-    } catch {
-      // editMessageText failed (media msg or too old) — fall through to send new
+    } else {
       try { await bot.api.deleteMessage(chatId, prevMsgId) } catch {}
     }
   }
