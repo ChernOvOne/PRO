@@ -3,7 +3,6 @@ import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import { TMAProvider } from '@/providers/TMAProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
-import Script from 'next/script'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['300', '400', '500', '600', '700', '800'] })
@@ -42,10 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           else if(t==='system'||!t){if(window.matchMedia('(prefers-color-scheme:light)').matches)document.documentElement.classList.add('light')}
           }catch(e){}})()
         `}} />
-        <Script
-          src="https://telegram.org/js/telegram-web-app.js"
-          strategy="beforeInteractive"
-        />
       </head>
       <body className={`${inter.className} antialiased`}
             style={{ background: 'var(--surface-0)', color: 'var(--text-primary)' }}>

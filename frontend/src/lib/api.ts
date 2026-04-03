@@ -308,4 +308,132 @@ export const adminApi = {
   updatePromo: (id: string, data: any) => apiFetch<any>(`/admin/promos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePromo: (id: string) => apiFetch<void>(`/admin/promos/${id}`, { method: 'DELETE' }),
   promoStats: (id: string) => apiFetch<any>(`/admin/promos/${id}/stats`),
+
+  // ── Buhgalteria: Dashboard ──────────────────────────────
+  buhDashboard: () => apiFetch<any>('/admin/buh-dashboard'),
+
+  // ── Buhgalteria: Transactions ───────────────────────────
+  buhTransactions: (params: { type?: string; category_id?: string; date_from?: string; date_to?: string; search?: string; skip?: number; limit?: number } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v != null).map(([k,v]) => [k, String(v)]))
+    return apiFetch<{ items: any[]; total: number }>(`/admin/transactions?${q}`)
+  },
+  createBuhTransaction: (data: any) =>
+    apiFetch<any>('/admin/transactions', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhTransaction: (id: string, data: any) =>
+    apiFetch<any>(`/admin/transactions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhTransaction: (id: string) =>
+    apiFetch<void>(`/admin/transactions/${id}`, { method: 'DELETE' }),
+  buhTransactionSummary: (year?: number) =>
+    apiFetch<any[]>(`/admin/transactions/summary/by-month${year ? `?year=${year}` : ''}`),
+
+  // ── Buhgalteria: Categories ─────────────────────────────
+  buhCategories: () => apiFetch<any[]>('/admin/categories'),
+  createBuhCategory: (data: any) =>
+    apiFetch<any>('/admin/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhCategory: (id: string, data: any) =>
+    apiFetch<any>(`/admin/categories/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhCategory: (id: string) =>
+    apiFetch<void>(`/admin/categories/${id}`, { method: 'DELETE' }),
+  buhAutoRules: () => apiFetch<any[]>('/admin/categories/auto-rules'),
+  createBuhAutoRule: (data: any) =>
+    apiFetch<any>('/admin/categories/auto-rules', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBuhAutoRule: (id: string) =>
+    apiFetch<void>(`/admin/categories/auto-rules/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Partners ───────────────────────────────
+  buhPartners: () => apiFetch<any[]>('/admin/partners'),
+  buhPartnerById: (id: string) => apiFetch<any>(`/admin/partners/${id}`),
+  createBuhPartner: (data: any) =>
+    apiFetch<any>('/admin/partners', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhPartner: (id: string, data: any) =>
+    apiFetch<any>(`/admin/partners/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhPartner: (id: string) =>
+    apiFetch<void>(`/admin/partners/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Inkas ──────────────────────────────────
+  buhInkas: (partnerId?: string) => {
+    const q = partnerId ? `?partner_id=${partnerId}` : ''
+    return apiFetch<any[]>(`/admin/inkas${q}`)
+  },
+  createBuhInkas: (data: any) =>
+    apiFetch<any>('/admin/inkas', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBuhInkas: (id: string) =>
+    apiFetch<void>(`/admin/inkas/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Infrastructure ─────────────────────────
+  buhServers: () => apiFetch<any[]>('/admin/infrastructure'),
+  createBuhServer: (data: any) =>
+    apiFetch<any>('/admin/infrastructure', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhServer: (id: string, data: any) =>
+    apiFetch<any>(`/admin/infrastructure/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhServer: (id: string) =>
+    apiFetch<void>(`/admin/infrastructure/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Ads/Marketing ──────────────────────────
+  buhAds: (params: { date_from?: string; date_to?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
+    return apiFetch<any[]>(`/admin/ads?${q}`)
+  },
+  createBuhAd: (data: any) =>
+    apiFetch<any>('/admin/ads', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhAd: (id: string, data: any) =>
+    apiFetch<any>(`/admin/ads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhAd: (id: string) =>
+    apiFetch<void>(`/admin/ads/${id}`, { method: 'DELETE' }),
+  buhAdsSummary: (params: { date_from?: string; date_to?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
+    return apiFetch<any>(`/admin/ads/summary?${q}`)
+  },
+  buhAdsFunnel: (params: { date_from?: string; date_to?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
+    return apiFetch<any[]>(`/admin/ads/funnel?${q}`)
+  },
+
+  // ── Buhgalteria: Recurring ──────────────────────────────
+  buhRecurring: () => apiFetch<any[]>('/admin/recurring'),
+  createBuhRecurring: (data: any) =>
+    apiFetch<any>('/admin/recurring', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBuhRecurring: (id: string) =>
+    apiFetch<void>(`/admin/recurring/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Milestones ─────────────────────────────
+  buhMilestones: () => apiFetch<any[]>('/admin/milestones'),
+  createBuhMilestone: (data: any) =>
+    apiFetch<any>('/admin/milestones', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBuhMilestone: (id: string) =>
+    apiFetch<void>(`/admin/milestones/${id}`, { method: 'DELETE' }),
+
+  // ── Buhgalteria: Monthly Stats ──────────────────────────
+  buhMonthlyStats: (year?: number) =>
+    apiFetch<any[]>(`/admin/monthly-stats${year ? `?year=${year}` : ''}`),
+  upsertBuhMonthlyStats: (year: number, month: number, data: any) =>
+    apiFetch<any>(`/admin/monthly-stats/${year}/${month}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // ── Buhgalteria: UTM ────────────────────────────────────
+  buhUtmStats: (code: string) => apiFetch<any>(`/admin/utm/stats/${code}`),
+  buhUtmSummary: () => apiFetch<any>('/admin/utm/summary'),
+
+  // ── Buhgalteria: Audit ──────────────────────────────────
+  buhAuditLog: (params: { skip?: number; limit?: number; entity?: string; action?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v != null).map(([k,v]) => [k, String(v)]))
+    return apiFetch<{ items: any[]; total: number }>(`/admin/audit?${q}`)
+  },
+
+  // ── Buhgalteria: Notification Channels ──────────────────
+  buhChannels: () => apiFetch<any[]>('/admin/channels'),
+  createBuhChannel: (data: any) =>
+    apiFetch<any>('/admin/channels', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuhChannel: (id: string, data: any) =>
+    apiFetch<any>(`/admin/channels/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBuhChannel: (id: string) =>
+    apiFetch<void>(`/admin/channels/${id}`, { method: 'DELETE' }),
+  testBuhChannel: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/admin/channels/test/${id}`, { method: 'POST' }),
+
+  // ── Buhgalteria: Webhook API Keys ───────────────────────
+  buhWebhookKeys: () => apiFetch<any[]>('/admin/webhook-keys'),
+  createBuhWebhookKey: (data: { name: string }) =>
+    apiFetch<any>('/admin/webhook-keys', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBuhWebhookKey: (id: string) =>
+    apiFetch<void>(`/admin/webhook-keys/${id}`, { method: 'DELETE' }),
 }

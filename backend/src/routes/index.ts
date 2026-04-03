@@ -15,11 +15,29 @@ import { proxyRoutes, adminProxyRoutes }             from './proxies'
 import { giftRoutes }             from './gifts'
 import { verificationRoutes }     from './verification'
 import { adminLandingRoutes }     from './admin-landing'
+import { adminReportsExportRoutes } from './admin-reports-export'
 import { uploadRoutes }           from './upload'
 import { adminPromoRoutes, userPromoRoutes } from './promo'
 import { adminBotRoutes }     from './admin-bot'
 import { adminBroadcastRoutes } from './admin-broadcast'
 import { adminFunnelRoutes }    from './admin-funnels'
+import { adminPartnerRoutes }       from './admin-partners'
+import { adminInkasRoutes }        from './admin-inkas'
+import { adminTransactionRoutes }  from './admin-transactions'
+import { adminCategoryRoutes }     from './admin-categories'
+import { adminInfrastructureRoutes } from './admin-infrastructure'
+import { adminAdsRoutes }          from './admin-ads'
+import { adminRecurringRoutes }    from './admin-recurring'
+import { adminBuhDashboardRoutes } from './admin-buh-dashboard'
+import { adminMilestoneRoutes }    from './admin-milestones'
+import { adminMonthlyStatsRoutes } from './admin-monthly-stats'
+import { adminUtmRoutes }          from './admin-utm'
+import { adminAuditRoutes }        from './admin-audit'
+import { adminChannelRoutes }      from './admin-channels'
+import { adminWebhookKeyRoutes }   from './admin-webhook-keys'
+import { buhWebhookPaymentRoutes } from './buh-webhook-payment'
+import { buhUtmPublicRoutes }      from './buh-utm-public'
+import { adminSetupWizardRoutes }  from './admin-setup-wizard'
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -63,7 +81,27 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminBotRoutes,            { prefix: '/api/admin/bot'           })
   await app.register(adminBroadcastRoutes,     { prefix: '/api/admin/broadcast'     })
   await app.register(adminFunnelRoutes,        { prefix: '/api/admin/communications'})
-  await app.register(uploadRoutes,             { prefix: '/api/admin'               })
+  await app.register(adminPartnerRoutes,       { prefix: '/api/admin/partners'      })
+  await app.register(adminInkasRoutes,         { prefix: '/api/admin/inkas'          })
+  await app.register(adminTransactionRoutes,   { prefix: '/api/admin/transactions'   })
+  await app.register(adminCategoryRoutes,      { prefix: '/api/admin/categories'     })
+  await app.register(adminInfrastructureRoutes, { prefix: '/api/admin/infrastructure' })
+  await app.register(adminAdsRoutes,           { prefix: '/api/admin/ads'            })
+  await app.register(adminRecurringRoutes,     { prefix: '/api/admin/recurring'      })
+  await app.register(adminBuhDashboardRoutes,  { prefix: '/api/admin/buh-dashboard'  })
+  await app.register(adminMilestoneRoutes,     { prefix: '/api/admin/milestones'     })
+  await app.register(adminMonthlyStatsRoutes,  { prefix: '/api/admin/monthly-stats'  })
+  await app.register(adminUtmRoutes,           { prefix: '/api/admin/utm'            })
+  await app.register(adminAuditRoutes,         { prefix: '/api/admin/audit'          })
+  await app.register(adminChannelRoutes,       { prefix: '/api/admin/channels'       })
+  await app.register(adminWebhookKeyRoutes,    { prefix: '/api/admin/webhook-keys'   })
+  await app.register(adminSetupWizardRoutes,   { prefix: '/api/admin/setup-wizard'    })
+  await app.register(adminReportsExportRoutes, { prefix: '/api/admin/reports'         })
+  await app.register(uploadRoutes,             { prefix: '/api/admin'                })
+
+  // Buhgalteria public routes (no auth)
+  await app.register(buhUtmPublicRoutes,       { prefix: '/'                         })
+  await app.register(buhWebhookPaymentRoutes,  { prefix: '/api/webhooks/payment-ingest' })
 
   // Serve uploaded files
   app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })

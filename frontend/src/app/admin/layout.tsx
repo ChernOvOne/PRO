@@ -8,23 +8,75 @@ import {
   Settings, BookOpen, LogOut, Menu, X,
   Package, TrendingUp, ChevronRight, Upload,
   Newspaper, Wifi, Globe, Tag, MessageCircle,
+  ArrowLeftRight, Megaphone, Server, FileText,
+  BarChart2, Wallet, Bot, Handshake,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
-const NAV = [
-  { href: '/admin',              icon: LayoutDashboard, label: 'Дашборд' },
-  { href: '/admin/users',        icon: Users,           label: 'Пользователи' },
-  { href: '/admin/payments',     icon: CreditCard,      label: 'Платежи' },
-  { href: '/admin/tariffs',      icon: Package,         label: 'Тарифы' },
-  { href: '/admin/news',         icon: Newspaper,       label: 'Новости' },
-  { href: '/admin/proxies',      icon: Wifi,            label: 'Прокси' },
-  { href: '/admin/instructions', icon: BookOpen,        label: 'Инструкции' },
-  { href: '/admin/promos',       icon: Tag,             label: 'Промокоды' },
-  { href: '/admin/communications', icon: MessageCircle, label: 'Коммуникации' },
-  { href: '/admin/analytics',    icon: TrendingUp,      label: 'Аналитика' },
-  { href: '/admin/landing',      icon: Globe,           label: 'Лендинг' },
-  { href: '/admin/import',       icon: Upload,          label: 'Импорт' },
-  { href: '/admin/settings',     icon: Settings,        label: 'Настройки' },
+// Staff roles that can access admin panel
+const STAFF_ROLES = ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER']
+
+type NavItem = {
+  href: string
+  icon: any
+  label: string
+  roles?: string[] // if undefined, all staff can see
+}
+
+type NavGroup = {
+  title: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    title: 'Финансы',
+    items: [
+      { href: '/admin',                  icon: LayoutDashboard, label: 'Дашборд' },
+      { href: '/admin/transactions',     icon: ArrowLeftRight,  label: 'Транзакции',    roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/partners-investors', icon: Handshake,     label: 'Партнёры',      roles: ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER'] },
+      { href: '/admin/inkas',            icon: Wallet,          label: 'Инкассация',    roles: ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER'] },
+      { href: '/admin/reports-export',   icon: FileText,        label: 'Отчёты',        roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/compare',          icon: BarChart2,       label: 'Сравнение',     roles: ['ADMIN', 'EDITOR'] },
+    ],
+  },
+  {
+    title: 'Маркетинг',
+    items: [
+      { href: '/admin/marketing',        icon: Megaphone,       label: 'Реклама',       roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/webhook-payments', icon: CreditCard,      label: 'Webhook-платежи', roles: ['ADMIN'] },
+    ],
+  },
+  {
+    title: 'VPN',
+    items: [
+      { href: '/admin/users',            icon: Users,           label: 'Пользователи' },
+      { href: '/admin/tariffs',          icon: Package,         label: 'Тарифы',        roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/payments',         icon: CreditCard,      label: 'Платежи' },
+      { href: '/admin/infrastructure',   icon: Server,          label: 'Инфраструктура', roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/instructions',     icon: BookOpen,        label: 'Инструкции',    roles: ['ADMIN', 'EDITOR'] },
+    ],
+  },
+  {
+    title: 'Коммуникации',
+    items: [
+      { href: '/admin/news',             icon: Newspaper,       label: 'Новости',       roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/broadcast',        icon: MessageCircle,   label: 'Рассылки',      roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/communications',   icon: MessageCircle,   label: 'Воронки',       roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/promos',           icon: Tag,             label: 'Промокоды',     roles: ['ADMIN', 'EDITOR'] },
+    ],
+  },
+  {
+    title: 'Система',
+    items: [
+      { href: '/admin/analytics',        icon: TrendingUp,      label: 'Аналитика',     roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/bot',              icon: Bot,             label: 'Бот',            roles: ['ADMIN'] },
+      { href: '/admin/proxies',          icon: Wifi,            label: 'Прокси',        roles: ['ADMIN'] },
+      { href: '/admin/landing',          icon: Globe,           label: 'Лендинг',       roles: ['ADMIN'] },
+      { href: '/admin/import',           icon: Upload,          label: 'Импорт',        roles: ['ADMIN'] },
+      { href: '/admin/settings',         icon: Settings,        label: 'Настройки',     roles: ['ADMIN'] },
+    ],
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -32,13 +84,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const [loading, setLoading]   = useState(true)
   const [sideOpen, setSideOpen] = useState(false)
+  const [userRole, setUserRole] = useState<string>('ADMIN')
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(user => {
-        if (user.role !== 'ADMIN') router.push('/dashboard')
-        else setLoading(false)
+        if (!STAFF_ROLES.includes(user.role)) router.push('/dashboard')
+        else {
+          setUserRole(user.role)
+          setLoading(false)
+        }
       })
       .catch(() => router.push('/login'))
   }, [router])
@@ -80,27 +136,43 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ href, icon: Icon, label }) => {
-          const active = href === '/admin' ? pathname === href : pathname.startsWith(href)
+      <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
+        {NAV_GROUPS.map((group) => {
+          const visibleItems = group.items.filter(
+            item => !item.roles || item.roles.includes(userRole)
+          )
+          if (visibleItems.length === 0) return null
           return (
-            <Link key={href} href={href} onClick={() => setSideOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-200 group"
-                  style={{
-                    background: active ? 'rgba(139,92,246,0.08)' : 'transparent',
-                    color: active ? '#a78bfa' : 'var(--text-secondary)',
-                  }}>
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" style={{
-                color: active ? '#a78bfa' : 'var(--text-tertiary)',
-              }} />
-              <span className={active ? 'font-medium' : 'group-hover:text-[var(--text-primary)]'}>
-                {label}
-              </span>
-              {active && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full"
-                     style={{ background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)' }} />
-              )}
-            </Link>
+            <div key={group.title}>
+              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider"
+                   style={{ color: 'var(--text-tertiary)' }}>
+                {group.title}
+              </div>
+              <div className="space-y-0.5 mt-1">
+                {visibleItems.map(({ href, icon: Icon, label }) => {
+                  const active = href === '/admin' ? pathname === href : pathname.startsWith(href)
+                  return (
+                    <Link key={href} href={href} onClick={() => setSideOpen(false)}
+                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] transition-all duration-200 group"
+                          style={{
+                            background: active ? 'rgba(139,92,246,0.08)' : 'transparent',
+                            color: active ? '#a78bfa' : 'var(--text-secondary)',
+                          }}>
+                      <Icon className="w-[18px] h-[18px] flex-shrink-0" style={{
+                        color: active ? '#a78bfa' : 'var(--text-tertiary)',
+                      }} />
+                      <span className={active ? 'font-medium' : 'group-hover:text-[var(--text-primary)]'}>
+                        {label}
+                      </span>
+                      {active && (
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full"
+                             style={{ background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)' }} />
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
           )
         })}
       </nav>
