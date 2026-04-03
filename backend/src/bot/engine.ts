@@ -187,6 +187,7 @@ export async function resolveVariables(text: string, userId: string): Promise<st
     '{referralCount}':    String(referralCount),
     '{referralPaidCount}': String(referralPaidCount),
     '{appUrl}':           config.appUrl,
+    '{admin_button}':     '', // handled separately — generates admin webapp button for staff
   }
 
   // Dynamic: tariff list from DB
@@ -570,6 +571,22 @@ export async function executeBlock(
         await handleFunnel(block, ctx, userId, chatId)
         break
 
+      case 'TARIFF_LIST':
+        await handleTariffList(block, ctx, userId, chatId)
+        break
+
+      case 'PAYMENT_SUCCESS':
+        await handleMessage(block, ctx, userId, chatId) // renders as regular message with resolved vars
+        break
+
+      case 'PAYMENT_FAIL':
+        await handleMessage(block, ctx, userId, chatId)
+        break
+
+      case 'PROMO_ACTIVATE':
+        await handlePromoActivate(block, ctx, userId, chatId)
+        break
+
       default:
         logger.warn(`Unknown block type: ${block.type} (block ${blockId})`)
     }
@@ -613,6 +630,23 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
         keyboard = { inline_keyboard: [...tariffRows, ...existingRows] }
       }
     } catch { /* ignore tariff load errors */ }
+  }
+
+  // Auto-add admin button for staff users (only if block text contains {admin_button})
+  if (block.text?.includes('{admin_button}')) {
+    const fullUser = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+    if (fullUser && fullUser.role !== 'USER') {
+      const existingRows = keyboard.inline_keyboard || []
+      keyboard = {
+        inline_keyboard: [
+          ...existingRows,
+          [
+            { text: '⚙️ Админка', callback_data: 'adm:menu' },
+            { text: '🌐 Web-панель', web_app: { url: `${appConfig.appUrl}/admin` } },
+          ],
+        ],
+      }
+    }
   }
 
   // Delete previous message if configured
@@ -1142,8 +1176,157 @@ async function handleAssign(block: any, _ctx: Context | null, userId: string, ch
 }
 
 async function handleFunnel(block: any, _ctx: Context | null, userId: string, _chatId: string) {
-  // Placeholder — log funnel trigger
   logger.info(`Funnel block ${block.id}: funnelId=${block.funnelId}, user=${userId}`)
+}
+
+// ── TARIFF_LIST: auto-generate tariff list with payment buttons ──
+async function handleTariffList(block: any, ctx: Context | null, userId: string, chatId: string) {
+  const { config: appConfig } = await import('../config')
+
+  const tariffs = await prisma.tariff.findMany({
+    where: { isActive: true, type: 'SUBSCRIPTION', isTrial: false },
+    orderBy: [{ sortOrder: 'asc' }, { priceRub: 'asc' }],
+  })
+
+  if (tariffs.length === 0) {
+    await bot.api.sendMessage(chatId, '😕 Нет доступных тарифов', { reply_markup: { inline_keyboard: [[{ text: '◀️ Назад', callback_data: 'engine:back:start' }]] } })
+    return
+  }
+
+  // Build tariff description
+  const headerText = await resolveVariables(block.text || '💳 *Выберите тариф:*', userId)
+  const tariffLines = tariffs.map(t => {
+    const traffic = t.trafficGb ? `${t.trafficGb} ГБ` : '∞'
+    return `▫️ *${t.name}* — ${t.priceRub} ₽ / ${t.durationDays} дн. / ${traffic} / ${t.deviceLimit} устр.`
+  })
+
+  const text = `${headerText}\n\n${tariffLines.join('\n')}`
+
+  // Build tariff buttons
+  const tariffRows = tariffs.map(t => [{
+    text: `💳 ${t.name} — ${t.priceRub} ₽`,
+    callback_data: `engine:tariff:${t.id}`,
+  }])
+
+  // Add existing block buttons (like "Назад")
+  const blockButtons = buildKeyboard(block.buttons || [], { appUrl: appConfig.appUrl })
+  const allRows = [...tariffRows, ...(blockButtons.inline_keyboard || [])]
+
+  // Handle deletePrev
+  let prevMsgId: number | null = ctx?.callbackQuery?.message?.message_id ?? null
+  if (!prevMsgId) prevMsgId = await getLastMessageId(chatId)
+
+  let sentMessage: any
+  if (block.deletePrev === 'replace' && prevMsgId) {
+    try {
+      await bot.api.editMessageText(chatId, prevMsgId, text, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: allRows } as any,
+      })
+      setLastMessageId(chatId, prevMsgId).catch(() => {})
+      return
+    } catch {
+      try { await bot.api.deleteMessage(chatId, prevMsgId) } catch {}
+    }
+  } else if (block.deletePrev === 'full' && prevMsgId) {
+    try { await bot.api.deleteMessage(chatId, prevMsgId) } catch {}
+  }
+
+  sentMessage = await bot.api.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: allRows },
+  })
+
+  if (sentMessage?.message_id) {
+    setLastMessageId(chatId, sentMessage.message_id).catch(() => {})
+  }
+}
+
+// ── PROMO_ACTIVATE: validate and activate promo code ────────
+async function handlePromoActivate(block: any, ctx: Context | null, userId: string, chatId: string) {
+  // Get the promo code from user variable (set by preceding INPUT block)
+  const varName = block.inputVar || 'promo_code'
+  const userVar = await prisma.userVariable.findUnique({
+    where: { userId_key: { userId, key: varName } },
+  })
+  const code = userVar?.value?.trim().toUpperCase()
+
+  if (!code) {
+    await bot.api.sendMessage(chatId, '❌ Промокод не указан.')
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+    return
+  }
+
+  // Find promo
+  const promo = await prisma.promoCode.findUnique({ where: { code } })
+
+  if (!promo || !promo.isActive) {
+    await bot.api.sendMessage(chatId, `❌ Промокод *${code}* не найден или неактивен.`, { parse_mode: 'Markdown' })
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+    return
+  }
+
+  // Check expiry
+  if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
+    await bot.api.sendMessage(chatId, `❌ Промокод *${code}* истёк.`, { parse_mode: 'Markdown' })
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+    return
+  }
+
+  // Check usage limit
+  if (promo.maxUses && promo.usedCount >= promo.maxUses) {
+    await bot.api.sendMessage(chatId, `❌ Промокод *${code}* больше не действует.`, { parse_mode: 'Markdown' })
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+    return
+  }
+
+  // Check per-user usage
+  const existingUsage = await prisma.promoUsage.findUnique({
+    where: { promoId_userId: { promoId: promo.id, userId } },
+  })
+  if (existingUsage) {
+    await bot.api.sendMessage(chatId, `❌ Вы уже использовали промокод *${code}*.`, { parse_mode: 'Markdown' })
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+    return
+  }
+
+  // Apply promo
+  try {
+    if (promo.type === 'bonus_days' && promo.bonusDays) {
+      await prisma.user.update({ where: { id: userId }, data: { bonusDays: { increment: promo.bonusDays } } })
+    } else if (promo.type === 'balance' && promo.balanceAmount) {
+      const { balanceService } = await import('../services/balance')
+      await balanceService.credit({ userId, amount: promo.balanceAmount, type: 'GIFT', description: `Промокод ${code}` })
+    }
+
+    // Record usage
+    await prisma.promoUsage.create({ data: { promoId: promo.id, userId } })
+    await prisma.promoCode.update({ where: { id: promo.id }, data: { usedCount: { increment: 1 } } })
+
+    // Save result to user variable for display
+    let resultText = ''
+    if (promo.type === 'bonus_days') resultText = `+${promo.bonusDays} бонусных дней`
+    else if (promo.type === 'balance') resultText = `+${promo.balanceAmount} ₽ на баланс`
+    else if (promo.type === 'discount') resultText = `Скидка ${promo.discountPct}% на тарифы`
+    else if (promo.type === 'trial') resultText = 'Пробный период активирован'
+
+    await prisma.userVariable.upsert({
+      where: { userId_key: { userId, key: 'promo_result' } },
+      create: { userId, key: 'promo_result', value: resultText },
+      update: { value: resultText },
+    })
+
+    // Go to success block
+    if (block.nextBlockTrue) {
+      await executeBlock(block.nextBlockTrue, ctx, userId, chatId)
+    } else {
+      await bot.api.sendMessage(chatId, `✅ Промокод *${code}* активирован!\n\n${resultText}`, { parse_mode: 'Markdown' })
+    }
+  } catch (err: any) {
+    logger.warn(`Promo activation failed: ${err.message}`)
+    await bot.api.sendMessage(chatId, '❌ Ошибка активации промокода')
+    if (block.nextBlockFalse) await executeBlock(block.nextBlockFalse, ctx, userId, chatId)
+  }
 }
 
 // ── Media Sender ─────────────────────────────────────────────
