@@ -11,7 +11,8 @@ import { paymentService } from '../services/payment'
 const redis = new Redis(config.redis.url)
 
 // ── Bot instance ─────────────────────────────────────────────
-export const bot = new Bot(config.telegram.botToken)
+// Use a placeholder token when none is configured to prevent crash on import
+export const bot = new Bot(config.telegram.botToken || 'placeholder:token')
 
 // ── Settings cache ───────────────────────────────────────────
 const settingsCache = new Map<string, string>()
@@ -36,6 +37,12 @@ function msg(key: string, fallback: string): string {
 // ── Helper: find or ensure user ──────────────────────────────
 async function ensureUser(telegramId: string) {
   return prisma.user.findUnique({ where: { telegramId } })
+}
+
+// ── Helper: check if user is staff (for admin button in bot) ─
+async function isStaffUser(telegramId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { telegramId }, select: { role: true } })
+  return !!user && user.role !== 'USER'
 }
 
 // ── Chat logging ─────────────────────────────────────────────
@@ -139,13 +146,17 @@ bot.api.config.use(async (prev, method, payload, signal) => {
 })
 
 // ── Main menu keyboard ───────────────────────────────────────
-function mainMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
+function mainMenuKeyboard(isStaff = false): InlineKeyboard {
+  const kb = new InlineKeyboard()
     .text('🔑 Подписка', 'menu:subscription').text('💳 Тарифы', 'menu:tariffs').row()
     .text('👥 Рефералы', 'menu:referral').text('💰 Баланс', 'menu:balance').row()
     .text('🎟 Промокод', 'menu:promo').text('📱 Устройства', 'menu:devices').row()
     .text('📖 Инструкции', 'menu:instructions').row()
     .webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`)
+  if (isStaff) {
+    kb.row().text('⚙️ Админ-панель', 'menu:admin_panel')
+  }
+  return kb
 }
 
 function backButton(to = 'menu:main'): InlineKeyboard {
@@ -281,9 +292,10 @@ bot.command('start', async (ctx) => {
   // ── Determine what to show ──
   if (user!.remnawaveUuid && user!.subStatus === 'ACTIVE') {
     // Has active subscription → main menu
+    const staff = await isStaffUser(telegramId)
     await ctx.reply(
       msg('bot_welcome_active', '✅ *Подписка активна!*\n\nВыберите нужный раздел:'),
-      { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+      { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard(staff) },
     )
   } else if (user!.remnawaveUuid) {
     // Has REMNAWAVE but expired/inactive
@@ -319,10 +331,12 @@ bot.command('start', async (ctx) => {
 // ── Main menu callback ───────────────────────────────────────
 bot.callbackQuery('menu:main', async (ctx) => {
   await ctx.answerCallbackQuery()
+  const telegramId = String(ctx.from.id)
+  const staff = await isStaffUser(telegramId)
   const text = msg('bot_welcome', '👋 Добро пожаловать в *HIDEYOU VPN*!\n\nВыберите нужный раздел:')
   await ctx.editMessageText(text, {
     parse_mode:   'Markdown',
-    reply_markup: mainMenuKeyboard(),
+    reply_markup: mainMenuKeyboard(staff),
   })
 })
 
@@ -1164,9 +1178,19 @@ bot.callbackQuery(/^instr:app:([^:]+)$/, async (ctx) => {
 // ══════════════════════════════════════════════════════════════
 //  TEXT MESSAGE HANDLER (promo code input via state)
 // ══════════════════════════════════════════════════════════════
+
+// Import admin text handler (buhgalteria merge)
+import { handleAdminTextInput } from './admin-commands'
+
 bot.on('message:text', async (ctx) => {
   const chatId = String(ctx.from.id)
   const state = await redis.get(`bot:state:${chatId}`)
+
+  // Check admin commands first (buhgalteria)
+  if (state?.startsWith('awaiting_income') || state?.startsWith('awaiting_expense')) {
+    const handled = await handleAdminTextInput(ctx)
+    if (handled) return
+  }
 
   if (state === 'awaiting_promo') {
     const code = ctx.message.text.trim().toUpperCase()
@@ -1444,9 +1468,23 @@ export async function sendTelegramMessage(telegramId: string, text: string) {
 //  BOT STARTUP
 // ══════════════════════════════════════════════════════════════
 
+// Import admin commands registration and daily report (buhgalteria merge)
+import './admin-commands'
+import { setupDailyReportCron } from '../services/daily-report'
+
 export async function startBot() {
+  if (!config.telegram.configured) {
+    logger.warn('Telegram bot token not configured — skipping bot startup')
+    // Still setup daily report cron (it will send to channels if configured)
+    setupDailyReportCron()
+    return
+  }
+
   // Load bot messages from Settings table
   await loadBotSettings()
+
+  // Setup daily financial report cron
+  setupDailyReportCron()
 
   logger.info('Starting Telegram bot...')
   bot.catch((err) => logger.error('Bot error:', err))

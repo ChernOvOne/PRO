@@ -65,6 +65,27 @@ export function TMAProvider({ children }: { children: ReactNode }) {
   })
 
   useEffect(() => {
+    // Only load Telegram SDK if we're actually inside a Telegram Mini App
+    // Check URL hash for tgWebAppData which Telegram injects
+    const isTelegramContext = window.location.hash.includes('tgWebAppData') ||
+      window.location.search.includes('tgWebAppData') ||
+      (window as any).__telegram_web_app_ready
+
+    if (!isTelegramContext) return
+
+    // Dynamically load SDK only inside Telegram
+    if (!(window as any).Telegram?.WebApp) {
+      const script = document.createElement('script')
+      script.src = 'https://telegram.org/js/telegram-web-app.js'
+      script.onload = () => initTMA()
+      document.head.appendChild(script)
+      return
+    }
+
+    initTMA()
+
+    function initTMA() {
+
     const tg = (window as any).Telegram?.WebApp
     if (!tg) return
 
@@ -109,6 +130,7 @@ export function TMAProvider({ children }: { children: ReactNode }) {
     if (window.location.pathname !== '/dashboard') {
       tg.BackButton?.show()
     }
+    } // end initTMA
   }, [])
 
   return <TMACtx.Provider value={ctx}>{children}</TMACtx.Provider>

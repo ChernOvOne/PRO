@@ -81,6 +81,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
+      PORT: 3000
       NEXT_PUBLIC_API_URL: /api
       INTERNAL_API_URL: http://backend:4000
       NEXT_PUBLIC_TG_BOT_NAME: ${TELEGRAM_BOT_NAME}

@@ -22,6 +22,11 @@ export async function registerPlugins(app: FastifyInstance) {
   // Добавляем adminDomain и apiDomain если они заданы и отличаются от основного
   if (config.adminDomain) corsOrigins.push(`https://${config.adminDomain}`)
   if (config.apiDomain)   corsOrigins.push(`https://${config.apiDomain}`)
+  // Add all subdomains for the root domain
+  const rootDomain = config.domain?.split('.').slice(-2).join('.')
+  if (rootDomain && rootDomain !== config.domain) {
+    corsOrigins.push(new RegExp(`https://[\\w-]+\\.${rootDomain.replace('.', '\\.')}$`))
+  }
   if (config.isDev) {
     corsOrigins.push('http://localhost:3000', 'http://localhost:4000')
   }
@@ -58,6 +63,48 @@ export async function registerPlugins(app: FastifyInstance) {
     try {
       await req.jwtVerify()
       if ((req.user as any).role !== 'ADMIN') {
+        reply.status(403).send({ error: 'Forbidden' })
+      }
+    } catch {
+      reply.status(401).send({ error: 'Unauthorized' })
+    }
+  })
+
+  // ── Role-based access hooks (Buhgalteria merge) ─────────
+  // requireRole(...roles) — generic role checker
+  app.decorate('requireRole', function (...roles: string[]) {
+    return async function (req: any, reply: any) {
+      try {
+        await req.jwtVerify()
+        const userRole = (req.user as any).role
+        if (!roles.includes(userRole)) {
+          reply.status(403).send({ error: 'Forbidden' })
+        }
+      } catch {
+        reply.status(401).send({ error: 'Unauthorized' })
+      }
+    }
+  })
+
+  // Shortcut: admin or editor
+  app.decorate('requireEditor', async function (req: any, reply: any) {
+    try {
+      await req.jwtVerify()
+      const role = (req.user as any).role
+      if (role !== 'ADMIN' && role !== 'EDITOR') {
+        reply.status(403).send({ error: 'Forbidden' })
+      }
+    } catch {
+      reply.status(401).send({ error: 'Unauthorized' })
+    }
+  })
+
+  // Shortcut: any staff role (not USER)
+  app.decorate('requireStaff', async function (req: any, reply: any) {
+    try {
+      await req.jwtVerify()
+      const role = (req.user as any).role
+      if (role === 'USER') {
         reply.status(403).send({ error: 'Forbidden' })
       }
     } catch {

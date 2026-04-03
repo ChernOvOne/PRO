@@ -12,6 +12,21 @@ declare module 'fastify' {
       request: FastifyRequest,
       reply:   FastifyReply,
     ) => Promise<void>
+
+    requireRole: (...roles: string[]) => (
+      request: FastifyRequest,
+      reply:   FastifyReply,
+    ) => Promise<void>
+
+    requireEditor: (
+      request: FastifyRequest,
+      reply:   FastifyReply,
+    ) => Promise<void>
+
+    requireStaff: (
+      request: FastifyRequest,
+      reply:   FastifyReply,
+    ) => Promise<void>
   }
 
   interface FastifyRequest {
@@ -28,7 +43,7 @@ declare module '@fastify/jwt' {
 
 export interface JWTPayload {
   sub:  string   // user ID
-  role: 'USER' | 'ADMIN'
+  role: 'USER' | 'ADMIN' | 'EDITOR' | 'INVESTOR' | 'PARTNER'
   iat?: number
   exp?: number
 }
