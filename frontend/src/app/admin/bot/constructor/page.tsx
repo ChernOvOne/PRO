@@ -11,7 +11,7 @@ import {
   Sparkles, Heart, Radio, Gift, Globe, Mail, Bell, UserCheck,
   Filter, Play, Bold, Italic, Code, Link2, Quote, Smile,
   Variable, ChevronUp, ArrowDown, ArrowUp, Save, Check,
-  LayoutGrid, Workflow,
+  LayoutGrid, Workflow, Minus, Layers, Tag,
 } from 'lucide-react'
 
 /* ================================================================
@@ -21,6 +21,7 @@ import {
 interface BotGroup {
   id: string
   name: string
+  icon?: string | null
   sortOrder: number
   blocks?: BotBlock[]
 }
@@ -229,19 +230,33 @@ const EMOJI_CATEGORIES: Record<string, string[]> = {
   'Символы': ['❤','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣','💕','💞','💓','💗','💖','💘','💝','💟','☮','✝','☪','🕉','☸','✡','🔯','🕎','☯','☦','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','✅','❌','⭕','❗','❓','💯','🔥','⭐','🌟','✨','💫','💥','💢','💤'],
 }
 
-const NODE_W = 200
-const NODE_HEADER_H = 44
-const NODE_TYPE_LABEL_H = 16
-const NODE_BTN_ROW_H = 24
-const NODE_BOTTOM_PAD = 8
+const NODE_W = 220
+const NODE_HEADER_H = 48
+const NODE_TYPE_LABEL_H = 18
+const NODE_BTN_ROW_H = 22
+const NODE_BOTTOM_PAD = 10
+const NODE_PREVIEW_H = 28
 
-const getNodeHeight = (block: { type: string; buttons?: any[] }) => {
-  const btnCount = block.buttons?.length ?? 0
-  const hasButtons = block.type === 'MESSAGE' || block.type === 'MEDIA_GROUP' || block.type === 'STREAMING'
-  if (hasButtons && btnCount > 0) {
-    return NODE_HEADER_H + NODE_TYPE_LABEL_H + btnCount * NODE_BTN_ROW_H + NODE_BOTTOM_PAD
-  }
-  return NODE_HEADER_H + NODE_TYPE_LABEL_H + NODE_BOTTOM_PAD
+const GROUP_ZONE_COLORS = [
+  { bg: 'rgba(99,102,241,0.06)', border: 'rgba(99,102,241,0.2)', text: '#818cf8' },
+  { bg: 'rgba(34,197,94,0.06)', border: 'rgba(34,197,94,0.2)', text: '#4ade80' },
+  { bg: 'rgba(249,115,22,0.06)', border: 'rgba(249,115,22,0.2)', text: '#fb923c' },
+  { bg: 'rgba(236,72,153,0.06)', border: 'rgba(236,72,153,0.2)', text: '#f472b6' },
+  { bg: 'rgba(14,165,233,0.06)', border: 'rgba(14,165,233,0.2)', text: '#38bdf8' },
+  { bg: 'rgba(168,85,247,0.06)', border: 'rgba(168,85,247,0.2)', text: '#c084fc' },
+  { bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)', text: '#fbbf24' },
+  { bg: 'rgba(20,184,166,0.06)', border: 'rgba(20,184,166,0.2)', text: '#2dd4bf' },
+]
+
+const getNodeHeight = (block: { type: string; text?: string | null; buttons?: any[] }) => {
+  const hasText = !!block.text
+  const btnCount = Math.min(block.buttons?.length ?? 0, 4) // cap at 4 visible
+  const hasButtons = ['MESSAGE', 'MEDIA_GROUP', 'STREAMING', 'TARIFF_LIST', 'PAYMENT_SUCCESS', 'PAYMENT_FAIL'].includes(block.type)
+  let h = NODE_HEADER_H + NODE_TYPE_LABEL_H
+  if (hasText) h += NODE_PREVIEW_H
+  if (hasButtons && btnCount > 0) h += btnCount * NODE_BTN_ROW_H
+  h += NODE_BOTTOM_PAD
+  return h
 }
 
 /* ================================================================
@@ -295,6 +310,8 @@ export default function BotConstructorPage() {
   const [draggingConnection, setDraggingConnection] = useState<DraggingConnection | null>(null)
   const [hoveredInputPort, setHoveredInputPort] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [showBtnConns, setShowBtnConns] = useState(false)
+  const [showGroupZones, setShowGroupZones] = useState(true)
 
   /* ── Editor form state ──────────────────────────────────── */
   const [editForm, setEditForm] = useState<Partial<BotBlock>>({})
@@ -366,6 +383,22 @@ export default function BotConstructorPage() {
       (BLOCK_TYPE_LABELS[b.type] || '').toLowerCase().includes(q)
     )
   }, [blocks, searchQuery])
+
+  // Group zones for canvas background
+  const groupZones = useMemo(() => {
+    if (!showGroupZones) return []
+    return groups.map((g, gi) => {
+      const gBlocks = blocks.filter(b => b.groupId === g.id)
+      if (gBlocks.length === 0) return null
+      const pad = 30
+      const minX = Math.min(...gBlocks.map(b => b.posX)) - pad
+      const minY = Math.min(...gBlocks.map(b => b.posY)) - pad - 24
+      const maxX = Math.max(...gBlocks.map(b => b.posX + NODE_W)) + pad
+      const maxY = Math.max(...gBlocks.map(b => b.posY + getNodeHeight(b))) + pad
+      const colors = GROUP_ZONE_COLORS[gi % GROUP_ZONE_COLORS.length]
+      return { id: g.id, name: g.name, icon: g.icon, x: minX, y: minY, w: maxX - minX, h: maxY - minY, colors, count: gBlocks.length }
+    }).filter(Boolean)
+  }, [groups, blocks, showGroupZones])
 
   const groupedBlocks = useMemo(() => {
     const m = new Map<string, BotBlock[]>()
@@ -727,55 +760,103 @@ export default function BotConstructorPage() {
 
   /* ── Auto-layout ─────────────────────────────────────────── */
   const autoLayout = async () => {
-    const sorted = [...blocks].sort((a, b) => {
-      const aHasParent = blocks.some(p => p.nextBlockId === a.id || p.nextBlockTrue === a.id || p.nextBlockFalse === a.id)
-      const bHasParent = blocks.some(p => p.nextBlockId === b.id || p.nextBlockTrue === b.id || p.nextBlockFalse === b.id)
-      if (!aHasParent && bHasParent) return -1
-      if (aHasParent && !bHasParent) return 1
-      return 0
-    })
+    const H_GAP = 320
+    const V_GAP = 200
+    const positions: Record<string, { x: number; y: number }> = {}
 
-    const positions = new Map<string, { x: number; y: number }>()
+    // Build tree: find children for each block
     const visited = new Set<string>()
-    let col = 0
+    const childrenOf: Record<string, string[]> = {}
 
-    const layout = (id: string, depth: number, colOffset: number) => {
-      if (visited.has(id)) return
-      visited.add(id)
-      positions.set(id, { x: colOffset * 250, y: depth * 120 })
+    const getChildren = (id: string): string[] => {
       const block = blockMap.get(id)
-      if (!block) return
-      let childCol = colOffset
-      if (block.nextBlockId && !visited.has(block.nextBlockId)) {
-        layout(block.nextBlockId, depth + 1, childCol)
-        childCol++
-      }
-      if (block.nextBlockTrue && !visited.has(block.nextBlockTrue)) {
-        layout(block.nextBlockTrue, depth + 1, childCol)
-        childCol++
-      }
-      if (block.nextBlockFalse && !visited.has(block.nextBlockFalse)) {
-        layout(block.nextBlockFalse, depth + 1, childCol)
-        childCol++
-      }
+      if (!block) return []
+      const kids: string[] = []
+      // Direct connections first (main flow)
+      if (block.nextBlockId && !visited.has(block.nextBlockId) && blockMap.has(block.nextBlockId)) kids.push(block.nextBlockId)
+      if (block.nextBlockTrue && !visited.has(block.nextBlockTrue) && blockMap.has(block.nextBlockTrue)) kids.push(block.nextBlockTrue)
+      if (block.nextBlockFalse && !visited.has(block.nextBlockFalse) && blockMap.has(block.nextBlockFalse)) kids.push(block.nextBlockFalse)
+      // Button connections
       block.buttons?.forEach(btn => {
-        if (btn.nextBlockId && !visited.has(btn.nextBlockId)) {
-          layout(btn.nextBlockId, depth + 1, childCol)
-          childCol++
-        }
+        if (btn.nextBlockId && !visited.has(btn.nextBlockId) && blockMap.has(btn.nextBlockId)) kids.push(btn.nextBlockId)
+      })
+      // Deduplicate
+      return [...new Set(kids)]
+    }
+
+    // Find roots
+    const referenced = new Set<string>()
+    blocks.forEach(b => {
+      if (b.nextBlockId) referenced.add(b.nextBlockId)
+      if (b.nextBlockTrue) referenced.add(b.nextBlockTrue)
+      if (b.nextBlockFalse) referenced.add(b.nextBlockFalse)
+      b.buttons?.forEach(btn => { if (btn.nextBlockId) referenced.add(btn.nextBlockId) })
+    })
+    const roots = blocks.filter(b =>
+      !referenced.has(b.id) || b.triggers?.some(t => t.type === 'command' && t.value === '/start')
+    )
+    if (roots.length === 0 && blocks.length > 0) roots.push(blocks[0])
+
+    // Build tree with BFS
+    const queue: string[] = []
+    roots.forEach(r => { visited.add(r.id); queue.push(r.id) })
+    while (queue.length > 0) {
+      const id = queue.shift()!
+      const kids = getChildren(id).filter(k => !visited.has(k))
+      kids.forEach(k => visited.add(k))
+      childrenOf[id] = kids
+      queue.push(...kids)
+    }
+    // Orphans get no children
+    blocks.forEach(b => { if (!visited.has(b.id)) { visited.add(b.id) } })
+
+    // Calculate subtree width (leaf = 1, parent = sum of children widths)
+    const subtreeWidth: Record<string, number> = {}
+    const calcWidth = (id: string): number => {
+      if (subtreeWidth[id] !== undefined) return subtreeWidth[id]
+      const kids = childrenOf[id] || []
+      if (kids.length === 0) { subtreeWidth[id] = 1; return 1 }
+      const w = kids.reduce((sum, k) => sum + calcWidth(k), 0)
+      subtreeWidth[id] = w
+      return w
+    }
+
+    // Layout each tree
+    let globalOffset = 0
+    const layoutTree = (rootId: string) => {
+      calcWidth(rootId)
+      const place = (id: string, depth: number, leftX: number) => {
+        const kids = childrenOf[id] || []
+        const myWidth = subtreeWidth[id] || 1
+        // Center this node over its subtree
+        const myX = leftX + (myWidth * H_GAP) / 2 - H_GAP / 2
+        positions[id] = { x: myX, y: depth * V_GAP }
+        // Place children left to right
+        let childLeft = leftX
+        kids.forEach(kid => {
+          const kidWidth = subtreeWidth[kid] || 1
+          place(kid, depth + 1, childLeft)
+          childLeft += kidWidth * H_GAP
+        })
+      }
+      place(rootId, 0, globalOffset)
+      globalOffset += (subtreeWidth[rootId] || 1) * H_GAP + H_GAP
+    }
+
+    roots.forEach(r => layoutTree(r.id))
+
+    // Place orphans in a row at the bottom
+    const orphans = blocks.filter(b => !positions[b.id])
+    if (orphans.length > 0) {
+      const maxY = Math.max(...Object.values(positions).map(p => p.y), 0)
+      orphans.forEach((b, i) => {
+        positions[b.id] = { x: i * H_GAP, y: maxY + V_GAP * 2 }
       })
     }
 
-    sorted.forEach(b => {
-      if (!visited.has(b.id)) {
-        layout(b.id, 0, col)
-        col += 2
-      }
-    })
-
     const updates: Promise<any>[] = []
     const updated = blocks.map(b => {
-      const pos = positions.get(b.id)
+      const pos = positions[b.id]
       if (pos) {
         updates.push(adminApi.updateBotBlock(b.id, { posX: pos.x, posY: pos.y }).catch(() => {}))
         return { ...b, posX: pos.x, posY: pos.y }
@@ -785,6 +866,23 @@ export default function BotConstructorPage() {
     setBlocks(updated)
     await Promise.all(updates)
     toast.success('Расположение обновлено')
+  }
+
+  // Fit all blocks into viewport
+  const fitAll = () => {
+    if (blocks.length === 0) return
+    const minX = Math.min(...blocks.map(b => b.posX))
+    const minY = Math.min(...blocks.map(b => b.posY))
+    const maxX = Math.max(...blocks.map(b => b.posX + NODE_W))
+    const maxY = Math.max(...blocks.map(b => b.posY + getNodeHeight(b)))
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const cw = canvas.clientWidth
+    const ch = canvas.clientHeight
+    const newZoom = Math.min(cw / (maxX - minX + 100), ch / (maxY - minY + 100), 1.5)
+    setZoom(Math.max(0.2, Math.min(newZoom, 1.5)))
+    setPanX(-minX * newZoom + 50)
+    setPanY(-minY * newZoom + 50)
   }
 
   /* ── Text toolbar ────────────────────────────────────────── */
@@ -802,7 +900,7 @@ export default function BotConstructorPage() {
 
   /* ── Connection lines calculation (memoized) ────────────── */
   const getConnections = useMemo(() => {
-    const conns: { from: string; to: string; type: 'next' | 'true' | 'false' | 'button'; buttonId?: string; buttonIndex?: number; isSelectedBlock?: boolean }[] = []
+    const conns: { from: string; to: string; type: 'next' | 'true' | 'false' | 'button'; buttonId?: string; buttonIndex?: number }[] = []
     blocks.forEach(b => {
       if (b.nextBlockId && blockMap.has(b.nextBlockId))
         conns.push({ from: b.id, to: b.nextBlockId, type: 'next' })
@@ -810,14 +908,16 @@ export default function BotConstructorPage() {
         conns.push({ from: b.id, to: b.nextBlockTrue, type: 'true' })
       if (b.nextBlockFalse && blockMap.has(b.nextBlockFalse))
         conns.push({ from: b.id, to: b.nextBlockFalse, type: 'false' })
-      // Show button connections for ALL blocks
-      b.buttons?.forEach((btn, idx) => {
-        if (btn.nextBlockId && blockMap.has(btn.nextBlockId))
-          conns.push({ from: b.id, to: btn.nextBlockId, type: 'button', buttonId: btn.id, buttonIndex: idx, isSelectedBlock: selectedBlockId === b.id })
-      })
+      // Button connections: show if toggle ON, or block is selected/hovered
+      if (showBtnConns || selectedBlockId === b.id || hoveredNodeId === b.id) {
+        b.buttons?.forEach((btn, idx) => {
+          if (btn.nextBlockId && blockMap.has(btn.nextBlockId))
+            conns.push({ from: b.id, to: btn.nextBlockId, type: 'button', buttonId: btn.id, buttonIndex: idx })
+        })
+      }
     })
     return conns
-  }, [blocks, blockMap, selectedBlockId])
+  }, [blocks, blockMap, selectedBlockId, hoveredNodeId, showBtnConns])
 
   /* ── Connection line label helper ───────────────────────── */
   const connectionLabel = (type: 'next' | 'true' | 'false' | 'button') => {
@@ -1052,29 +1152,42 @@ export default function BotConstructorPage() {
            ЦЕНТРАЛЬНАЯ ПАНЕЛЬ — Визуальный холст
            ══════════════════════════════════════════════════════════ */}
         <div className="flex-1 relative overflow-hidden" style={{ background: 'var(--surface-1)' }}>
-          {/* Управление зумом */}
-          <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
-            <button onClick={() => setZoom(z => Math.min(z + 0.15, 3))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-              <ZoomIn className="w-4 h-4" style={{ color: 'var(--text-primary)' }} />
+          {/* Canvas Toolbar */}
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded-xl"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(12px)' }}>
+            {/* Zoom */}
+            <button onClick={() => setZoom(z => Math.max(z - 0.15, 0.2))} className="p-1.5 rounded-lg hover:bg-white/10">
+              <Minus className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
             </button>
-            <button onClick={() => setZoom(z => Math.max(z - 0.15, 0.2))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-              <ZoomOut className="w-4 h-4" style={{ color: 'var(--text-primary)' }} />
+            <span className="text-[10px] w-10 text-center" style={{ color: 'var(--text-tertiary)' }}>{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom(z => Math.min(z + 0.15, 3))} className="p-1.5 rounded-lg hover:bg-white/10">
+              <Plus className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
             </button>
-            <button onClick={() => { setZoom(1); setPanX(50); setPanY(50) }}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-              <Maximize2 className="w-4 h-4" style={{ color: 'var(--text-primary)' }} />
+            <div className="w-px h-5 mx-1" style={{ background: 'var(--glass-border)' }} />
+            {/* Fit all */}
+            <button onClick={fitAll} className="p-1.5 rounded-lg hover:bg-white/10" title="Показать все">
+              <Maximize2 className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
             </button>
-          </div>
-
-          {/* Метка зума */}
-          <div className="absolute bottom-3 left-3 z-20 text-[10px] px-2 py-1 rounded"
-               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
-            {Math.round(zoom * 100)}%
+            {/* Auto layout */}
+            <button onClick={autoLayout} className="p-1.5 rounded-lg hover:bg-white/10" title="Авто-раскладка">
+              <LayoutGrid className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
+            </button>
+            <div className="w-px h-5 mx-1" style={{ background: 'var(--glass-border)' }} />
+            {/* Toggle group zones */}
+            <button onClick={() => setShowGroupZones(v => !v)}
+                    className="p-1.5 rounded-lg hover:bg-white/10" title="Зоны групп"
+                    style={{ background: showGroupZones ? '#8b5cf622' : 'transparent' }}>
+              <Layers className="w-3.5 h-3.5" style={{ color: showGroupZones ? '#a78bfa' : 'var(--text-tertiary)' }} />
+            </button>
+            {/* Toggle button connections */}
+            <button onClick={() => setShowBtnConns(v => !v)}
+                    className="p-1.5 rounded-lg hover:bg-white/10" title="Связи кнопок"
+                    style={{ background: showBtnConns ? '#8b5cf622' : 'transparent' }}>
+              <Link2 className="w-3.5 h-3.5" style={{ color: showBtnConns ? '#a78bfa' : 'var(--text-tertiary)' }} />
+            </button>
+            <div className="w-px h-5 mx-1" style={{ background: 'var(--glass-border)' }} />
+            {/* Block count */}
+            <span className="text-[10px] px-1.5" style={{ color: 'var(--text-tertiary)' }}>{blocks.length} блоков</span>
           </div>
 
           {/* Подсказка при перетаскивании связи */}
@@ -1210,7 +1323,7 @@ export default function BotConstructorPage() {
                       opacity={lineOpacity}
                     />
                     {/* Кнопка удаления на линии (for non-button or selected block's button connections) */}
-                    {(conn.type !== 'button' || conn.isSelectedBlock) && (
+                    {(conn.type !== 'button' || selectedBlockId === conn.from || hoveredNodeId === conn.from) && (
                       <g style={{ pointerEvents: 'all', cursor: 'pointer' }}
                          onClick={(e) => { e.stopPropagation(); deleteConnection(conn.from, conn.type, conn.buttonId) }}>
                         <circle cx={midX} cy={labelY} r={8} fill="rgba(0,0,0,0.6)" stroke={strokeColor} strokeWidth={1} />
@@ -1269,6 +1382,68 @@ export default function BotConstructorPage() {
                 )
               })()}
             </svg>
+
+            {/* Групповые зоны */}
+            {groupZones.map((zone: any) => zone && (
+              <div key={zone.id}
+                   className="absolute rounded-2xl"
+                   style={{
+                     transform: `translate(${zone.x * zoom + panX}px, ${zone.y * zoom + panY}px)`,
+                     width: zone.w * zoom,
+                     height: zone.h * zoom,
+                     background: zone.colors.bg,
+                     border: `1.5px dashed ${zone.colors.border}`,
+                     pointerEvents: 'none',
+                   }}>
+                <div className="px-3 py-1.5 flex items-center gap-1.5 cursor-grab active:cursor-grabbing"
+                     style={{ transform: `scale(${Math.min(zoom, 1.2)})`, transformOrigin: 'left top', pointerEvents: 'auto' }}
+                     onMouseDown={(e) => {
+                       e.stopPropagation()
+                       const startX = e.clientX
+                       const startY = e.clientY
+                       const groupBlockIds = blocks.filter(b => b.groupId === zone.id).map(b => b.id)
+                       const startPositions: Record<string, { x: number; y: number }> = {}
+                       blocks.forEach(b => {
+                         if (groupBlockIds.includes(b.id)) startPositions[b.id] = { x: b.posX, y: b.posY }
+                       })
+
+                       const onMove = (ev: MouseEvent) => {
+                         const dx = (ev.clientX - startX) / zoom
+                         const dy = (ev.clientY - startY) / zoom
+                         setBlocks(prev => prev.map(b => {
+                           const sp = startPositions[b.id]
+                           if (sp) return { ...b, posX: sp.x + dx, posY: sp.y + dy }
+                           return b
+                         }))
+                       }
+
+                       const onUp = (ev: MouseEvent) => {
+                         document.removeEventListener('mousemove', onMove)
+                         document.removeEventListener('mouseup', onUp)
+                         const dx = (ev.clientX - startX) / zoom
+                         const dy = (ev.clientY - startY) / zoom
+                         groupBlockIds.forEach(id => {
+                           const sp = startPositions[id]
+                           if (sp) {
+                             adminApi.updateBotBlock(id, { posX: sp.x + dx, posY: sp.y + dy }).catch(() => {})
+                           }
+                         })
+                       }
+
+                       document.addEventListener('mousemove', onMove)
+                       document.addEventListener('mouseup', onUp)
+                     }}>
+                  <GripVertical className="w-3 h-3 flex-shrink-0" style={{ color: zone.colors.text, opacity: 0.5 }} />
+                  {zone.icon && <span className="text-[12px]">{zone.icon}</span>}
+                  <span className="text-[10px] font-semibold tracking-wide uppercase" style={{ color: zone.colors.text }}>
+                    {zone.name}
+                  </span>
+                  <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: zone.colors.border, color: zone.colors.text }}>
+                    {zone.count}
+                  </span>
+                </div>
+              </div>
+            ))}
 
             {/* Узлы блоков */}
             {blocks.map(block => {
@@ -1467,6 +1642,68 @@ export default function BotConstructorPage() {
             })}
           </div>
         </div>
+
+          {/* Миникарта */}
+          {blocks.length > 3 && (
+            <div className="absolute bottom-3 right-3 z-20 rounded-xl overflow-hidden"
+                 style={{ width: 180, height: 120, background: 'rgba(0,0,0,0.6)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(8px)' }}
+                 onClick={(e) => {
+                   const rect = e.currentTarget.getBoundingClientRect()
+                   const clickX = e.clientX - rect.left
+                   const clickY = e.clientY - rect.top
+                   if (blocks.length === 0) return
+                   const allX = blocks.map(b => b.posX)
+                   const allY = blocks.map(b => b.posY)
+                   const minX = Math.min(...allX) - 50
+                   const minY = Math.min(...allY) - 50
+                   const maxX = Math.max(...allX) + NODE_W + 50
+                   const maxY = Math.max(...allY) + 200
+                   const scaleX = 180 / (maxX - minX || 1)
+                   const scaleY = 120 / (maxY - minY || 1)
+                   const worldX = clickX / scaleX + minX
+                   const worldY = clickY / scaleY + minY
+                   const canvas = canvasRef.current
+                   if (canvas) {
+                     setPanX(-worldX * zoom + canvas.clientWidth / 2)
+                     setPanY(-worldY * zoom + canvas.clientHeight / 2)
+                   }
+                 }}>
+              <svg width="180" height="120">
+                {(() => {
+                  if (blocks.length === 0) return null
+                  const allX = blocks.map(b => b.posX)
+                  const allY = blocks.map(b => b.posY)
+                  const minX = Math.min(...allX) - 50
+                  const minY = Math.min(...allY) - 50
+                  const maxX = Math.max(...allX) + NODE_W + 50
+                  const maxY = Math.max(...allY) + 200
+                  const sx = 180 / (maxX - minX || 1)
+                  const sy = 120 / (maxY - minY || 1)
+                  return (
+                    <>
+                      {blocks.map(b => (
+                        <rect key={b.id}
+                              x={(b.posX - minX) * sx} y={(b.posY - minY) * sy}
+                              width={Math.max(NODE_W * sx, 3)} height={Math.max(getNodeHeight(b) * sy, 2)}
+                              rx={1}
+                              fill={BLOCK_TYPE_COLORS[b.type as BlockType] || '#6b7280'}
+                              opacity={selectedBlockId === b.id ? 1 : 0.6} />
+                      ))}
+                      {/* Viewport rectangle */}
+                      {canvasRef.current && (
+                        <rect
+                          x={(-panX / zoom - minX) * sx}
+                          y={(-panY / zoom - minY) * sy}
+                          width={(canvasRef.current.clientWidth / zoom) * sx}
+                          height={(canvasRef.current.clientHeight / zoom) * sy}
+                          fill="none" stroke="#ef4444" strokeWidth={1.5} rx={2} opacity={0.7} />
+                      )}
+                    </>
+                  )
+                })()}
+              </svg>
+            </div>
+          )}
 
         {/* ══════════════════════════════════════════════════════════
            ПРАВАЯ ПАНЕЛЬ — Редактор блока (400px, сворачиваемая)
