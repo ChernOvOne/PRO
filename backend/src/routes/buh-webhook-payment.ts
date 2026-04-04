@@ -55,6 +55,7 @@ export async function buhWebhookPaymentRoutes(app: FastifyInstance) {
         amount:      body.amount,
         date:        today,
         description,
+        source:      'webhook',
       },
     })
 

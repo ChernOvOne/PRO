@@ -53,7 +53,7 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
     const [items, total] = await Promise.all([
       prisma.buhTransaction.findMany({
         where,
-        include: { category: true },
+        include: { category: true, createdBy: { select: { id: true, email: true, telegramName: true } } },
         orderBy: { date: 'desc' },
         skip,
         take: limit,
@@ -93,8 +93,9 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
         receiptUrl:   data.receiptUrl ?? null,
         isHistorical: data.isHistorical,
         createdById:  user?.sub ?? null,
+        source:       'web',
       },
-      include: { category: true },
+      include: { category: true, createdBy: { select: { id: true, email: true, telegramName: true } } },
     })
 
     return reply.status(201).send(transaction)

@@ -250,7 +250,7 @@ const GROUP_ZONE_COLORS = [
 
 const getNodeHeight = (block: { type: string; text?: string | null; buttons?: any[] }) => {
   const hasText = !!block.text
-  const btnCount = Math.min(block.buttons?.length ?? 0, 4) // cap at 4 visible
+  const btnCount = block.buttons?.length ?? 0
   const hasButtons = ['MESSAGE', 'MEDIA_GROUP', 'STREAMING', 'TARIFF_LIST', 'PAYMENT_SUCCESS', 'PAYMENT_FAIL'].includes(block.type)
   let h = NODE_HEADER_H + NODE_TYPE_LABEL_H
   if (hasText) h += NODE_PREVIEW_H
@@ -1643,8 +1643,8 @@ export default function BotConstructorPage() {
           </div>
         </div>
 
-          {/* Миникарта */}
-          {blocks.length > 3 && (
+          {/* Миникарта (скрыта когда открыт редактор) */}
+          {blocks.length > 3 && !(rightPanelOpen && selectedBlock) && (
             <div className="absolute bottom-3 right-3 z-20 rounded-xl overflow-hidden"
                  style={{ width: 180, height: 120, background: 'rgba(0,0,0,0.6)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(8px)' }}
                  onClick={(e) => {
@@ -2147,34 +2147,92 @@ export default function BotConstructorPage() {
                     </div>
                     <HintText>Кнопки отображаются под сообщением. Можно задать цвет и иконку</HintText>
 
-                    {/* Существующие кнопки — кликабельные для редактирования */}
-                    {selectedBlock.buttons && selectedBlock.buttons.length > 0 && (
-                      <div className="space-y-1 mb-2 mt-2">
-                        {selectedBlock.buttons.map(btn => {
-                          const styleColors: Record<string, string> = {
-                            default: '#6b7280', success: '#22c55e', danger: '#ef4444', primary: '#3b82f6',
-                          }
+                    {/* Визуальная сетка кнопок — drag для перемещения между рядами */}
+                    {selectedBlock.buttons && selectedBlock.buttons.length > 0 && (() => {
+                      const styleColors: Record<string, string> = { default: '#6b7280', success: '#22c55e', danger: '#ef4444', primary: '#3b82f6' }
+                      // Group buttons by row
+                      const rows: Record<number, typeof selectedBlock.buttons> = {}
+                      selectedBlock.buttons.forEach(btn => {
+                        const r = btn.row ?? 0
+                        if (!rows[r]) rows[r] = []
+                        rows[r].push(btn)
+                      })
+                      Object.values(rows).forEach(r => r.sort((a: any, b: any) => (a.col ?? 0) - (b.col ?? 0)))
+                      const rowNums = Object.keys(rows).map(Number).sort((a, b) => a - b)
+
+                      return (
+                        <div className="space-y-1 mb-2 mt-2">
+                          {/* Превью как в Telegram */}
+                          <div className="p-2 rounded-lg space-y-1" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
+                            <div className="text-[9px] mb-1" style={{ color: 'var(--text-tertiary)' }}>Превью кнопок (перетащите для перестановки):</div>
+                            {rowNums.map(rowNum => (
+                              <div key={rowNum} className="flex gap-1"
+                                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = 'rgba(139,92,246,0.1)' }}
+                                   onDragLeave={e => { e.currentTarget.style.background = '' }}
+                                   onDrop={async e => {
+                                     e.currentTarget.style.background = ''
+                                     const btnId = e.dataTransfer.getData('btnId')
+                                     if (!btnId) return
+                                     const existingInRow = rows[rowNum]?.length ?? 0
+                                     try {
+                                       await adminApi.updateBotButton(btnId, { row: rowNum, col: existingInRow })
+                                       toast.success('Кнопка перемещена')
+                                       await selectBlock(selectedBlock)
+                                     } catch { toast.error('Ошибка') }
+                                   }}>
+                                {rows[rowNum]?.map((btn: any) => (
+                                  <div key={btn.id}
+                                       draggable
+                                       onDragStart={e => e.dataTransfer.setData('btnId', btn.id)}
+                                       onClick={() => {
+                                         if (editingButtonId === btn.id) { setEditingButtonId(null) } else {
+                                           setEditingButtonId(btn.id)
+                                           setButtonForm({ label: btn.label, type: btn.type, nextBlockId: btn.nextBlockId || '', url: btn.url || '', copyText: btn.copyText || '', style: btn.style || 'default', iconEmojiId: btn.iconEmojiId || '', row: btn.row, col: btn.col })
+                                         }
+                                       }}
+                                       className="flex-1 py-1.5 px-2 rounded-lg text-center text-[10px] font-medium cursor-grab active:cursor-grabbing transition-all hover:brightness-110 truncate"
+                                       style={{
+                                         background: styleColors[btn.style] ? styleColors[btn.style] + '22' : 'var(--surface-2)',
+                                         border: `1.5px solid ${editingButtonId === btn.id ? '#8b5cf6' : (styleColors[btn.style] || 'var(--glass-border)')}`,
+                                         color: styleColors[btn.style] || 'var(--text-primary)',
+                                       }}>
+                                    {btn.label}
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                            {/* Drop zone для нового ряда */}
+                            <div className="flex items-center justify-center py-1.5 rounded-lg text-[9px] border-2 border-dashed transition-colors"
+                                 style={{ borderColor: 'var(--glass-border)', color: 'var(--text-tertiary)' }}
+                                 onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#8b5cf6'; e.currentTarget.style.color = '#a78bfa' }}
+                                 onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
+                                 onDrop={async e => {
+                                   e.currentTarget.style.borderColor = 'var(--glass-border)'
+                                   const btnId = e.dataTransfer.getData('btnId')
+                                   if (!btnId) return
+                                   const newRow = (rowNums.length > 0 ? Math.max(...rowNums) + 1 : 0)
+                                   try {
+                                     await adminApi.updateBotButton(btnId, { row: newRow, col: 0 })
+                                     toast.success('Кнопка в новый ряд')
+                                     await selectBlock(selectedBlock)
+                                   } catch { toast.error('Ошибка') }
+                                 }}>
+                              + Перетащите сюда для нового ряда
+                            </div>
+                          </div>
+
+                          {/* Список кнопок для редактирования */}
+                          {selectedBlock.buttons.map(btn => {
                           const isEditing = editingButtonId === btn.id
+                          if (!isEditing) return null
                           return (
                             <div key={btn.id}>
-                              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all hover:brightness-110"
-                                   onClick={() => {
-                                     if (isEditing) { setEditingButtonId(null) } else {
-                                       setEditingButtonId(btn.id)
-                                       setButtonForm({ label: btn.label, type: btn.type, nextBlockId: btn.nextBlockId || '', url: btn.url || '', copyText: btn.copyText || '', style: btn.style || 'default', iconEmojiId: btn.iconEmojiId || '', row: btn.row, col: btn.col })
-                                     }
-                                   }}
-                                   style={{ background: isEditing ? 'rgba(139,92,246,0.1)' : 'var(--surface-2)', border: `1px solid ${isEditing ? '#8b5cf6' : 'var(--glass-border)'}` }}>
-                                <div className="w-1.5 h-4 rounded-full" style={{ background: styleColors[btn.style] || '#6b7280' }} />
-                                <span className="text-[11px] flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{btn.label}</span>
-                                <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
-                                  {BUTTON_TYPE_LABELS[btn.type] || btn.type}
-                                </span>
-                                {btn.nextBlockId && (
-                                  <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: '#8b5cf622', color: '#a78bfa' }}>
-                                    → {blocks.find(b => b.id === btn.nextBlockId)?.name?.slice(0, 12) || '...'}
-                                  </span>
-                                )}
+                              <div className="flex items-center gap-2 px-2 py-1 rounded-lg"
+                                   style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid #8b5cf6' }}>
+                                <span className="text-[11px] flex-1 truncate font-medium" style={{ color: 'var(--text-primary)' }}>✏️ {btn.label}</span>
+                                <button onClick={() => setEditingButtonId(null)} className="p-0.5 rounded hover:bg-white/10">
+                                  <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
+                                </button>
                                 <button onClick={(e) => { e.stopPropagation(); removeButton(btn.id) }} className="p-0.5 rounded hover:bg-red-500/20">
                                   <Trash2 className="w-3 h-3 text-red-400" />
                                 </button>
@@ -2285,7 +2343,8 @@ export default function BotConstructorPage() {
                           )
                         })}
                       </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Форма создания кнопки */}
                     {showButtonForm && (
