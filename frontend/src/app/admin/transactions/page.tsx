@@ -27,6 +27,8 @@ interface Transaction {
   isHistorical: boolean
   category?: Category | null
   category_id?: string | null
+  createdBy?: { id: string; email?: string | null; telegramName?: string | null } | null
+  source?: string | null
   createdAt: string
 }
 
@@ -125,8 +127,8 @@ export default function AdminTransactionsPage() {
   /* ── Summary ──────────────────────────────────── */
 
   const summary = useMemo(() => {
-    const income  = items.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0)
-    const expense = items.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0)
+    const income  = items.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount), 0)
+    const expense = items.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + Number(t.amount), 0)
     return { income, expense, profit: income - expense }
   }, [items])
 
@@ -319,7 +321,7 @@ export default function AdminTransactionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                {['Дата', 'Тип', 'Сумма', 'Категория', 'Описание', 'Действия'].map(h => (
+                {['Дата', 'Тип', 'Сумма', 'Категория', 'Описание', 'Автор', 'Источник', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
                       style={{ color: 'var(--text-tertiary)' }}>
                     {h}
@@ -331,7 +333,7 @@ export default function AdminTransactionsPage() {
               {loading ? (
                 [...Array(8)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {[...Array(6)].map((_, j) => (
+                    {[...Array(8)].map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 skeleton rounded w-20" />
                       </td>
@@ -340,7 +342,7 @@ export default function AdminTransactionsPage() {
                 ))
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                  <td colSpan={8} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p>Транзакции не найдены</p>
                   </td>
@@ -404,10 +406,37 @@ export default function AdminTransactionsPage() {
                     </td>
 
                     {/* Description */}
-                    <td className="px-4 py-3 max-w-[260px]">
+                    <td className="px-4 py-3 max-w-[200px]">
                       <span className="text-sm truncate block" style={{ color: 'var(--text-secondary)' }}>
                         {t.description || '\u2014'}
                       </span>
+                    </td>
+
+                    {/* Author */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {t.createdBy?.telegramName || t.createdBy?.email || '\u2014'}
+                      </span>
+                    </td>
+
+                    {/* Source */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {(() => {
+                        const src = t.source || 'web'
+                        const labels: Record<string, { text: string; color: string; bg: string }> = {
+                          web: { text: 'Веб', color: '#3b82f6', bg: '#3b82f622' },
+                          bot: { text: 'Бот', color: '#8b5cf6', bg: '#8b5cf622' },
+                          webhook: { text: 'Webhook', color: '#f59e0b', bg: '#f59e0b22' },
+                          system: { text: 'Система', color: '#6b7280', bg: '#6b728022' },
+                        }
+                        const l = labels[src] || labels.web
+                        return (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                style={{ background: l.bg, color: l.color }}>
+                            {l.text}
+                          </span>
+                        )
+                      })()}
                     </td>
 
                     {/* Actions */}

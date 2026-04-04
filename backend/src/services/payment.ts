@@ -376,6 +376,7 @@ export class PaymentService {
           amount:      payment.amount,
           date:        new Date(),
           description: `Оплата подписки: ${tariff.name} (${payment.provider})`,
+          source:      'system',
         },
       })
     } catch (err) {

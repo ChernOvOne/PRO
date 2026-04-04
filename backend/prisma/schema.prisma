@@ -672,6 +672,7 @@ model BuhTransaction {
   isHistorical Boolean            @default(false) @map("is_historical")
   createdById String?             @map("created_by")
   createdBy   User?               @relation("BuhTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  source      String?             @default("web") // web | bot | webhook | system
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
 

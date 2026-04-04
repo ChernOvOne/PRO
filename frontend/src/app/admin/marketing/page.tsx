@@ -154,7 +154,7 @@ export default function AdminMarketingPage() {
         format: form.format || undefined,
         amount: Number(form.amount),
         subscribersGained: Number(form.subscribersGained) || 0,
-        budgetSource: form.budgetSource || undefined,
+        budgetSource: form.budgetSource === 'COMPANY' ? 'account' : form.budgetSource === 'INVESTMENT' ? 'investment' : 'stats_only',
         investorPartnerId: form.budgetSource === 'INVESTMENT' ? form.investorPartnerId || undefined : undefined,
         targetUrl: form.targetUrl || undefined,
         targetType: form.targetType || undefined,

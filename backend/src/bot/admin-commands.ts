@@ -242,6 +242,7 @@ export async function handleAdminTextInput(ctx: Context): Promise<boolean> {
         date: new Date(),
         description: description || undefined,
         createdById: user?.id ?? undefined,
+        source: 'bot',
       },
     })
 

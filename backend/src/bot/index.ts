@@ -1405,7 +1405,7 @@ bot.on('message:text', async (ctx) => {
   // Quick income/expense: +1000 описание / -500 описание (for admin users)
   const quickMatch = ctx.message.text.match(/^([+\-])\s*(\d+[\d.,]*)\s*(.*)$/)
   if (quickMatch) {
-    const userCheck = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { role: true } })
+    const userCheck = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true, role: true } })
     if (userCheck && userCheck.role !== 'USER') {
       const sign = quickMatch[1]
       const amount = parseFloat(quickMatch[2].replace(',', '.'))
@@ -1414,7 +1414,7 @@ bot.on('message:text', async (ctx) => {
         try {
           const type = sign === '+' ? 'INCOME' : 'EXPENSE'
           await prisma.buhTransaction.create({
-            data: { type, amount, date: new Date(), description: desc || (type === 'INCOME' ? 'Доход' : 'Расход') },
+            data: { type, amount, date: new Date(), description: desc || (type === 'INCOME' ? 'Доход' : 'Расход'), source: 'bot', createdById: userCheck?.id ?? undefined },
           })
           const emoji = type === 'INCOME' ? '💚' : '❤️'
           const label = type === 'INCOME' ? 'Доход записан' : 'Расход записан'
