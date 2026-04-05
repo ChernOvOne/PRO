@@ -39,7 +39,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           (function(){try{var t=localStorage.getItem('hideyou-theme');
           if(t==='light')document.documentElement.classList.add('light');
           else if(t==='system'||!t){if(window.matchMedia('(prefers-color-scheme:light)').matches)document.documentElement.classList.add('light')}
-          }catch(e){}})()
+          }catch(e){}})();
+          (function(){try{var u=new URLSearchParams(location.search);var utm=u.get('utm')||u.get('utm_source');if(utm)sessionStorage.setItem('utm_source',utm)}catch(e){}})()
         `}} />
       </head>
       <body className={`${inter.className} antialiased`}

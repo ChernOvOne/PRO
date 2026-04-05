@@ -168,7 +168,7 @@ export async function adminRoutes(app: FastifyInstance) {
   //  USERS
   // ─────────────────────────────────────────────────────────
   app.get('/users', admin, async (req) => {
-    const { page = '1', limit = '50', search = '', status = '' } =
+    const { page = '1', limit = '50', search = '', status = '', utm = '' } =
       req.query as Record<string, string>
 
     const skip = (Number(page) - 1) * Number(limit)
@@ -181,6 +181,7 @@ export async function adminRoutes(app: FastifyInstance) {
       ]
     }
     if (status) where.subStatus = status
+    if (utm) where.customerSource = { contains: utm, mode: 'insensitive' }
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
@@ -192,7 +193,8 @@ export async function adminRoutes(app: FastifyInstance) {
           id: true, email: true, telegramId: true, telegramName: true,
           subStatus: true, subExpireAt: true, role: true, isActive: true,
           createdAt: true, lastLoginAt: true, remnawaveUuid: true,
-          referralCode: true, _count: { select: { referrals: true, payments: true } },
+          referralCode: true, customerSource: true,
+          _count: { select: { referrals: true, payments: true } },
         },
       }),
       prisma.user.count({ where }),
@@ -319,6 +321,53 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ─────────────────────────────────────────────────────────
+  //  UPDATE USER PROFILE (email, telegram_id)
+  // ─────────────────────────────────────────────────────────
+  app.patch('/users/:id/profile', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = z.object({
+      email:      z.string().email().nullable().optional(),
+      telegramId: z.string().nullable().optional(),
+    }).parse(req.body)
+
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Check if email/telegramId is taken by another user
+    if (body.email && body.email !== user.email) {
+      const existing = await prisma.user.findUnique({ where: { email: body.email } })
+      if (existing && existing.id !== id) return reply.status(409).send({ error: 'Email уже занят' })
+    }
+    if (body.telegramId && body.telegramId !== user.telegramId) {
+      const existing = await prisma.user.findUnique({ where: { telegramId: body.telegramId } })
+      if (existing && existing.id !== id) return reply.status(409).send({ error: 'Telegram ID уже занят' })
+    }
+
+    // Update local user
+    const updateData: any = {}
+    if (body.email !== undefined) updateData.email = body.email || null
+    if (body.telegramId !== undefined) updateData.telegramId = body.telegramId || null
+
+    const updated = await prisma.user.update({ where: { id }, data: updateData })
+
+    // Sync to REMNAWAVE
+    if (user.remnawaveUuid) {
+      try {
+        await remnawave.updateUser({
+          uuid: user.remnawaveUuid,
+          email: updated.email ?? undefined,
+          telegramId: updated.telegramId ? parseInt(updated.telegramId, 10) : undefined,
+        } as any)
+      } catch (err) {
+        logger.warn(`REMNAWAVE sync failed for user ${id}: ${(err as any).message}`)
+      }
+    }
+
+    logger.info(`Admin updated profile for user ${id}: email=${updated.email}, tg=${updated.telegramId}`)
+    return { ok: true, user: { id: updated.id, email: updated.email, telegramId: updated.telegramId } }
+  })
+
+  // ─────────────────────────────────────────────────────────
   //  PAYMENTS
   // ─────────────────────────────────────────────────────────
   app.get('/payments', admin, async (req) => {
@@ -370,7 +419,7 @@ export async function adminRoutes(app: FastifyInstance) {
         take:    Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          user:   { select: { id: true, email: true, telegramName: true, telegramId: true } },
+          user:   { select: { id: true, email: true, telegramName: true, telegramId: true, customerSource: true } },
           tariff: { select: { name: true } },
         },
       }),

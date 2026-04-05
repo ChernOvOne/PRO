@@ -54,6 +54,12 @@ function LoginContent() {
     }
   }, [refCode])
 
+  // persist UTM source
+  useEffect(() => {
+    const utm = params.get('utm') || params.get('utm_source')
+    if (utm) sessionStorage.setItem('utm_source', utm)
+  }, [params])
+
   // ── cooldown timers ──
   useEffect(() => {
     if (regCooldown <= 0) return
@@ -151,7 +157,8 @@ function LoginContent() {
     e.preventDefault()
     setLoading(true)
     try {
-      const data = await authApi.login(loginEmail, loginPassword)
+      const utmSrc = params.get('utm') || sessionStorage.getItem('utm_source') || undefined
+      const data = await authApi.login(loginEmail, loginPassword, utmSrc)
       redirectAfterAuth(data.user)
     } catch (err: any) {
       toast.error(err.message)
@@ -217,11 +224,14 @@ function LoginContent() {
     if (regPassword.length < 6) { toast.error('Пароль не менее 6 символов'); return }
     setLoading(true)
     try {
+      // Read UTM from URL or sessionStorage
+      const utmSource = params.get('utm') || sessionStorage.getItem('utm_source') || undefined
       const data = await authApi.register({
         email: regEmail,
         password: regPassword,
         code: regCode,
         ...(regReferral ? { referralCode: regReferral } : {}),
+        ...(utmSource ? { utmSource } : {}),
       })
       redirectAfterAuth(data.user)
     } catch (err: any) {

@@ -34,11 +34,11 @@ export const authApi = {
   telegram: (data: any)  => apiFetch<{ token: string; user: User }>('/auth/telegram', {
     method: 'POST', body: JSON.stringify(data),
   }),
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, utmSource?: string) =>
     apiFetch<{ token: string; user: User }>('/auth/login', {
-      method: 'POST', body: JSON.stringify({ email, password }),
+      method: 'POST', body: JSON.stringify({ email, password, ...(utmSource ? { utmSource } : {}) }),
     }),
-  register: (params: { email: string; password: string; code: string; referralCode?: string }) =>
+  register: (params: { email: string; password: string; code: string; referralCode?: string; utmSource?: string }) =>
     apiFetch<{ token: string; user: User }>('/auth/register', {
       method: 'POST', body: JSON.stringify(params),
     }),
@@ -189,6 +189,10 @@ export const adminApi = {
     }),
   toggleUser: (id: string) =>
     apiFetch<{ ok: boolean; isActive: boolean }>(`/admin/users/${id}/toggle`, { method: 'POST' }),
+  updateUserProfile: (id: string, data: { email?: string | null; telegramId?: string | null }) =>
+    apiFetch<{ ok: boolean; user: { id: string; email: string | null; telegramId: string | null } }>(`/admin/users/${id}/profile`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
 
   // User actions
   revokeUser:      (id: string) => apiFetch<{ ok: boolean }>(`/admin/users/${id}/revoke`, { method: 'POST' }),
@@ -386,8 +390,10 @@ export const adminApi = {
   },
   buhAdsFunnel: (params: { date_from?: string; date_to?: string } = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
-    return apiFetch<any[]>(`/admin/ads/funnel?${q}`)
+    return apiFetch<any>(`/admin/ads/funnel?${q}`)
   },
+  createUtmBuilder: (data: { baseUrl: string; utmSource: string; utmMedium?: string; utmCampaign?: string }) =>
+    apiFetch<any>('/admin/ads/utm-builder', { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Buhgalteria: Recurring ──────────────────────────────
   buhRecurring: () => apiFetch<any[]>('/admin/recurring'),

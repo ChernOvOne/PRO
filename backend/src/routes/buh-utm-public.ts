@@ -25,7 +25,11 @@ export async function buhUtmPublicRoutes(app: FastifyInstance) {
       },
     })
 
-    return reply.redirect(campaign.targetUrl ?? '/')
+    // Append utm param to target URL so frontend can track it
+    let targetUrl = campaign.targetUrl ?? '/'
+    const separator = targetUrl.includes('?') ? '&' : '?'
+    targetUrl += `${separator}utm=${code}`
+    return reply.redirect(targetUrl)
   })
 
   // ─────────────────────────────────────────────────────────

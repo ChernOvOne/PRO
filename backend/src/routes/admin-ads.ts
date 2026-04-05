@@ -200,7 +200,7 @@ export async function adminAdsRoutes(app: FastifyInstance) {
   })
 
   // ─────────────────────────────────────────────────────────
-  //  FUNNEL
+  //  FUNNEL (with revenue & ROI)
   // ─────────────────────────────────────────────────────────
   app.get('/funnel', editor, async () => {
     const campaigns = await prisma.buhAdCampaign.findMany()
@@ -229,13 +229,58 @@ export async function adminAdsRoutes(app: FastifyInstance) {
     const leadMap       = new Map(leadCounts.map((r) => [r.utmCode, r._count]))
     const conversionMap = new Map(conversionCounts.map((r) => [r.utmCode, r._count]))
 
-    return campaigns.map((c) => {
+    // Calculate revenue per campaign via UTM leads -> users -> payments
+    const revenueMap = new Map<string, number>()
+    const ltvMap     = new Map<string, number[]>()
+
+    for (const code of utmCodes) {
+      // Find converted leads for this UTM code
+      const convertedLeads = await prisma.buhUtmLead.findMany({
+        where: { utmCode: code, converted: true, customerId: { not: null } },
+        select: { customerId: true },
+      })
+
+      const customerIds = convertedLeads
+        .map((l) => l.customerId)
+        .filter((id): id is string => id !== null)
+
+      if (customerIds.length > 0) {
+        // Sum payments for these users
+        const paymentSum = await prisma.payment.aggregate({
+          where: { userId: { in: customerIds }, status: 'PAID' },
+          _sum: { amount: true },
+        })
+        revenueMap.set(code, Number(paymentSum._sum.amount ?? 0))
+
+        // LTV: get totalPaid per user
+        const users = await prisma.user.findMany({
+          where: { id: { in: customerIds } },
+          select: { totalPaid: true },
+        })
+        ltvMap.set(code, users.map((u) => Number(u.totalPaid)))
+      }
+    }
+
+    // Aggregate totals for summary
+    let totalClicks = 0, totalLeads = 0, totalConversions = 0, totalRevenue = 0, totalSpent = 0
+
+    const rows = campaigns.map((c) => {
       const amount      = Number(c.amount)
       const clicks      = clickMap.get(c.utmCode) ?? 0
       const leads       = leadMap.get(c.utmCode) ?? 0
       const conversions = conversionMap.get(c.utmCode) ?? 0
+      const revenue     = revenueMap.get(c.utmCode) ?? 0
       const cpa         = conversions > 0 ? Math.round((amount / conversions) * 100) / 100 : null
-      const roi         = amount > 0 && conversions > 0 ? Math.round(((conversions - amount) / amount) * 10000) / 100 : null
+      const roi         = amount > 0 ? Math.round(((revenue - amount) / amount) * 10000) / 100 : null
+
+      const ltvValues = ltvMap.get(c.utmCode) ?? []
+      const ltv       = ltvValues.length > 0 ? Math.round(ltvValues.reduce((s, v) => s + v, 0) / ltvValues.length * 100) / 100 : null
+
+      totalClicks      += clicks
+      totalLeads       += leads
+      totalConversions += conversions
+      totalRevenue     += revenue
+      totalSpent       += amount
 
       return {
         utmCode:     c.utmCode,
@@ -246,7 +291,78 @@ export async function adminAdsRoutes(app: FastifyInstance) {
         conversions,
         cpa,
         roi,
+        revenue,
+        ltv,
       }
+    })
+
+    // Find best channel by ROI
+    const withRoi = rows.filter((r) => r.roi !== null && r.roi !== 0)
+    const bestChannel = withRoi.length > 0
+      ? withRoi.reduce((best, r) => (r.roi! > (best.roi ?? -Infinity) ? r : best)).channelName
+      : null
+
+    const avgCpa = totalConversions > 0
+      ? Math.round((totalSpent / totalConversions) * 100) / 100
+      : null
+
+    return {
+      rows,
+      summary: {
+        totalClicks,
+        totalLeads,
+        totalConversions,
+        totalRevenue,
+        totalSpent,
+        bestChannel,
+        avgCpa,
+      },
+    }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  UTM BUILDER — create campaign from UTM params
+  // ─────────────────────────────────────────────────────────
+  app.post('/utm-builder', editor, async (req, reply) => {
+    const schema = z.object({
+      baseUrl:      z.string().url(),
+      utmSource:    z.string().min(1),
+      utmMedium:    z.string().optional(),
+      utmCampaign:  z.string().optional(),
+    })
+
+    const data = schema.parse(req.body)
+    const user = (req as any).user
+
+    const utmCode = 'utm_' + crypto.randomBytes(4).toString('hex')
+
+    // Build the full URL with UTM params
+    const url = new URL(data.baseUrl)
+    url.searchParams.set('utm_source', data.utmSource)
+    if (data.utmMedium)   url.searchParams.set('utm_medium', data.utmMedium)
+    if (data.utmCampaign) url.searchParams.set('utm_campaign', data.utmCampaign)
+
+    // Create a lightweight campaign for tracking
+    const campaign = await prisma.buhAdCampaign.create({
+      data: {
+        date:         new Date(),
+        channelName:  data.utmSource,
+        format:       data.utmMedium ?? null,
+        amount:       0,
+        utmCode,
+        targetUrl:    url.toString(),
+        targetType:   'custom',
+        notes:        data.utmCampaign ? `Campaign: ${data.utmCampaign}` : null,
+        budgetSource: 'stats_only',
+        createdById:  user?.sub ?? null,
+      },
+    })
+
+    return reply.status(201).send({
+      campaign,
+      utmCode,
+      fullUrl: url.toString(),
+      goLink: `/go/${utmCode}`,
     })
   })
 }

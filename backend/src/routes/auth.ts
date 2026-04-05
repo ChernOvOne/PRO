@@ -27,8 +27,9 @@ const TelegramAuthSchema = z.object({
 })
 
 const EmailLoginSchema = z.object({
-  email:    z.string().email(),
-  password: z.string().min(6),
+  email:     z.string().email(),
+  password:  z.string().min(6),
+  utmSource: z.string().optional(),
 })
 
 // Опции куки — domain берётся из корневого домена, чтобы работало
@@ -95,7 +96,15 @@ export async function authRoutes(app: FastifyInstance) {
       logger.info(`New user via Telegram: ${telegramId}`)
     }
 
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), lastIp: getClientIp(req) } })
+    const _utmSrc = (req.body as any)?.utmSource
+    const loginUpd: any = { lastLoginAt: new Date(), lastIp: getClientIp(req) }
+    if (_utmSrc && !user.customerSource) {
+      loginUpd.customerSource = _utmSrc
+      prisma.buhUtmLead.create({
+        data: { utmCode: _utmSrc, customerId: user.id, customerName: user.email || user.telegramName || user.id, converted: user.subStatus !== 'INACTIVE' },
+      }).catch(() => {})
+    }
+    await prisma.user.update({ where: { id: user.id }, data: loginUpd })
 
     const token = app.jwt.sign({ sub: user.id, role: user.role })
     const { passwordHash, ...safeUser } = user as any
@@ -109,7 +118,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/login', {
     schema: { tags: ['Auth'] },
   }, async (req, reply) => {
-    const { email, password } = EmailLoginSchema.parse(req.body)
+    const { email, password, utmSource } = EmailLoginSchema.parse(req.body)
 
     const user = await prisma.user.findUnique({ where: { email } })
     if (!user || !user.passwordHash) {
@@ -136,7 +145,15 @@ export async function authRoutes(app: FastifyInstance) {
       }
     }
 
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), lastIp: getClientIp(req) } })
+    const _utmSrc = (req.body as any)?.utmSource
+    const loginUpd: any = { lastLoginAt: new Date(), lastIp: getClientIp(req) }
+    if (_utmSrc && !user.customerSource) {
+      loginUpd.customerSource = _utmSrc
+      prisma.buhUtmLead.create({
+        data: { utmCode: _utmSrc, customerId: user.id, customerName: user.email || user.telegramName || user.id, converted: user.subStatus !== 'INACTIVE' },
+      }).catch(() => {})
+    }
+    await prisma.user.update({ where: { id: user.id }, data: loginUpd })
 
     const token = app.jwt.sign({ sub: user.id, role: user.role })
     const { passwordHash, ...safeUser } = user as any
@@ -165,8 +182,9 @@ export async function authRoutes(app: FastifyInstance) {
       password:     z.string().min(6),
       code:         z.string().length(6),
       referralCode: z.string().optional(),
+      utmSource:    z.string().optional(),
     })
-    const { email, password, code, referralCode } = schema.parse(req.body)
+    const { email, password, code, referralCode, utmSource } = schema.parse(req.body)
 
     // Verify email code — either already verified or verify now
     let verified = await verificationService.isRecentlyVerified(email, 'REGISTRATION')
@@ -203,6 +221,7 @@ export async function authRoutes(app: FastifyInstance) {
         emailVerified: true,
         passwordHash,
         referredById,
+        customerSource: utmSource || null,
         remnawaveUuid: rmUser?.uuid || null,
         subStatus:     rmUser ? 'ACTIVE' : 'INACTIVE',
         subExpireAt:   rmUser?.expireAt ? new Date(rmUser.expireAt) : null,
@@ -210,7 +229,14 @@ export async function authRoutes(app: FastifyInstance) {
       },
     })
 
-    logger.info(`New user registered via email: ${email}`)
+    logger.info(`New user registered via email: ${email}${utmSource ? ' (utm: ' + utmSource + ')' : ''}`)
+
+    // Create UTM lead if user came from campaign
+    if (utmSource) {
+      prisma.buhUtmLead.create({
+        data: { utmCode: utmSource, customerId: user.id, customerName: email, converted: false },
+      }).catch(() => {})
+    }
 
     // Trigger registration funnel
     import('../services/funnel-engine').then(({ triggerEvent }) =>

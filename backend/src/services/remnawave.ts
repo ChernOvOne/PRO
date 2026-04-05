@@ -109,12 +109,12 @@ class RemnawaveService {
       err => {
         const status = err.response?.status
         const msg    = err.response?.data?.message || err.message
-        if (status !== 400 && status !== 404) {
+        if (status !== 404) {
           logger.error(`REMNAWAVE API error [${status}]: ${msg}`, {
             url: err.config?.url, method: err.config?.method,
+            body: err.config?.data ? (typeof err.config.data === 'string' ? err.config.data.slice(0, 500) : JSON.stringify(err.config.data).slice(0, 500)) : undefined,
+            response: err.response?.data ? JSON.stringify(err.response.data).slice(0, 500) : undefined,
           })
-        } else {
-          logger.debug(`REMNAWAVE ${status}: ${err.config?.url}`)
         }
         throw err
       },
@@ -145,7 +145,7 @@ class RemnawaveService {
       const tgIdNum = parseInt(telegramId, 10)
       if (isNaN(tgIdNum)) return null
 
-      const res  = await this.client.get(`/api/users/get-by-telegram-id/${tgIdNum}`)
+      const res  = await this.client.get(`/api/users/by-telegram-id/${tgIdNum}`)
       const data = this.unwrap(res.data)
       // Может вернуть массив (несколько подписок на одном tgId)
       if (Array.isArray(data)) return this.pickBestUser(data)
@@ -157,11 +157,26 @@ class RemnawaveService {
     }
   }
 
+  // ── GET by Username ──────────────────────────────────────────
+  async getUserByUsername(username: string): Promise<RemnawaveUser | null> {
+    if (!this.check()) return null
+    try {
+      const res = await this.client.get(`/api/users/by-username/${encodeURIComponent(username)}`)
+      const data = this.unwrap(res.data)
+      if (Array.isArray(data)) return this.pickBestUser(data)
+      return data ?? null
+    } catch (e: any) {
+      if (e.response?.status === 404) return null
+      logger.error(`getUserByUsername failed: ${e.message}`)
+      return null
+    }
+  }
+
   // ── GET by Email ─────────────────────────────────────────────
   async getUserByEmail(email: string): Promise<RemnawaveUser | null> {
     if (!this.check()) return null
     try {
-      const res  = await this.client.get(`/api/users/get-by-email/${encodeURIComponent(email)}`)
+      const res  = await this.client.get(`/api/users/by-email/${encodeURIComponent(email)}`)
       const data = this.unwrap(res.data)
       if (Array.isArray(data)) return this.pickBestUser(data)
       return data ?? null
