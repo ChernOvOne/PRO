@@ -10,6 +10,7 @@ import {
   Newspaper, Wifi, Globe, Tag, MessageCircle,
   ArrowLeftRight, Megaphone, Server, FileText,
   BarChart2, Wallet, Bot, Handshake, Workflow,
+  HelpCircle,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
@@ -69,6 +70,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Система',
     items: [
+      { href: '/admin/wiki',             icon: HelpCircle,      label: 'Wiki / Справка' },
       { href: '/admin/analytics',        icon: TrendingUp,      label: 'Аналитика',     roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/bot',              icon: Bot,             label: 'Бот',            roles: ['ADMIN'] },
       { href: '/admin/bot/constructor',  icon: Workflow,        label: 'Конструктор',    roles: ['ADMIN'] },

@@ -76,6 +76,7 @@ model User {
 
   // ── Buhgalteria relations ──────────────────────────────
   buhTransactions    BuhTransaction[]     @relation("BuhTransactionCreator")
+  buhCustomerTransactions BuhTransaction[] @relation("BuhTransactionCustomer")
   buhInkasRecords    BuhInkasRecord[]     @relation("BuhInkasCreator")
   buhAuditLogs       BuhAuditLog[]
   utmLeads           BuhUtmLead[]
@@ -672,6 +673,8 @@ model BuhTransaction {
   isHistorical Boolean            @default(false) @map("is_historical")
   createdById String?             @map("created_by")
   createdBy   User?               @relation("BuhTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  customerId  String?             @map("customer_id")
+  customer    User?               @relation("BuhTransactionCustomer", fields: [customerId], references: [id], onDelete: SetNull)
   source      String?             @default("web") // web | bot | webhook | system
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
@@ -681,6 +684,7 @@ model BuhTransaction {
 
   @@index([date])
   @@index([type])
+  @@index([customerId])
   @@map("buh_transactions")
 }
 

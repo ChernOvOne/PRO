@@ -177,6 +177,20 @@ export const paymentsApi = {
 export const adminApi = {
   stats:    () => apiFetch<AdminStats>('/admin/stats'),
 
+  // File upload (multipart/form-data)
+  uploadFile: async (formData: FormData): Promise<{ ok: boolean; url: string; filename: string }> => {
+    const res = await fetch('/api/admin/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    return res.json()
+  },
+
   // Users
   users: (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v).map(([k,v]) => [k, String(v)]))
@@ -321,6 +335,8 @@ export const adminApi = {
     const q = new URLSearchParams(Object.entries(params).filter(([,v]) => v != null).map(([k,v]) => [k, String(v)]))
     return apiFetch<{ items: any[]; total: number }>(`/admin/transactions?${q}`)
   },
+  getBuhTransaction: (id: string) =>
+    apiFetch<any>(`/admin/transactions/${id}`),
   createBuhTransaction: (data: any) =>
     apiFetch<any>('/admin/transactions', { method: 'POST', body: JSON.stringify(data) }),
   updateBuhTransaction: (id: string, data: any) =>
@@ -394,6 +410,8 @@ export const adminApi = {
   },
   createUtmBuilder: (data: { baseUrl: string; utmSource: string; utmMedium?: string; utmCampaign?: string }) =>
     apiFetch<any>('/admin/ads/utm-builder', { method: 'POST', body: JSON.stringify(data) }),
+  buhAdStats: (id: string, groupBy: 'day' | 'week' | 'month' = 'day') =>
+    apiFetch<any>(`/admin/ads/${id}/stats?groupBy=${groupBy}`),
 
   // ── Buhgalteria: Recurring ──────────────────────────────
   buhRecurring: () => apiFetch<any[]>('/admin/recurring'),

@@ -9,6 +9,7 @@ const TransactionSchema = z.object({
   categoryId:   z.string().optional().nullable(),
   description:  z.string().optional().nullable(),
   receiptUrl:   z.string().optional().nullable(),
+  receiptFile:  z.string().optional().nullable(),
   isHistorical: z.boolean().default(false),
 })
 
@@ -53,7 +54,11 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
     const [items, total] = await Promise.all([
       prisma.buhTransaction.findMany({
         where,
-        include: { category: true, createdBy: { select: { id: true, email: true, telegramName: true } } },
+        include: {
+        category: true,
+        createdBy: { select: { id: true, email: true, telegramName: true } },
+        customer: { select: { id: true, email: true, telegramName: true, telegramId: true, customerSource: true } },
+      },
         orderBy: { date: 'desc' },
         skip,
         take: limit,
@@ -95,7 +100,11 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
         createdById:  user?.sub ?? null,
         source:       'web',
       },
-      include: { category: true, createdBy: { select: { id: true, email: true, telegramName: true } } },
+      include: {
+        category: true,
+        createdBy: { select: { id: true, email: true, telegramName: true } },
+        customer: { select: { id: true, email: true, telegramName: true, telegramId: true, customerSource: true } },
+      },
     })
 
     return reply.status(201).send(transaction)
@@ -109,11 +118,25 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
 
     const transaction = await prisma.buhTransaction.findUnique({
       where: { id },
-      include: { category: true, createdBy: { select: { id: true, email: true, telegramName: true } } },
+      include: {
+        category: true,
+        createdBy: { select: { id: true, email: true, telegramName: true } },
+        customer: { select: { id: true, email: true, telegramName: true, telegramId: true, customerSource: true, totalPaid: true, paymentsCount: true } },
+      },
     })
 
     if (!transaction) return reply.status(404).send({ error: 'Transaction not found' })
-    return transaction
+
+    // Найти привязанную рекламную кампанию, если клиент пришёл по UTM
+    let adCampaign: any = null
+    if (transaction.customer?.customerSource) {
+      adCampaign = await prisma.buhAdCampaign.findFirst({
+        where: { utmCode: transaction.customer.customerSource },
+        select: { id: true, channelName: true, utmCode: true, date: true, format: true },
+      })
+    }
+
+    return { ...transaction, adCampaign }
   })
 
   // ─────────────────────────────────────────────────────────
@@ -130,6 +153,7 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
     if (data.categoryId !== undefined)   update.categoryId   = data.categoryId
     if (data.description !== undefined)  update.description  = data.description
     if (data.receiptUrl !== undefined)   update.receiptUrl   = data.receiptUrl
+    if (data.receiptFile !== undefined)  update.receiptFile  = data.receiptFile
     if (data.isHistorical !== undefined) update.isHistorical = data.isHistorical
 
     const transaction = await prisma.buhTransaction.update({
