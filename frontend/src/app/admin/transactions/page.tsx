@@ -27,8 +27,13 @@ interface Transaction {
   isHistorical: boolean
   category?: Category | null
   category_id?: string | null
+  categoryId?: string | null
   createdBy?: { id: string; email?: string | null; telegramName?: string | null } | null
+  customer?: { id: string; email?: string | null; telegramName?: string | null; telegramId?: string | null; customerSource?: string | null; totalPaid?: number | string; paymentsCount?: number } | null
+  adCampaign?: { id: string; channelName?: string | null; utmCode?: string | null; date?: string; format?: string | null } | null
   source?: string | null
+  receiptUrl?: string | null
+  receiptFile?: string | null
   createdAt: string
 }
 
@@ -92,6 +97,54 @@ export default function AdminTransactionsPage() {
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null)
+
+  // Detail panel
+  const [detail, setDetail] = useState<Transaction | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
+
+  async function openDetail(t: Transaction) {
+    setDetail(t)
+    setDetailLoading(true)
+    try {
+      const full = await adminApi.getBuhTransaction(t.id)
+      setDetail(full)
+    } catch {
+      // fallback to the row data
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  async function uploadReceipt(file: File) {
+    if (!detail) return
+    setUploadingReceipt(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await adminApi.uploadFile(fd)
+      await adminApi.updateBuhTransaction(detail.id, { receiptFile: res.url })
+      setDetail({ ...detail, receiptFile: res.url })
+      toast.success('Чек загружен')
+      load()
+    } catch (e: any) {
+      toast.error(e.message || 'Не удалось загрузить чек')
+    } finally {
+      setUploadingReceipt(false)
+    }
+  }
+
+  async function removeReceipt() {
+    if (!detail) return
+    try {
+      await adminApi.updateBuhTransaction(detail.id, { receiptFile: null })
+      setDetail({ ...detail, receiptFile: null })
+      toast.success('Чек удалён')
+      load()
+    } catch (e: any) {
+      toast.error(e.message || 'Не удалось удалить чек')
+    }
+  }
 
   /* ── Load categories ─────────────────────────── */
 
@@ -321,7 +374,7 @@ export default function AdminTransactionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                {['Дата', 'Тип', 'Сумма', 'Категория', 'Описание', 'Автор', 'Источник', ''].map(h => (
+                {['Дата', 'Тип', 'Сумма', 'Категория', 'Описание', 'Автор', 'Источник', 'Чек', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
                       style={{ color: 'var(--text-tertiary)' }}>
                     {h}
@@ -333,7 +386,7 @@ export default function AdminTransactionsPage() {
               {loading ? (
                 [...Array(8)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {[...Array(8)].map((_, j) => (
+                    {[...Array(9)].map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 skeleton rounded w-20" />
                       </td>
@@ -342,7 +395,7 @@ export default function AdminTransactionsPage() {
                 ))
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                  <td colSpan={9} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p>Транзакции не найдены</p>
                   </td>
@@ -350,7 +403,8 @@ export default function AdminTransactionsPage() {
               ) : (
                 items.map(t => (
                   <tr key={t.id}
-                      className="hover:bg-white/[0.03] transition-colors"
+                      onClick={() => openDetail(t)}
+                      className="hover:bg-white/[0.05] transition-colors cursor-pointer"
                       style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     {/* Date */}
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -408,14 +462,14 @@ export default function AdminTransactionsPage() {
                     {/* Description */}
                     <td className="px-4 py-3 max-w-[200px]">
                       <span className="text-sm truncate block" style={{ color: 'var(--text-secondary)' }}>
-                        {t.description || '\u2014'}
+                        {t.description || '—'}
                       </span>
                     </td>
 
                     {/* Author */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {t.createdBy?.telegramName || t.createdBy?.email || '\u2014'}
+                        {t.createdBy?.telegramName || t.createdBy?.email || '—'}
                       </span>
                     </td>
 
@@ -439,8 +493,22 @@ export default function AdminTransactionsPage() {
                       })()}
                     </td>
 
+                    {/* Receipt */}
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      {t.receiptFile ? (
+                        <a href={t.receiptFile} target="_blank" rel="noopener noreferrer"
+                           className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors"
+                           style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}
+                           title="Открыть чек">
+                          📄 Открыть
+                        </a>
+                      ) : (
+                        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                    </td>
+
                     {/* Actions */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button onClick={() => openEdit(t)}
                                 className="p-1.5 rounded-lg hover:bg-white/[0.06] transition-colors"
@@ -535,7 +603,7 @@ export default function AdminTransactionsPage() {
             {/* Amount */}
             <div>
               <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                Сумма (\u20BD)
+                Сумма (₽)
               </label>
               <input type="number" className="glass-input w-full" placeholder="0"
                      value={form.amount}
@@ -618,6 +686,156 @@ export default function AdminTransactionsPage() {
           </div>
         </div>
       )}
+
+      {/* ── Detail slide-over ───────────────────────────────── */}
+      {detail && (
+        <div className="fixed inset-0 z-40 flex" onClick={() => setDetail(null)}>
+          <div className="flex-1 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="w-full max-w-[560px] h-full overflow-y-auto p-6 space-y-5 animate-slide-in-right"
+            style={{ background: 'var(--surface-1)', borderLeft: '1px solid var(--glass-border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {detail.type === 'INCOME' ? 'Доход' : 'Расход'} · {fmtDate(detail.date || detail.createdAt)}
+                </div>
+                <div className="text-2xl font-bold"
+                     style={{ color: detail.type === 'INCOME' ? '#34d399' : '#f87171' }}>
+                  {detail.type === 'INCOME' ? '+' : '-'}{fmtMoney(Number(detail.amount))}
+                </div>
+              </div>
+              <button onClick={() => setDetail(null)}
+                      className="p-2 rounded-lg hover:bg-white/[0.05]"
+                      style={{ color: 'var(--text-tertiary)' }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {detailLoading && (
+              <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Загрузка...</div>
+            )}
+
+            {/* Basic info */}
+            <div className="rounded-xl p-4 space-y-2"
+                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+              <InfoRow label="Категория" value={detail.category?.name || '—'} dot={detail.category?.color} />
+              <InfoRow label="Описание" value={detail.description || '—'} />
+              <InfoRow label="Источник" value={
+                ({ web: 'Веб-приложение', bot: 'Telegram-бот', webhook: 'Вебхук', system: 'Система' } as Record<string, string>)[detail.source || 'web'] || detail.source || 'Веб-приложение'
+              } />
+              <InfoRow label="Создал"
+                       value={detail.createdBy?.telegramName || detail.createdBy?.email || 'Система'} />
+              <InfoRow label="Создана" value={new Date(detail.createdAt).toLocaleString('ru-RU')} />
+              {detail.isHistorical && (
+                <div className="text-xs mt-2 inline-flex items-center gap-1 px-2 py-1 rounded"
+                     style={{ background: 'rgba(251,191,36,0.1)', color: '#fbbf24' }}>
+                  <Clock className="w-3 h-3" /> Историческая запись
+                </div>
+              )}
+            </div>
+
+            {/* Customer + ad campaign info (for income from client) */}
+            {detail.customer && (
+              <div className="rounded-xl p-4 space-y-2"
+                   style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                <div className="text-xs font-semibold uppercase tracking-wider mb-2"
+                     style={{ color: 'var(--text-tertiary)' }}>
+                  Клиент
+                </div>
+                <InfoRow label="Email" value={detail.customer.email || '—'} />
+                <InfoRow label="Telegram" value={detail.customer.telegramName ? `@${detail.customer.telegramName}` : detail.customer.telegramId || '—'} />
+                <InfoRow label="Всего оплат" value={`${detail.customer.paymentsCount ?? 0} · ${fmtMoney(Number(detail.customer.totalPaid ?? 0))}`} />
+                <a href={`/admin/users/${detail.customer.id}`}
+                   className="inline-block text-xs mt-1 hover:underline" style={{ color: '#60a5fa' }}>
+                  Открыть карточку клиента →
+                </a>
+              </div>
+            )}
+
+            {detail.adCampaign && (
+              <div className="rounded-xl p-4 space-y-2"
+                   style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)' }}>
+                <div className="text-xs font-semibold uppercase tracking-wider mb-2"
+                     style={{ color: '#60a5fa' }}>
+                  Источник: Рекламная кампания
+                </div>
+                <InfoRow label="Канал" value={detail.adCampaign.channelName || '—'} />
+                <InfoRow label="UTM" value={detail.adCampaign.utmCode || '—'} />
+                <InfoRow label="Формат" value={detail.adCampaign.format || '—'} />
+                <InfoRow label="Запуск" value={detail.adCampaign.date ? new Date(detail.adCampaign.date).toLocaleDateString('ru-RU') : '—'} />
+              </div>
+            )}
+
+            {/* Receipt management */}
+            <div className="rounded-xl p-4 space-y-3"
+                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+              <div className="text-xs font-semibold uppercase tracking-wider"
+                   style={{ color: 'var(--text-tertiary)' }}>
+                Чек
+              </div>
+              {detail.receiptFile ? (
+                <div className="space-y-2">
+                  <a href={detail.receiptFile} target="_blank" rel="noopener noreferrer"
+                     className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg transition-colors"
+                     style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>
+                    📄 Открыть файл
+                  </a>
+                  <div className="flex gap-2">
+                    <label className="btn-secondary text-xs flex-1 cursor-pointer text-center py-2">
+                      <input type="file" accept="image/*,application/pdf" className="hidden"
+                             disabled={uploadingReceipt}
+                             onChange={e => e.target.files?.[0] && uploadReceipt(e.target.files[0])} />
+                      {uploadingReceipt ? 'Загрузка...' : 'Заменить'}
+                    </label>
+                    <button onClick={removeReceipt}
+                            className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors"
+                            style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171' }}>
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="block cursor-pointer">
+                  <input type="file" accept="image/*,application/pdf" className="hidden"
+                         disabled={uploadingReceipt}
+                         onChange={e => e.target.files?.[0] && uploadReceipt(e.target.files[0])} />
+                  <div className="border-2 border-dashed rounded-lg p-4 text-center text-sm transition-colors hover:bg-white/[0.03]"
+                       style={{ borderColor: 'var(--glass-border)', color: 'var(--text-secondary)' }}>
+                    {uploadingReceipt ? 'Загрузка...' : '+ Загрузить чек (фото или PDF)'}
+                  </div>
+                </label>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => { setDetail(null); openEdit(detail) }}
+                      className="btn-secondary flex-1 inline-flex items-center justify-center gap-1.5">
+                <Edit2 className="w-4 h-4" /> Редактировать
+              </button>
+              <button onClick={() => { setDeleteId(detail.id); setDetail(null) }}
+                      className="flex-1 py-2 px-4 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-1.5"
+                      style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <Trash2 className="w-4 h-4" /> Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InfoRow({ label, value, dot }: { label: string; value: string; dot?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 text-sm py-1">
+      <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+      <span className="text-right inline-flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+        {dot && <span className="w-2 h-2 rounded-full" style={{ background: dot }} />}
+        {value}
+      </span>
     </div>
   )
 }

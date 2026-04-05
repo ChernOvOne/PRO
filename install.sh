@@ -701,27 +701,27 @@ run_migrations() {
   echo ""
   ok "PostgreSQL готов"
 
-  info "Применяю миграции Prisma..."
+  info "Синхронизирую схему БД (Prisma)..."
   local db_url
   db_url=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
 
-  # Запускаем миграцию через временный контейнер (не требует backend-сервиса)
-  # prisma migrate deploy использует только DATABASE_URL
+  # Используем prisma db push — синхронизирует всю схему (включая Buh* таблицы
+  # бухгалтерии) одним шагом, идемпотентно. Работает на чистой БД и при обновлении.
   docker compose run --rm --no-deps \
     -e DATABASE_URL="$db_url" \
     backend \
-    npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE"
+    npx prisma db push --skip-generate --accept-data-loss 2>&1 | tee -a "$LOG_FILE"
 
   local exit_code=${PIPESTATUS[0]}
   if [[ $exit_code -ne 0 ]]; then
     warn "run --rm завершился с кодом $exit_code. Пробую exec если backend уже запущен..."
-    docker compose exec -T backend npx prisma migrate deploy 2>&1 | tee -a "$LOG_FILE" || {
-      err "Миграции не прошли. Проверь логи: docker compose logs backend"
+    docker compose exec -T backend npx prisma db push --skip-generate --accept-data-loss 2>&1 | tee -a "$LOG_FILE" || {
+      err "Синхронизация схемы не прошла. Проверь логи: docker compose logs backend"
       return 1
     }
   fi
 
-  ok "Миграции применены"
+  ok "Схема БД синхронизирована"
 }
 
 seed_db() {

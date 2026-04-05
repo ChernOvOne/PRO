@@ -368,19 +368,31 @@ export class PaymentService {
 
     logger.info(`Payment confirmed: ${orderId}, user: ${user.id}, +${effectiveDays} days`)
 
-    // Auto-create BuhTransaction (accounting income) for confirmed payments
+    // Mark UTM lead as converted
     try {
-      await prisma.buhTransaction.create({
+      if (user.customerSource) {
+        await prisma.buhUtmLead.updateMany({
+          where: { customerId: user.id, utmCode: user.customerSource, converted: false },
+          data: { converted: true },
+        })
+        logger.info(`UTM lead converted: user=${user.id}, utm=${user.customerSource}`)
+      }
+    } catch (err) {
+      logger.warn('Failed to mark UTM lead as converted:', err)
+    }
+
+    // Update user payment aggregates (для LTV / истории оплат в карточке клиента)
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
         data: {
-          type:        'INCOME',
-          amount:      payment.amount,
-          date:        new Date(),
-          description: `Оплата подписки: ${tariff.name} (${payment.provider})`,
-          source:      'system',
+          totalPaid:     { increment: payment.amount },
+          paymentsCount: { increment: 1 },
+          lastPaymentAt: new Date(),
         },
       })
     } catch (err) {
-      logger.warn('Failed to create buh transaction for payment:', err)
+      logger.warn('Failed to update user payment aggregates:', err)
     }
 
     // Send payment confirmation notifications (Telegram + Email)

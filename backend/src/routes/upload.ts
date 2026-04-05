@@ -9,7 +9,7 @@ const MAX_SIZE = 20 * 1024 * 1024 // 20MB
 
 export async function uploadRoutes(app: FastifyInstance) {
   // Upload file (admin only)
-  app.post('/upload', { preHandler: [app.adminOnly] }, async (req, reply) => {
+  app.post('/upload', { preHandler: [app.requireEditor] }, async (req, reply) => {
     const contentType = req.headers['content-type'] || ''
 
     if (!contentType.startsWith('multipart/form-data')) {
