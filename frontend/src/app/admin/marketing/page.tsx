@@ -5,6 +5,7 @@ import {
   Plus, Trash2, X, TrendingUp, Users, DollarSign,
   Calendar, AlertCircle, Copy, Check, Megaphone,
   BarChart3, ArrowRight, Target, ExternalLink,
+  Link2, QrCode, ArrowDown,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -34,9 +35,21 @@ interface FunnelRow {
   clicks: number
   leads: number
   conversions: number
-  cpa: number
-  roi: number
-  amount?: number
+  cpa: number | null
+  roi: number | null
+  amount: number
+  revenue: number
+  ltv: number | null
+}
+
+interface FunnelSummary {
+  totalClicks: number
+  totalLeads: number
+  totalConversions: number
+  totalRevenue: number
+  totalSpent: number
+  bestChannel: string | null
+  avgCpa: number | null
 }
 
 interface Partner {
@@ -64,11 +77,12 @@ function fmtDate(iso: string) {
 /* ── Component ─────────────────────────────────────────────── */
 
 export default function AdminMarketingPage() {
-  const [tab, setTab] = useState<'campaigns' | 'funnel'>('campaigns')
+  const [tab, setTab] = useState<'campaigns' | 'funnel' | 'utm-builder'>('campaigns')
 
   // Data
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([])
   const [funnel, setFunnel]       = useState<FunnelRow[]>([])
+  const [funnelSummary, setFunnelSummary] = useState<FunnelSummary | null>(null)
   const [partners, setPartners]   = useState<Partner[]>([])
   const [summary, setSummary]     = useState<any>(null)
   const [loading, setLoading]     = useState(true)
@@ -76,6 +90,7 @@ export default function AdminMarketingPage() {
   // Filters
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo]     = useState('')
+  const [funnelFilter, setFunnelFilter] = useState<string>('') // filter funnel by single campaign
 
   // Modal
   const [showModal, setShowModal] = useState(false)
@@ -95,6 +110,20 @@ export default function AdminMarketingPage() {
 
   // Copy state
   const [copiedUtm, setCopiedUtm] = useState<string | null>(null)
+
+  // UTM Builder state
+  const [utmForm, setUtmForm] = useState({
+    baseUrl: '',
+    utmSource: '',
+    utmMedium: '',
+    utmCampaign: '',
+  })
+  const [utmSaving, setUtmSaving] = useState(false)
+  const [utmResult, setUtmResult] = useState<{
+    fullUrl: string
+    goLink: string
+    utmCode: string
+  } | null>(null)
 
   /* ── Load ─────────────────────────────────── */
 
@@ -128,14 +157,18 @@ export default function AdminMarketingPage() {
     if (dateTo) params.date_to = dateTo
 
     adminApi.buhAdsFunnel(params)
-      .then(setFunnel)
-      .catch(() => setFunnel([]))
+      .then((data: any) => {
+        setFunnel(data.rows ?? [])
+        setFunnelSummary(data.summary ?? null)
+      })
+      .catch(() => { setFunnel([]); setFunnelSummary(null) })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     if (tab === 'campaigns') loadCampaigns()
-    else loadFunnel()
+    else if (tab === 'funnel') loadFunnel()
+    else setLoading(false)
   }, [tab, dateFrom, dateTo])
 
   /* ── Actions ──────────────────────────────── */
@@ -193,6 +226,37 @@ export default function AdminMarketingPage() {
     setTimeout(() => setCopiedUtm(null), 2000)
   }
 
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Скопировано')
+  }
+
+  const createUtmLink = async () => {
+    if (!utmForm.baseUrl || !utmForm.utmSource) {
+      toast.error('Заполните базовую ссылку и источник')
+      return
+    }
+    setUtmSaving(true)
+    try {
+      const res = await adminApi.createUtmBuilder({
+        baseUrl: utmForm.baseUrl,
+        utmSource: utmForm.utmSource,
+        utmMedium: utmForm.utmMedium || undefined,
+        utmCampaign: utmForm.utmCampaign || undefined,
+      })
+      setUtmResult({
+        fullUrl: res.fullUrl,
+        goLink: res.goLink,
+        utmCode: res.utmCode,
+      })
+      toast.success('UTM ссылка создана')
+    } catch {
+      toast.error('Ошибка создания ссылки')
+    } finally {
+      setUtmSaving(false)
+    }
+  }
+
   /* ── Derived stats ────────────────────────── */
 
   const stats = useMemo(() => {
@@ -223,6 +287,36 @@ export default function AdminMarketingPage() {
 
     return { totalSpent, totalSubs, avgCostPerSub, bestChannel }
   }, [campaigns, summary])
+
+  // Filtered funnel rows (for visual funnel)
+  const filteredFunnel = useMemo(() => {
+    if (!funnelFilter) return funnel
+    return funnel.filter(r => r.utmCode === funnelFilter)
+  }, [funnel, funnelFilter])
+
+  // Aggregated funnel data for visual display
+  const funnelAgg = useMemo(() => {
+    const rows = filteredFunnel
+    const clicks      = rows.reduce((s, r) => s + r.clicks, 0)
+    const leads       = rows.reduce((s, r) => s + r.leads, 0)
+    const conversions = rows.reduce((s, r) => s + r.conversions, 0)
+    const revenue     = rows.reduce((s, r) => s + r.revenue, 0)
+    return { clicks, leads, conversions, revenue }
+  }, [filteredFunnel])
+
+  // UTM preview URL
+  const utmPreviewUrl = useMemo(() => {
+    if (!utmForm.baseUrl) return ''
+    try {
+      const url = new URL(utmForm.baseUrl)
+      if (utmForm.utmSource)   url.searchParams.set('utm_source', utmForm.utmSource)
+      if (utmForm.utmMedium)   url.searchParams.set('utm_medium', utmForm.utmMedium)
+      if (utmForm.utmCampaign) url.searchParams.set('utm_campaign', utmForm.utmCampaign)
+      return url.toString()
+    } catch {
+      return ''
+    }
+  }, [utmForm])
 
   /* ── Render ───────────────────────────────── */
 
@@ -272,37 +366,50 @@ export default function AdminMarketingPage() {
             <BarChart3 className="w-4 h-4" /> UTM Воронка
           </span>
         </button>
+        <button
+          onClick={() => setTab('utm-builder')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'utm-builder' ? 'bg-white/10' : 'hover:bg-white/[0.05]'
+          }`}
+          style={{ color: tab === 'utm-builder' ? 'var(--text-primary)' : 'var(--text-tertiary)' }}
+        >
+          <span className="flex items-center gap-2">
+            <Link2 className="w-4 h-4" /> UTM Конструктор
+          </span>
+        </button>
       </div>
 
-      {/* Date Filters */}
-      <div
-        className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
-        style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-      >
-        <Calendar className="w-4 h-4 shrink-0" style={{ color: 'var(--text-tertiary)' }} />
-        <input
-          type="date"
-          className="glass-input py-1.5 px-3 text-sm w-auto"
-          value={dateFrom}
-          onChange={e => setDateFrom(e.target.value)}
-        />
-        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>--</span>
-        <input
-          type="date"
-          className="glass-input py-1.5 px-3 text-sm w-auto"
-          value={dateTo}
-          onChange={e => setDateTo(e.target.value)}
-        />
-        {(dateFrom || dateTo) && (
-          <button
-            className="text-xs hover:underline"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => { setDateFrom(''); setDateTo('') }}
-          >
-            Сбросить
-          </button>
-        )}
-      </div>
+      {/* Date Filters (not for UTM builder) */}
+      {tab !== 'utm-builder' && (
+        <div
+          className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <Calendar className="w-4 h-4 shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+          <input
+            type="date"
+            className="glass-input py-1.5 px-3 text-sm w-auto"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+          />
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>--</span>
+          <input
+            type="date"
+            className="glass-input py-1.5 px-3 text-sm w-auto"
+            value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              className="text-xs hover:underline"
+              style={{ color: 'var(--text-secondary)' }}
+              onClick={() => { setDateFrom(''); setDateTo('') }}
+            >
+              Сбросить
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════ */}
       {/* TAB: Campaigns                                         */}
@@ -466,102 +573,388 @@ export default function AdminMarketingPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════ */}
-      {/* TAB: UTM Funnel                                        */}
+      {/* TAB: UTM Funnel (Visual + Table with ROI)              */}
       {/* ═══════════════════════════════════════════════════════ */}
       {tab === 'funnel' && (
-        <div
-          className="rounded-2xl overflow-hidden"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                  {['UTM Code', 'Канал', 'Клики', 'Лиды', 'Конверсии', 'CPA', 'ROI'].map(h => (
-                    <th
-                      key={h}
-                      className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
-                      style={{ color: 'var(--text-tertiary)' }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  [...Array(5)].map((_, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      {[...Array(7)].map((_, j) => (
-                        <td key={j} className="px-4 py-3">
-                          <div className="h-4 skeleton rounded w-16" />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : funnel.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                      <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p>Данных воронки пока нет</p>
-                    </td>
+        <>
+          {/* Summary cards for funnel */}
+          {funnelSummary && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <SummaryCard
+                icon={<Target className="w-4 h-4" />}
+                label="Лучший канал (ROI)"
+                value={funnelSummary.bestChannel || '—'}
+                color="#34d399"
+              />
+              <SummaryCard
+                icon={<DollarSign className="w-4 h-4" />}
+                label="Средний CPA"
+                value={funnelSummary.avgCpa ? fmtMoney(funnelSummary.avgCpa) : '—'}
+                color="#60a5fa"
+              />
+              <SummaryCard
+                icon={<TrendingUp className="w-4 h-4" />}
+                label="Общий доход"
+                value={fmtMoney(funnelSummary.totalRevenue)}
+                color="#fbbf24"
+              />
+              <SummaryCard
+                icon={<Users className="w-4 h-4" />}
+                label="Конверсий"
+                value={String(funnelSummary.totalConversions)}
+                color="#a78bfa"
+              />
+            </div>
+          )}
+
+          {/* Campaign filter for funnel */}
+          <div
+            className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <BarChart3 className="w-4 h-4 shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+            <select
+              className="glass-input py-1.5 px-3 text-sm w-auto"
+              value={funnelFilter}
+              onChange={e => setFunnelFilter(e.target.value)}
+            >
+              <option value="">Все кампании</option>
+              {funnel.map(r => (
+                <option key={r.utmCode} value={r.utmCode}>
+                  {r.channelName || r.utmCode}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Visual Funnel Diagram */}
+          <div
+            className="rounded-2xl p-6"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <h3 className="text-lg font-semibold mb-6" style={{ color: 'var(--text-primary)' }}>
+              Визуальная воронка
+            </h3>
+
+            {loading ? (
+              <div className="space-y-4">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-14 skeleton rounded-xl" style={{ width: `${100 - i * 20}%`, margin: '0 auto' }} />
+                ))}
+              </div>
+            ) : (
+              <VisualFunnel
+                clicks={funnelAgg.clicks}
+                leads={funnelAgg.leads}
+                conversions={funnelAgg.conversions}
+                revenue={funnelAgg.revenue}
+              />
+            )}
+          </div>
+
+          {/* Funnel Table with ROI */}
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    {['UTM Code', 'Канал', 'Расход', 'Клики', 'Лиды', 'Конверсии', 'Доход', 'CPA', 'ROI', 'LTV'].map(h => (
+                      <th
+                        key={h}
+                        className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ) : (
-                  funnel.map((row, idx) => (
-                    <tr
-                      key={row.utmCode + idx}
-                      className="hover:bg-white/[0.03] transition-colors"
-                      style={{ borderBottom: '1px solid var(--glass-border)' }}
-                    >
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => copyUtm(row.utmCode)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono hover:bg-white/[0.05] transition-colors"
-                          style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
-                        >
-                          {copiedUtm === row.utmCode ? (
-                            <Check className="w-3 h-3 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                          {row.utmCode}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {row.channelName || '—'}
-                      </td>
-                      <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
-                        {row.clicks.toLocaleString('ru')}
-                      </td>
-                      <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
-                        {row.leads.toLocaleString('ru')}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          {row.conversions.toLocaleString('ru')}
-                        </span>
-                        {row.clicks > 0 && (
-                          <span className="text-xs ml-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                            ({((row.conversions / row.clicks) * 100).toFixed(1)}%)
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
-                        {row.cpa > 0 ? fmtMoney(Math.round(row.cpa)) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className="font-semibold"
-                          style={{ color: row.roi > 0 ? '#34d399' : row.roi < 0 ? '#f87171' : 'var(--text-tertiary)' }}
-                        >
-                          {row.roi !== 0 ? `${row.roi > 0 ? '+' : ''}${row.roi.toFixed(1)}%` : '—'}
-                        </span>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                        {[...Array(10)].map((_, j) => (
+                          <td key={j} className="px-4 py-3">
+                            <div className="h-4 skeleton rounded w-16" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : filteredFunnel.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                        <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p>Данных воронки пока нет</p>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredFunnel.map((row, idx) => (
+                      <tr
+                        key={row.utmCode + idx}
+                        className="hover:bg-white/[0.03] transition-colors"
+                        style={{ borderBottom: '1px solid var(--glass-border)' }}
+                      >
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => copyUtm(row.utmCode)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono hover:bg-white/[0.05] transition-colors"
+                            style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+                          >
+                            {copiedUtm === row.utmCode ? (
+                              <Check className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                            {row.utmCode}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {row.channelName || '—'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                          {fmtMoney(row.amount)}
+                        </td>
+                        <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
+                          {row.clicks.toLocaleString('ru')}
+                        </td>
+                        <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
+                          {row.leads.toLocaleString('ru')}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {row.conversions.toLocaleString('ru')}
+                          </span>
+                          {row.clicks > 0 && (
+                            <span className="text-xs ml-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                              ({((row.conversions / row.clicks) * 100).toFixed(1)}%)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap" style={{ color: '#fbbf24' }}>
+                          {row.revenue > 0 ? fmtMoney(row.revenue) : '—'}
+                        </td>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                          {row.cpa != null && row.cpa > 0 ? fmtMoney(Math.round(row.cpa)) : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className="font-semibold"
+                            style={{ color: row.roi != null && row.roi > 0 ? '#34d399' : row.roi != null && row.roi < 0 ? '#f87171' : 'var(--text-tertiary)' }}
+                          >
+                            {row.roi != null && row.roi !== 0 ? `${row.roi > 0 ? '+' : ''}${row.roi.toFixed(1)}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                          {row.ltv != null ? fmtMoney(row.ltv) : '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* TAB: UTM Builder                                       */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {tab === 'utm-builder' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Form */}
+          <div
+            className="rounded-2xl p-6 space-y-4"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              UTM Конструктор
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Создайте UTM-ссылку для отслеживания рекламных кампаний
+            </p>
+
+            <div>
+              <label className="text-xs mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                Базовая ссылка *
+              </label>
+              <input
+                className="glass-input"
+                placeholder="https://t.me/your_bot"
+                value={utmForm.baseUrl}
+                onChange={e => setUtmForm({ ...utmForm, baseUrl: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                utm_source (канал) *
+              </label>
+              <input
+                className="glass-input"
+                placeholder="telegram, instagram, vk..."
+                value={utmForm.utmSource}
+                onChange={e => setUtmForm({ ...utmForm, utmSource: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                utm_medium (формат)
+              </label>
+              <input
+                className="glass-input"
+                placeholder="post, story, banner, cpc..."
+                value={utmForm.utmMedium}
+                onChange={e => setUtmForm({ ...utmForm, utmMedium: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                utm_campaign (название кампании)
+              </label>
+              <input
+                className="glass-input"
+                placeholder="spring_sale, launch_2024..."
+                value={utmForm.utmCampaign}
+                onChange={e => setUtmForm({ ...utmForm, utmCampaign: e.target.value })}
+              />
+            </div>
+
+            <button
+              onClick={createUtmLink}
+              disabled={utmSaving || !utmForm.baseUrl || !utmForm.utmSource}
+              className="btn-primary text-sm w-full flex items-center justify-center gap-2"
+            >
+              {utmSaving ? 'Создаю...' : (
+                <>
+                  <Link2 className="w-4 h-4" /> Создать UTM ссылку
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Preview + Result */}
+          <div className="space-y-6">
+            {/* URL Preview */}
+            {utmPreviewUrl && (
+              <div
+                className="rounded-2xl p-6 space-y-3"
+                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+              >
+                <h4 className="text-sm font-medium" style={{ color: 'var(--text-tertiary)' }}>
+                  Предпросмотр URL
+                </h4>
+                <div
+                  className="p-3 rounded-lg text-xs font-mono break-all"
+                  style={{ background: 'var(--surface-1)', color: 'var(--accent-1)', border: '1px solid var(--glass-border)' }}
+                >
+                  {utmPreviewUrl}
+                </div>
+                <button
+                  onClick={() => copyText(utmPreviewUrl)}
+                  className="text-xs flex items-center gap-1 hover:underline"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <Copy className="w-3 h-3" /> Скопировать предпросмотр
+                </button>
+              </div>
+            )}
+
+            {/* Created Result */}
+            {utmResult && (
+              <div
+                className="rounded-2xl p-6 space-y-4"
+                style={{ background: 'var(--glass-bg)', border: '1px solid rgba(52,211,153,0.3)' }}
+              >
+                <h4 className="text-sm font-semibold flex items-center gap-2" style={{ color: '#34d399' }}>
+                  <Check className="w-4 h-4" /> Ссылка создана
+                </h4>
+
+                {/* Full URL */}
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Полная ссылка</p>
+                  <div className="flex gap-2 items-start">
+                    <div
+                      className="flex-1 p-2 rounded-lg text-xs font-mono break-all"
+                      style={{ background: 'var(--surface-1)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
+                    >
+                      {utmResult.fullUrl}
+                    </div>
+                    <button
+                      onClick={() => copyText(utmResult.fullUrl)}
+                      className="p-2 rounded-lg hover:bg-white/[0.05] shrink-0"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Go link */}
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Короткая ссылка (с трекингом кликов)</p>
+                  <div className="flex gap-2 items-center">
+                    <div
+                      className="flex-1 p-2 rounded-lg text-sm font-mono"
+                      style={{ background: 'var(--surface-1)', color: '#60a5fa', border: '1px solid var(--glass-border)' }}
+                    >
+                      {typeof window !== 'undefined' ? window.location.origin : ''}{utmResult.goLink}
+                    </div>
+                    <button
+                      onClick={() => copyText((typeof window !== 'undefined' ? window.location.origin : '') + utmResult.goLink)}
+                      className="p-2 rounded-lg hover:bg-white/[0.05] shrink-0"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* UTM Code */}
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>UTM Code</p>
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-mono"
+                    style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+                  >
+                    {utmResult.utmCode}
+                  </span>
+                </div>
+
+                {/* QR Code placeholder */}
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>QR-код</p>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-32 h-32 rounded-lg flex items-center justify-center"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+                    >
+                      <QrCodeSvg
+                        url={(typeof window !== 'undefined' ? window.location.origin : '') + utmResult.goLink}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <a
+                        href={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+                          (typeof window !== 'undefined' ? window.location.origin : '') + utmResult.goLink
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs flex items-center gap-1 hover:underline"
+                        style={{ color: 'var(--accent-1)' }}
+                      >
+                        <ExternalLink className="w-3 h-3" /> Скачать QR (PNG)
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -700,6 +1093,106 @@ export default function AdminMarketingPage() {
         </div>
       )}
     </div>
+  )
+}
+
+/* ── Visual Funnel Component ──────────────────────────────────── */
+
+function VisualFunnel({
+  clicks, leads, conversions, revenue,
+}: {
+  clicks: number
+  leads: number
+  conversions: number
+  revenue: number
+}) {
+  const maxVal = Math.max(clicks, 1)
+
+  const steps = [
+    { label: 'Показы / Клики', value: clicks,      color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
+    { label: 'Лиды',           value: leads,        color: '#eab308', bg: 'rgba(234,179,8,0.15)' },
+    { label: 'Конверсии',      value: conversions,  color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
+    { label: 'Доход',          value: revenue,      color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', isMoney: true },
+  ]
+
+  if (clicks === 0 && leads === 0 && conversions === 0) {
+    return (
+      <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>
+        <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-40" />
+        <p>Нет данных для отображения воронки</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {steps.map((step, i) => {
+        // Width is proportional to value (except revenue which uses conversions for width)
+        const rawWidth = step.isMoney
+          ? (conversions / maxVal) * 100
+          : (step.value / maxVal) * 100
+        const width = Math.max(rawWidth, 15) // min 15%
+
+        // Drop-off from previous step
+        const prev = i > 0 ? steps[i - 1] : null
+        const prevValue = prev ? (prev.isMoney ? conversions : prev.value) : null
+        const currentForDropoff = step.isMoney ? conversions : step.value
+        const dropOff = prevValue && prevValue > 0
+          ? Math.round(((prevValue - currentForDropoff) / prevValue) * 100)
+          : null
+
+        return (
+          <div key={step.label}>
+            {/* Drop-off indicator */}
+            {dropOff != null && dropOff > 0 && (
+              <div className="flex items-center justify-center gap-1 py-1">
+                <ArrowDown className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
+                <span className="text-xs" style={{ color: '#f87171' }}>
+                  -{dropOff}% потеря
+                </span>
+              </div>
+            )}
+
+            {/* Funnel bar */}
+            <div className="flex items-center justify-center">
+              <div
+                className="rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-500"
+                style={{
+                  width: `${width}%`,
+                  background: step.bg,
+                  border: `1px solid ${step.color}30`,
+                  minWidth: '200px',
+                }}
+              >
+                <span className="text-sm font-medium" style={{ color: step.color }}>
+                  {step.label}
+                </span>
+                <span className="text-lg font-bold" style={{ color: step.color }}>
+                  {step.isMoney
+                    ? new Intl.NumberFormat('ru-RU').format(step.value) + ' ₽'
+                    : step.value.toLocaleString('ru')
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ── Simple QR Code SVG (renders a placeholder with link) ───── */
+
+function QrCodeSvg({ url }: { url: string }) {
+  // Simple visual QR placeholder using the external API as image
+  return (
+    <img
+      src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(url)}&bgcolor=1a1a2e&color=e0e0e0`}
+      alt="QR Code"
+      className="w-28 h-28 rounded"
+      style={{ imageRendering: 'pixelated' }}
+    />
   )
 }
 

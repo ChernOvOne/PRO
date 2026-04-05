@@ -11,6 +11,7 @@ interface User {
   id: string; email?: string; telegramId?: string; telegramName?: string
   subStatus: string; subExpireAt?: string; role: string; isActive: boolean
   createdAt: string; lastLoginAt?: string; remnawaveUuid?: string
+  customerSource?: string
   _count: { referrals: number; payments: number }
 }
 
@@ -28,17 +29,18 @@ export default function AdminUsers() {
   const [search, setSearch]   = useState('')
   const [status, setStatus]   = useState('')
   const [page, setPage]       = useState(1)
+  const [utm, setUtm]         = useState('')
   const [loading, setLoading] = useState(true)
   const [extendModal, setExtendModal] = useState<User|null>(null)
   const [extendDays, setExtendDays]   = useState(30)
 
   const load = useCallback(() => {
     setLoading(true)
-    const q = new URLSearchParams({ page: String(page), limit:'20', search, status })
+    const q = new URLSearchParams({ page: String(page), limit:'20', search, status, ...(utm ? { utm } : {}) })
     fetch(`/api/admin/users?${q}`, { credentials:'include' })
       .then(r => r.json())
       .then(d => { setUsers(d.users); setTotal(d.total); setLoading(false) })
-  }, [page, search, status])
+  }, [page, search, status, utm])
 
   useEffect(() => { load() }, [load])
 
@@ -94,6 +96,12 @@ export default function AdminUsers() {
           <option value="INACTIVE">Неактивные</option>
           <option value="EXPIRED">Истёкшие</option>
         </select>
+        <input
+          className="glass-input py-2 text-sm w-40"
+          placeholder="UTM / Источник"
+          value={utm}
+          onChange={e => { setUtm(e.target.value); setPage(1) }}
+        />
       </div>
 
       {/* Table */}
@@ -102,7 +110,7 @@ export default function AdminUsers() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                {['Пользователь','Статус','Истекает','Платежи','Рефералы','Действия']
+                {['Пользователь','Источник','Статус','Истекает','Платежи','Рефералы','Действия']
                   .map(h => (
                     <th key={h} className="text-left px-4 py-3 font-medium text-xs"
                         style={{ color: 'var(--text-tertiary)' }}>
@@ -115,7 +123,7 @@ export default function AdminUsers() {
               {loading ? (
                 [...Array(8)].map((_,i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {[...Array(6)].map((_,j) => (
+                    {[...Array(7)].map((_,j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 skeleton rounded w-24" />
                       </td>
@@ -145,6 +153,9 @@ export default function AdminUsers() {
                         </p>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {u.customerSource || '—'}
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <span className={STATUS_COLORS[u.subStatus] || 'badge-gray'}>

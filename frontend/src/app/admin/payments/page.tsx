@@ -15,6 +15,7 @@ interface PaymentUser {
   email?: string
   telegramName?: string
   telegramId?: string
+  customerSource?: string
 }
 
 interface Payment {
@@ -408,7 +409,7 @@ export default function AdminPayments() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                  {['Пользователь', 'Тип', 'Тариф', 'Сумма', 'Промо', 'Статус', 'Провайдер', 'Дата'].map(h => (
+                  {['Пользователь', 'Источник', 'Тип', 'Тариф', 'Сумма', 'Промо', 'Статус', 'Провайдер', 'Дата'].map(h => (
                     <th
                       key={h}
                       className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
@@ -423,7 +424,7 @@ export default function AdminPayments() {
                 {loading ? (
                   [...Array(10)].map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      {[...Array(8)].map((_, j) => (
+                      {[...Array(9)].map((_, j) => (
                         <td key={j} className="px-4 py-3">
                           <div className="h-4 skeleton rounded w-20" />
                         </td>
@@ -432,7 +433,7 @@ export default function AdminPayments() {
                   ))
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                    <td colSpan={9} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
                       <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40" />
                       <p>Платежи не найдены</p>
                     </td>
@@ -471,6 +472,11 @@ export default function AdminPayments() {
                           <p className="text-xs truncate max-w-[140px]" style={{ color: 'var(--text-tertiary)' }}>
                             {p.user.email || p.user.telegramId || '—'}
                           </p>
+                        </td>
+
+                        {/* Источник */}
+                        <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {p.user.customerSource || '—'}
                         </td>
 
                         {/* Type */}

@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, Trash2, Bell,
   RefreshCw, Ban, UserX, Calendar, Smartphone,
   Globe, FileText, DollarSign, ChevronRight, ChevronDown,
-  Wallet, Tag, Gift, Star, Filter,
+  Wallet, Tag, Gift, Star, Filter, Edit2, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -31,6 +31,9 @@ export default function AdminUserDetail() {
   const [showBalance, setShowBalance]   = useState(false)
   const [showGrantDays, setShowGrantDays] = useState(false)
   const [showDelete, setShowDelete]     = useState(false)
+  const [showEditProfile, setShowEditProfile] = useState(false)
+  const [editEmail, setEditEmail] = useState('')
+  const [editTgId, setEditTgId] = useState('')
   const [devicesOpen, setDevicesOpen]   = useState(false)
   const [activityFilter, setActivityFilter] = useState<string>('all')
   const [activities, setActivities]   = useState<any[]>([])
@@ -224,6 +227,17 @@ export default function AdminUserDetail() {
             </div>
 
             <div className="space-y-2 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Контакты</span>
+                <button onClick={() => {
+                  setEditEmail(user.email || '')
+                  setEditTgId(user.telegramId || '')
+                  setShowEditProfile(true)
+                }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-white/5"
+                        style={{ color: '#a78bfa' }}>
+                  <Edit2 className="w-3 h-3" /> Изменить
+                </button>
+              </div>
               {user.rmData?.username && <CopyField label="RW Username" value={user.rmData.username} />}
               {user.email && <CopyField label="Email" value={user.email} />}
               {user.telegramId && <CopyField label="Telegram ID" value={user.telegramId} />}
@@ -762,6 +776,53 @@ export default function AdminUserDetail() {
       )}
 
       {/* Delete options */}
+      {showEditProfile && (
+        <ModalOverlay onClose={() => setShowEditProfile(false)} title="Изменить профиль">
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs block mb-1" style={{ color: 'var(--text-tertiary)' }}>Email</label>
+              <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)}
+                     placeholder="user@example.com"
+                     className="w-full px-3 py-2 rounded-lg text-sm"
+                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+            </div>
+            <div>
+              <label className="text-xs block mb-1" style={{ color: 'var(--text-tertiary)' }}>Telegram ID</label>
+              <input type="text" value={editTgId} onChange={e => setEditTgId(e.target.value.replace(/\D/g, ''))}
+                     placeholder="123456789"
+                     className="w-full px-3 py-2 rounded-lg text-sm"
+                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+            </div>
+            <div className="text-[10px] p-2 rounded-lg" style={{ background: 'rgba(139,92,246,0.08)', color: 'var(--text-tertiary)' }}>
+              ℹ️ Изменения синхронизируются с REMNAWAVE
+            </div>
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                try {
+                  await adminApi.updateUserProfile(id, {
+                    email: editEmail.trim() || null,
+                    telegramId: editTgId.trim() || null,
+                  })
+                  toast.success('Профиль обновлён')
+                  setShowEditProfile(false)
+                  load()
+                } catch (e: any) {
+                  toast.error(e.message || 'Ошибка')
+                }
+              }} className="flex-1 py-2 rounded-lg text-sm font-medium"
+                 style={{ background: '#8b5cf6', color: '#fff' }}>
+                Сохранить
+              </button>
+              <button onClick={() => setShowEditProfile(false)}
+                      className="px-4 py-2 rounded-lg text-sm"
+                      style={{ color: 'var(--text-tertiary)' }}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
       {showDelete && (
         <ModalOverlay onClose={() => setShowDelete(false)} title="Удаление пользователя">
           <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Выберите что удалить:</p>
