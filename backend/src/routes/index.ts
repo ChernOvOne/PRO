@@ -30,6 +30,7 @@ import { adminInfrastructureRoutes } from './admin-infrastructure'
 import { adminAdsRoutes }          from './admin-ads'
 import { adminRecurringRoutes }    from './admin-recurring'
 import { adminBuhDashboardRoutes } from './admin-buh-dashboard'
+import { adminDashboardOverviewRoutes } from './admin-dashboard-overview'
 import { adminMilestoneRoutes }    from './admin-milestones'
 import { adminMonthlyStatsRoutes } from './admin-monthly-stats'
 import { adminUtmRoutes }          from './admin-utm'
@@ -91,6 +92,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminAdsRoutes,           { prefix: '/api/admin/ads'            })
   await app.register(adminRecurringRoutes,     { prefix: '/api/admin/recurring'      })
   await app.register(adminBuhDashboardRoutes,  { prefix: '/api/admin/buh-dashboard'  })
+  await app.register(adminDashboardOverviewRoutes, { prefix: '/api/admin/dashboard'   })
   await app.register(adminMilestoneRoutes,     { prefix: '/api/admin/milestones'     })
   await app.register(adminMonthlyStatsRoutes,  { prefix: '/api/admin/monthly-stats'  })
   await app.register(adminUtmRoutes,           { prefix: '/api/admin/utm'            })

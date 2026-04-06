@@ -188,6 +188,20 @@ export default function AdminPayments() {
   // Detail panel
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // Ad campaigns (map utmCode → campaign) for detail panel
+  const [campaignsByUtm, setCampaignsByUtm] = useState<Record<string, { id: string; channelName: string; utmCode: string; date: string; format?: string | null }>>({})
+
+  useEffect(() => {
+    fetch('/api/admin/ads', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((ads: any[]) => {
+        const map: Record<string, any> = {}
+        ads.forEach(a => { if (a.utmCode) map[a.utmCode] = a })
+        setCampaignsByUtm(map)
+      })
+      .catch(() => {})
+  }, [])
+
   /* ── Fetch ─────────────────────────────────── */
 
   const load = useCallback(() => {
@@ -476,7 +490,25 @@ export default function AdminPayments() {
 
                         {/* Источник */}
                         <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {p.user.customerSource || '—'}
+                          {(() => {
+                            const src = p.user.customerSource
+                            if (!src) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                            const camp = campaignsByUtm[src]
+                            if (camp) {
+                              return (
+                                <Link
+                                  href="/admin/marketing"
+                                  onClick={e => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md hover:underline"
+                                  style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}
+                                  title={`UTM: ${src}`}
+                                >
+                                  📣 {camp.channelName}
+                                </Link>
+                              )
+                            }
+                            return <span className="font-mono" style={{ color: 'var(--text-tertiary)' }}>{src}</span>
+                          })()}
                         </td>
 
                         {/* Type */}
@@ -577,7 +609,11 @@ export default function AdminPayments() {
 
         {/* Detail Panel */}
         {selectedPayment && (
-          <DetailPanel payment={selectedPayment} onClose={() => setSelectedId(null)} />
+          <DetailPanel
+            payment={selectedPayment}
+            adCampaign={selectedPayment.user.customerSource ? campaignsByUtm[selectedPayment.user.customerSource] ?? null : null}
+            onClose={() => setSelectedId(null)}
+          />
         )}
       </div>
     </div>
@@ -614,9 +650,11 @@ function SummaryCard({
 
 function DetailPanel({
   payment: p,
+  adCampaign,
   onClose,
 }: {
   payment: Payment & { meta: ParsedMeta | null; type: PaymentType }
+  adCampaign?: { id: string; channelName: string; utmCode: string; date: string; format?: string | null } | null
   onClose: () => void
 }) {
   return (
@@ -638,7 +676,7 @@ function DetailPanel({
         </button>
       </div>
 
-      <div className="p-4 space-y-4 overflow-y-auto max-h-[600px]">
+      <div className="p-4 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 180px)' }}>
         {/* ID */}
         <DetailRow label="ID" value={p.id} mono />
 
@@ -665,7 +703,38 @@ function DetailPanel({
           {p.user.telegramId && (
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>TG: {p.user.telegramId}</p>
           )}
+          {p.user.customerSource && (
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              UTM: <span className="font-mono" style={{ color: '#60a5fa' }}>{p.user.customerSource}</span>
+            </p>
+          )}
         </div>
+
+        {/* Ad Campaign (if user came via UTM) */}
+        {adCampaign && (
+          <div
+            className="rounded-lg p-3 space-y-1.5"
+            style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)' }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#60a5fa' }}>
+              📣 Рекламная кампания
+            </p>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              {adCampaign.channelName}
+            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {adCampaign.format && <span>Формат: {adCampaign.format}</span>}
+              <span>Запуск: {formatDate(adCampaign.date)}</span>
+            </div>
+            <Link
+              href="/admin/marketing"
+              className="inline-flex items-center gap-1 text-xs hover:underline"
+              style={{ color: '#60a5fa' }}
+            >
+              Открыть кампанию <ExternalLink className="w-3 h-3" />
+            </Link>
+          </div>
+        )}
 
         {/* Type + Status */}
         <div className="flex gap-3">

@@ -1,677 +1,623 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import Link from 'next/link'
 import {
-  Users, DollarSign, TrendingUp, TrendingDown, Activity,
-  ArrowUpRight, Clock, Shield, Package, Wallet,
-  CreditCard, BookOpen, Calendar, Star, AlertTriangle,
-  Target, ArrowUp, ArrowDown, Minus,
+  DollarSign, Users, TrendingUp, Target, Megaphone,
+  Activity, FileText, Table2, Wifi, Handshake,
+  CreditCard, UserPlus, AlertTriangle, ArrowDownCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
 
 // ── Types ────────────────────────────────────────────────────────
+type Days = 1 | 7 | 30 | 365
 
-interface VpnStats {
-  totalUsers:      number
-  activeUsers:     number
-  totalRevenue:    number
-  todayRevenue:    number
-  pendingPayments: number
-  remnawave:       any
-  revenueChart:    Array<{ date: string; amount: number }>
+interface Overview {
+  period: { days: number; from: string; to: string }
+  kpi: {
+    revenue: number; revenuePrev: number
+    newCustomers: number; newCustomersPaid: number
+    profit: number; profitPrev: number
+    ltvCacAvg: number | null
+  }
+  revenueChart: Array<{ date: string; income: number; expense: number }>
+  marketing: {
+    totalSpend: number; totalRevenue: number
+    totalClicks: number; totalLeads: number; totalConversions: number
+    funnelRate: number
+    topCampaigns: Array<{ id: string; channelName: string; spend: number; revenue: number; roi: number; conversions: number }>
+    campaignsByDay: Array<{ date: string; spend: number; revenue: number }>
+  }
+  customers: {
+    newByDay: Array<{ date: string; count: number }>
+    topByLtv: Array<{ id: string; email: string | null; telegramName: string | null; totalPaid: number; paymentsCount: number }>
+    conversionRate: number
+    active: number; expired: number; trial: number
+  }
+  vpn: {
+    nodesOnline: number; onlineNow: number; onlineToday: number; onlineWeek: number; activeSubs: number
+  }
+}
+
+interface EventItem {
+  type: string; icon: string; title: string; subtitle: string; time: string; amount?: number; entityId?: string
 }
 
 interface BuhDashboard {
-  period: {
-    income:       number
-    expense:      number
-    profit:       number
-    avgPerDay:    number
-    daysInPeriod: number
-    bestDay?:     { date: string; amount: number }
-  }
-  balance:          number
-  recentTransactions: Array<{
-    id:          string
-    type:        'INCOME' | 'EXPENSE'
-    amount:      number
-    description: string
-    date:        string
-    category?:   string
-  }>
-  expenseByCategory: Array<{
-    category:   string
-    amount:     number
-    color?:     string
-    percentage: number
-  }>
-  incomeChart: Array<{
-    date:   string
-    amount: number
-  }>
-  partnersSummary: Array<{
-    id:             string
-    name:           string
-    avatarColor?:   string
-    remainingDebt:  number
-    totalDividends: number
-  }>
-  serverWarnings: Array<{
-    id:      string
-    name:    string
-    message: string
-    level:   'warning' | 'critical'
-  }>
-  milestones: Array<{
-    id:       string
-    title:    string
-    current:  number
-    target:   number
-    unit?:    string
+  partnersSummary?: Array<{
+    id: string; name: string; avatarColor?: string
+    remainingDebt: number; totalDividends: number; roleLabel?: string; initials?: string
   }>
 }
 
-type PeriodType = 'today' | 'month' | 'year' | 'custom'
-
 // ── Helpers ──────────────────────────────────────────────────────
-
 function fmt(amount: number): string {
   return new Intl.NumberFormat('ru-RU').format(Math.round(amount)) + ' \u20BD'
 }
 
-function fmtShort(amount: number): string {
-  if (Math.abs(amount) >= 1_000_000) {
-    return (amount / 1_000_000).toFixed(1).replace('.0', '') + 'M \u20BD'
+function pctChange(cur: number, prev: number): { label: string; positive: boolean } {
+  if (prev === 0) {
+    if (cur > 0) return { label: '+100%', positive: true }
+    if (cur < 0) return { label: '-100%', positive: false }
+    return { label: '0%', positive: true }
   }
-  if (Math.abs(amount) >= 100_000) {
-    return (amount / 1_000).toFixed(0) + 'K \u20BD'
-  }
-  return fmt(amount)
+  const pct = Math.round(((cur - prev) / Math.abs(prev)) * 100)
+  return { label: `${pct >= 0 ? '+' : ''}${pct}%`, positive: pct >= 0 }
 }
 
-function formatDateRu(dateStr: string): string {
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return 'только что'
+  if (min < 60) return `${min} мин назад`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h} ч назад`
+  const d = Math.floor(h / 24)
+  return `${d} дн назад`
+}
+
+function formatDateShort(dateStr: string): string {
   const d = new Date(dateStr)
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-function formatMb(bytes: number): string {
-  return Math.round(bytes / 1024 / 1024).toLocaleString('ru')
+function ltvCacColor(v: number | null): string {
+  if (v === null) return 'var(--text-tertiary)'
+  if (v >= 3) return '#34d399'
+  if (v >= 1) return '#fbbf24'
+  return '#f87171'
 }
 
-function formatUptime(seconds: number): string {
-  const d = Math.floor(seconds / 86400)
-  const h = Math.floor((seconds % 86400) / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (d > 0) return `${d}\u0434 ${h}\u0447`
-  if (h > 0) return `${h}\u0447 ${m}\u043C`
-  return `${m}\u043C`
-}
+// ── Page ─────────────────────────────────────────────────────────
+export default function AdminDashboardPage() {
+  const [days, setDays] = useState<Days>(30)
+  const [overview, setOverview] = useState<Overview | null>(null)
+  const [events, setEvents] = useState<EventItem[]>([])
+  const [buh, setBuh] = useState<BuhDashboard | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [exportModal, setExportModal] = useState<null | 'pdf' | 'excel'>(null)
+  const [exportSections, setExportSections] = useState<Record<string, boolean>>({
+    kpi: true, marketing: true, customers: true, vpn: true, events: true,
+  })
 
-function formatTb(bytes: string | number): string {
-  const num = typeof bytes === 'string' ? parseFloat(bytes) : bytes
-  if (!num || isNaN(num)) return '\u2014'
-  const tb = num / (1024 * 1024 * 1024 * 1024)
-  if (tb >= 1) return `${tb.toFixed(1)} \u0422\u0411`
-  const gb = num / (1024 * 1024 * 1024)
-  return `${gb.toFixed(0)} \u0413\u0411`
-}
+  // Popup
+  const [popup, setPopup] = useState<{ type: string; data: any; loading?: boolean } | null>(null)
 
-const INCOME_COLOR  = '#1D9E75'
-const EXPENSE_COLOR = '#E24B4A'
-
-const CATEGORY_COLORS = [
-  '#6366f1', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#a855f7',
-]
-
-// ── Main Component ───────────────────────────────────────────────
-
-export default function AdminDashboard() {
-  const [vpnStats, setVpnStats]   = useState<VpnStats | null>(null)
-  const [buhData, setBuhData]     = useState<BuhDashboard | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [period, setPeriod]       = useState<PeriodType>('month')
-  const [dateFrom, setDateFrom]   = useState('')
-  const [dateTo, setDateTo]       = useState('')
-
-  // Grant all days modal state (preserved from original)
-  const [showGrantAll, setShowGrantAll]       = useState(false)
-  const [grantAllDays, setGrantAllDays]       = useState(7)
-  const [grantAllDesc, setGrantAllDesc]       = useState('')
-  const [grantAllLoading, setGrantAllLoading] = useState(false)
+  async function openPopup(type: string, id: string) {
+    setPopup({ type, data: null, loading: true })
+    try {
+      let data: any = null
+      if (type === 'user' || type === 'expiring') {
+        data = await adminApi.userById(id)
+      } else if (type === 'payment') {
+        data = await adminApi.userById(id)
+      } else if (type === 'campaign') {
+        const res = await fetch(`/api/admin/ads/${id}/stats`, { credentials: 'include' })
+        data = res.ok ? await res.json() : null
+      } else if (type === 'partner') {
+        data = await adminApi.buhPartnerById(id)
+      }
+      setPopup({ type, data })
+    } catch {
+      setPopup(null)
+      toast.error('Не удалось загрузить данные')
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      adminApi.dashboardOverview(days),
+      adminApi.dashboardEvents(20),
+      adminApi.buhDashboard().catch(() => null),
+    ])
+      .then(([ov, ev, bh]) => {
+        if (cancelled) return
+        setOverview(ov as Overview)
+        setEvents((ev as { events: EventItem[] }).events || [])
+        setBuh(bh as BuhDashboard | null)
+      })
+      .catch((e: any) => toast.error(e?.message || 'Ошибка загрузки'))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [days])
+
+  const periodLabel = useMemo(() => ({
+    1: 'Сегодня', 7: '7 дней', 30: '30 дней', 365: 'Год',
+  }[days]), [days])
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    const sections = Object.entries(exportSections)
+      .filter(([_, v]) => v).map(([k]) => k).join(',')
+    if (!sections) { toast.error('Выберите хотя бы одну секцию'); return }
+    const url = `/api/admin/dashboard/export?format=${format}&sections=${sections}&days=${days}`
+    if (format === 'pdf') {
+      window.open(url, '_blank')
+    } else {
       try {
-        const [vpn, buh] = await Promise.allSettled([
-          adminApi.stats(),
-          adminApi.buhDashboard(),
-        ])
-        if (vpn.status === 'fulfilled')  setVpnStats(vpn.value as VpnStats)
-        if (buh.status === 'fulfilled')  setBuhData(buh.value as BuhDashboard)
+        const res = await fetch(url, { credentials: 'include' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const blob = await res.blob()
+        const href = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = href
+        a.download = `dashboard_${days}d.xlsx`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(href)
+        toast.success('Файл скачан')
       } catch (e: any) {
-        toast.error('Failed to load dashboard')
-      } finally {
-        setLoading(false)
+        toast.error(e?.message || 'Ошибка экспорта')
       }
     }
-    load()
-  }, [])
-
-  if (loading) return <AdminSkeleton />
-
-  const convRate = vpnStats && vpnStats.totalUsers > 0
-    ? Math.round((vpnStats.activeUsers / vpnStats.totalUsers) * 100)
-    : 0
-
-  const maxRev = vpnStats
-    ? Math.max(...vpnStats.revenueChart.map(d => Number(d.amount)), 1)
-    : 1
-
-  // Financial KPIs — select data based on active period
-  const periodData = buhData
-    ? (period === 'today' ? (buhData as any).today
-     : period === 'year'  ? (buhData as any).year
-     :                      (buhData as any).month) ?? {}
-    : {}
-  const income     = periodData.income ?? 0
-  const expense    = periodData.expense ?? 0
-  const profit     = periodData.profit ?? (income - expense)
-  const balance    = buhData?.balance ?? 0
-  const avgPerDay  = periodData.avgPerDay ?? 0
-  const daysInPeriod = periodData.daysInPeriod ?? 1
-  const expensePct = income > 0 ? Math.round((expense / income) * 100) : 0
-  const bestDay    = periodData.bestDay ? { date: periodData.bestDay, amount: periodData.bestDayAmount ?? 0 } : null
-  const serverWarnings = buhData?.serverWarnings ?? []
+    setExportModal(null)
+  }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-
-      {/* ── Header + Period Selector ────────────────────────── */}
-      <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-            <span className="text-gradient">Панель управления</span>
-          </h1>
-          <p className="mt-1" style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            {new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {(['today', 'month', 'year'] as PeriodType[]).map(p => (
+    <div className="p-4 md:p-6 space-y-5 max-w-[1400px] mx-auto">
+      {/* Sticky Header */}
+      <div
+        className="sticky top-0 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 flex items-center justify-between flex-wrap gap-3"
+        style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--glass-border)' }}
+      >
+        <div className="flex gap-2 flex-wrap">
+          {([1, 7, 30, 365] as Days[]).map(d => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+              key={d}
+              onClick={() => setDays(d)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
               style={{
-                background: period === p ? 'var(--accent-gradient)' : 'var(--glass-bg)',
-                border: `1px solid ${period === p ? 'transparent' : 'var(--glass-border)'}`,
-                color: period === p ? '#fff' : 'var(--text-secondary)',
+                background: days === d ? '#534AB7' : 'var(--glass-bg)',
+                color: days === d ? '#fff' : 'var(--text-secondary)',
+                border: '1px solid var(--glass-border)',
               }}
             >
-              {p === 'today' ? 'Сегодня' : p === 'month' ? 'Месяц' : 'Год'}
+              {({ 1: 'Сегодня', 7: '7 дней', 30: '30 дней', 365: 'Год' } as any)[d]}
             </button>
           ))}
-          <div className="flex items-center gap-1.5">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => { setDateFrom(e.target.value); setPeriod('custom') }}
-              className="px-2 py-1.5 rounded-lg text-xs"
-              style={{
-                background: 'var(--glass-bg)',
-                border: '1px solid var(--glass-border)',
-                color: 'var(--text-secondary)',
-              }}
-            />
-            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>&mdash;</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => { setDateTo(e.target.value); setPeriod('custom') }}
-              className="px-2 py-1.5 rounded-lg text-xs"
-              style={{
-                background: 'var(--glass-bg)',
-                border: '1px solid var(--glass-border)',
-                color: 'var(--text-secondary)',
-              }}
-            />
-          </div>
         </div>
-      </div>
-
-      {/* ── Financial KPI Cards ─────────────────────────────── */}
-      {buhData && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 stagger">
-          {/* Income */}
-          <KpiCard
-            icon={<TrendingUp className="w-[18px] h-[18px]" />}
-            label="Выручка"
-            value={fmtShort(income)}
-            sub={`~${fmt(avgPerDay)}/день`}
-            iconColor={INCOME_COLOR}
-            accentColor={INCOME_COLOR}
-          />
-          {/* Expense */}
-          <KpiCard
-            icon={<TrendingDown className="w-[18px] h-[18px]" />}
-            label="Расходы"
-            value={fmtShort(expense)}
-            sub={`${expensePct}% от выручки`}
-            iconColor={EXPENSE_COLOR}
-            accentColor={EXPENSE_COLOR}
-          />
-          {/* Profit */}
-          <KpiCard
-            icon={profit >= 0
-              ? <ArrowUp className="w-[18px] h-[18px]" />
-              : <ArrowDown className="w-[18px] h-[18px]" />}
-            label="Прибыль"
-            value={fmtShort(profit)}
-            sub={profit >= 0 ? 'положительная' : 'убыток'}
-            iconColor={profit >= 0 ? INCOME_COLOR : EXPENSE_COLOR}
-            accentColor={profit >= 0 ? INCOME_COLOR : EXPENSE_COLOR}
-            valueColor={profit >= 0 ? INCOME_COLOR : EXPENSE_COLOR}
-          />
-          {/* Balance */}
-          <KpiCard
-            icon={<Wallet className="w-[18px] h-[18px]" />}
-            label="Баланс"
-            value={fmtShort(balance)}
-            sub={serverWarnings.length > 0 ? `${serverWarnings.length} предупр.` : 'OK'}
-            iconColor="#8b5cf6"
-            accentColor="#8b5cf6"
-            subColor={serverWarnings.length > 0 ? '#f59e0b' : undefined}
-          />
-          {/* Best Day */}
-          <KpiCard
-            icon={<Star className="w-[18px] h-[18px]" />}
-            label="Лучший день"
-            value={bestDay ? fmtShort(bestDay.amount) : '\u2014'}
-            sub={bestDay ? formatDateRu(bestDay.date) : 'нет данных'}
-            iconColor="#f59e0b"
-            accentColor="#f59e0b"
-          />
-        </div>
-      )}
-
-      {/* ── Charts Row ──────────────────────────────────────── */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Left: 30-day income chart */}
-        <div className="lg:col-span-2 rounded-2xl p-5 animate-slide-up"
-             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '100ms' }}>
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Доходы за 30 дней
-            </h2>
-            <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
-              {buhData ? fmt(income) + ' всего' : ''}
-            </span>
-          </div>
-          <IncomeBarChart data={buhData?.incomeChart ?? vpnStats?.revenueChart ?? []} />
-        </div>
-
-        {/* Right: Expense by category */}
-        <div className="rounded-2xl p-5 animate-slide-up"
-             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '200ms' }}>
-          <h2 className="font-semibold text-sm mb-5" style={{ color: 'var(--text-primary)' }}>
-            Расходы по категориям
-          </h2>
-          <ExpenseByCategoryChart categories={buhData?.expenseByCategory ?? []} />
-        </div>
-      </div>
-
-      {/* ── VPN Stats Row (preserved) ───────────────────────── */}
-      {vpnStats && (
-        <div className="animate-slide-up" style={{ animationDelay: '150ms' }}>
-          <h2 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
-            VPN &amp; Сервис
-          </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <AdminStatCard
-              icon={<Users className="w-[18px] h-[18px]" />}
-              label="Пользователи"
-              value={vpnStats.totalUsers.toLocaleString('ru')}
-              sub={`${vpnStats.activeUsers} активных`}
-              gradient="linear-gradient(135deg, rgba(6,182,212,0.12), rgba(6,182,212,0.04))"
-              borderColor="rgba(6,182,212,0.2)"
-              iconColor="#22d3ee"
-            />
-            <AdminStatCard
-              icon={<Activity className="w-[18px] h-[18px]" />}
-              label="Конверсия"
-              value={`${convRate}%`}
-              sub={`${vpnStats.activeUsers} подписчиков`}
-              gradient="linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))"
-              borderColor="rgba(16,185,129,0.2)"
-              iconColor="#34d399"
-            />
-            <AdminStatCard
-              icon={<DollarSign className="w-[18px] h-[18px]" />}
-              label="Выручка сегодня"
-              value={`${vpnStats.todayRevenue.toLocaleString('ru')} \u20BD`}
-              gradient="linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))"
-              borderColor="rgba(245,158,11,0.2)"
-              iconColor="#fbbf24"
-            />
-            <AdminStatCard
-              icon={<TrendingUp className="w-[18px] h-[18px]" />}
-              label="Всего выручка"
-              value={`${vpnStats.totalRevenue.toLocaleString('ru')} \u20BD`}
-              sub={vpnStats.pendingPayments ? `${vpnStats.pendingPayments} ожидают` : undefined}
-              gradient="linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))"
-              borderColor="rgba(139,92,246,0.2)"
-              iconColor="#a78bfa"
-            />
-          </div>
-
-          {/* VPN Revenue Chart */}
-          {vpnStats.revenueChart.length > 0 && !buhData && (
-            <div className="mt-4 rounded-2xl p-5"
-                 style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                  Выручка за 30 дней
-                </h3>
-                <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
-                  {vpnStats.totalRevenue.toLocaleString('ru')} \u20BD всего
-                </span>
-              </div>
-              <IncomeBarChart data={vpnStats.revenueChart} />
-            </div>
-          )}
-
-          {/* REMNAWAVE status */}
-          {vpnStats.remnawave && (
-            <div className="mt-4 rounded-2xl p-5"
-                 style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-              <h3 className="font-semibold text-sm mb-4" style={{ color: 'var(--text-primary)' }}>REMNAWAVE</h3>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                     style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.12)' }}>
-                  <span className="glow-dot text-emerald-400" />
-                  <span className="text-xs font-medium text-emerald-400">Онлайн</span>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {vpnStats.remnawave.cpu && (
-                    <RmStatBox label="CPU" value={`${vpnStats.remnawave.cpu.cores} ядер`} />
-                  )}
-                  {vpnStats.remnawave.memory && (
-                    <div className="px-3 py-2 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                      <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>RAM</p>
-                      <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>
-                        {formatMb(vpnStats.remnawave.memory.used)} / {formatMb(vpnStats.remnawave.memory.total)} МБ
-                      </p>
-                      <div className="w-full h-1.5 rounded-full overflow-hidden mt-1" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                        <div className="h-full rounded-full" style={{
-                          width: `${Math.round((vpnStats.remnawave.memory.used / vpnStats.remnawave.memory.total) * 100)}%`,
-                          background: 'var(--accent-gradient)',
-                        }} />
-                      </div>
-                    </div>
-                  )}
-                  {vpnStats.remnawave.uptime != null && (
-                    <RmStatBox label="Uptime" value={formatUptime(vpnStats.remnawave.uptime)} />
-                  )}
-                  {vpnStats.remnawave.nodes && (
-                    <>
-                      <RmStatBox label="Ноды онлайн" value={vpnStats.remnawave.nodes.totalOnline} color="#34d399" />
-                      <RmStatBox label="Трафик всего" value={formatTb(vpnStats.remnawave.nodes.totalBytesLifetime)} />
-                    </>
-                  )}
-                </div>
-
-                {vpnStats.remnawave.users && (
-                  <div className="grid grid-cols-4 gap-2">
-                    <RmStatBox label="Всего" value={vpnStats.remnawave.users.totalUsers} />
-                    <RmStatBox label="Активных" value={vpnStats.remnawave.users.statusCounts?.ACTIVE} color="#34d399" />
-                    <RmStatBox label="Истёкших" value={vpnStats.remnawave.users.statusCounts?.EXPIRED} color="#f87171" />
-                    <RmStatBox label="Откл." value={vpnStats.remnawave.users.statusCounts?.DISABLED} color="#fbbf24" />
-                  </div>
-                )}
-
-                {vpnStats.remnawave.onlineStats && (
-                  <div className="grid grid-cols-4 gap-2">
-                    <RmStatBox label="Сейчас" value={vpnStats.remnawave.onlineStats.onlineNow} color="#22d3ee" />
-                    <RmStatBox label="За день" value={vpnStats.remnawave.onlineStats.lastDay} />
-                    <RmStatBox label="За неделю" value={vpnStats.remnawave.onlineStats.lastWeek} />
-                    <RmStatBox label="Никогда" value={vpnStats.remnawave.onlineStats.neverOnline} color="var(--text-tertiary)" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Bottom Grid: Transactions / Partners / Warnings ── */}
-      <div className="grid lg:grid-cols-3 gap-4">
-
-        {/* Recent Transactions */}
-        <div className="rounded-2xl p-5 animate-slide-up"
-             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '250ms' }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Последние операции
-            </h2>
-            <Link href="/admin/transactions" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              Все &rarr;
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {(buhData?.recentTransactions ?? []).length === 0 && (
-              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Нет операций
-              </p>
-            )}
-            {(buhData?.recentTransactions ?? []).slice(0, 10).map(tx => (
-              <div key={tx.id} className="flex items-center gap-3 px-3 py-2 rounded-xl"
-                   style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <div className="w-2 h-2 rounded-full flex-shrink-0"
-                     style={{ background: tx.type === 'INCOME' ? INCOME_COLOR : EXPENSE_COLOR }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {tx.description || (tx.type === 'INCOME' ? 'Доход' : 'Расход')}
-                  </p>
-                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                    {formatDateRu(tx.date)}
-                    {tx.category && ` \u00B7 ${tx.category}`}
-                  </p>
-                </div>
-                <span className="text-xs font-bold flex-shrink-0"
-                      style={{ color: tx.type === 'INCOME' ? INCOME_COLOR : EXPENSE_COLOR }}>
-                  {tx.type === 'INCOME' ? '+' : '-'}{fmt(Math.abs(tx.amount))}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Partners */}
-        <div className="rounded-2xl p-5 animate-slide-up"
-             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '300ms' }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Партнёры
-            </h2>
-            <Link href="/admin/partners-investors" className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              Все &rarr;
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {(buhData?.partnersSummary ?? []).length === 0 && (
-              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Нет партнёров
-              </p>
-            )}
-            {(buhData?.partnersSummary ?? []).map(p => (
-              <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                   style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                     style={{ background: p.avatarColor || '#6366f1' }}>
-                  {p.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {p.name}
-                  </p>
-                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                    Дивиденды: {fmt(p.totalDividends)}
-                  </p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xs font-bold" style={{ color: p.remainingDebt > 0 ? '#f59e0b' : INCOME_COLOR }}>
-                    {p.remainingDebt > 0 ? `Долг: ${fmtShort(p.remainingDebt)}` : 'Оплачено'}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Server Warnings + Milestones */}
-        <div className="rounded-2xl p-5 animate-slide-up"
-             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '350ms' }}>
-          {/* Warnings */}
-          <h2 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
-            Предупреждения
-          </h2>
-          {serverWarnings.length === 0 ? (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-5"
-                 style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.12)' }}>
-              <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-xs text-emerald-400">Всё в порядке</span>
-            </div>
-          ) : (
-            <div className="space-y-2 mb-5">
-              {serverWarnings.map(w => (
-                <div key={w.id} className="flex items-start gap-2 px-3 py-2 rounded-xl"
-                     style={{
-                       background: w.level === 'critical' ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)',
-                       border: `1px solid ${w.level === 'critical' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`,
-                     }}>
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0"
-                                 style={{ color: w.level === 'critical' ? '#ef4444' : '#f59e0b' }} />
-                  <div>
-                    <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{w.name}</p>
-                    <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{w.message}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Milestones */}
-          <h2 className="font-semibold text-sm mb-3 mt-4" style={{ color: 'var(--text-primary)' }}>
-            Цели
-          </h2>
-          <div className="space-y-3">
-            {(buhData?.milestones ?? []).length === 0 && (
-              <p className="text-xs py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Нет целей
-              </p>
-            )}
-            {(buhData?.milestones ?? []).map(ms => {
-              const pct = ms.target > 0 ? Math.min(Math.round((ms.current / ms.target) * 100), 100) : 0
-              return (
-                <div key={ms.id}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                      {ms.title}
-                    </span>
-                    <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                      {new Intl.NumberFormat('ru-RU').format(ms.current)}{ms.unit ? ` ${ms.unit}` : ''} / {new Intl.NumberFormat('ru-RU').format(ms.target)}{ms.unit ? ` ${ms.unit}` : ''}
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                    <div className="h-full rounded-full transition-all duration-500"
-                         style={{
-                           width: `${pct}%`,
-                           background: pct >= 100
-                             ? INCOME_COLOR
-                             : pct >= 60
-                               ? 'linear-gradient(90deg, #06b6d4, #8b5cf6)'
-                               : '#6366f1',
-                         }} />
-                  </div>
-                  <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{pct}%</p>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Quick Actions ───────────────────────────────────── */}
-      <div className="rounded-2xl p-5 animate-slide-up"
-           style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', animationDelay: '400ms' }}>
-        <h2 className="font-semibold text-sm mb-4" style={{ color: 'var(--text-primary)' }}>
-          Быстрые действия
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {[
-            { href: '/admin/users',        icon: Users,       label: 'Пользователи' },
-            { href: '/admin/tariffs',       icon: Package,     label: 'Тарифы' },
-            { href: '/admin/instructions',  icon: BookOpen,    label: 'Инструкции' },
-            { href: '/admin/payments',      icon: CreditCard,  label: 'Платежи' },
-          ].map(({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
-            <Link key={href} href={href}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 group"
-                  style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
-              <Icon className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
-              <span style={{ color: 'var(--text-secondary)' }}
-                    className="group-hover:text-[var(--text-primary)] transition-colors">
-                {label}
-              </span>
-              <ArrowUpRight className="w-3.5 h-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                            style={{ color: 'var(--text-tertiary)' }} />
-            </Link>
-          ))}
-          <button onClick={() => setShowGrantAll(true)}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all duration-200 group"
-                  style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}>
-            <Calendar className="w-4 h-4" style={{ color: '#fbbf24' }} />
-            <span style={{ color: 'var(--text-secondary)' }}
-                  className="group-hover:text-[var(--text-primary)] transition-colors">
-              Выдать всем дни
-            </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setExportModal('pdf')}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
+            style={{ background: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
+          >
+            <FileText className="w-4 h-4 inline -mt-0.5" /> PDF
+          </button>
+          <button
+            onClick={() => setExportModal('excel')}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
+            style={{ background: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
+          >
+            <Table2 className="w-4 h-4 inline -mt-0.5" /> Excel
           </button>
         </div>
       </div>
 
-      {/* ── Grant Days Modal (preserved) ────────────────────── */}
-      {showGrantAll && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowGrantAll(false)} />
-          <div className="relative glass-card w-full max-w-md space-y-4 animate-scale-in"
-               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-            <h3 className="font-semibold text-lg">Выдать бонусные дни всем</h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Бонусные дни будут начислены всем активным пользователям.
-            </p>
-            <input type="number" className="glass-input" placeholder="Количество дней"
-                   value={grantAllDays} onChange={e => setGrantAllDays(+e.target.value)} min={1} />
-            <input className="glass-input" placeholder="Описание (необязательно)"
-                   value={grantAllDesc} onChange={e => setGrantAllDesc(e.target.value)} />
-            <div className="flex gap-2">
-              <button onClick={() => setShowGrantAll(false)} className="btn-secondary flex-1">Отмена</button>
-              <button disabled={grantAllLoading || grantAllDays < 1}
-                      onClick={async () => {
-                        setGrantAllLoading(true)
-                        try {
-                          const res = await adminApi.grantDaysAll(grantAllDays, grantAllDesc)
-                          toast.success(`+${grantAllDays} дней начислено ${res.updatedCount} пользователям`)
-                          setShowGrantAll(false); setGrantAllDays(7); setGrantAllDesc('')
-                        } catch (e: any) { toast.error(e.message || 'Ошибка') }
-                        finally { setGrantAllLoading(false) }
-                      }}
-                      className="btn-primary flex-1 justify-center">
-                {grantAllLoading ? 'Начисляю...' : `+${grantAllDays} дней всем`}
+      {/* TOP KPI */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {loading || !overview ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="glass-card p-4 rounded-2xl skeleton" style={{ height: 110 }} />
+          ))
+        ) : (
+          <>
+            <KpiCard
+              icon={<DollarSign className="w-4 h-4" style={{ color: '#34d399' }} />}
+              iconBg="rgba(52,211,153,0.15)"
+              label="Выручка"
+              value={fmt(overview.kpi.revenue)}
+              sub={pctChange(overview.kpi.revenue, overview.kpi.revenuePrev)}
+            />
+            <KpiCard
+              icon={<Users className="w-4 h-4" style={{ color: '#60a5fa' }} />}
+              iconBg="rgba(96,165,250,0.15)"
+              label="Новые клиенты"
+              value={String(overview.kpi.newCustomers)}
+              subLabel={`${overview.kpi.newCustomersPaid} оплатили`}
+            />
+            <KpiCard
+              icon={<TrendingUp className="w-4 h-4" style={{ color: '#a78bfa' }} />}
+              iconBg="rgba(167,139,250,0.15)"
+              label="Прибыль"
+              value={fmt(overview.kpi.profit)}
+              subLabel={
+                overview.kpi.revenue > 0
+                  ? `${Math.round((overview.kpi.profit / overview.kpi.revenue) * 100)}% маржа`
+                  : '—'
+              }
+            />
+            <KpiCard
+              icon={<Target className="w-4 h-4" style={{ color: '#fbbf24' }} />}
+              iconBg="rgba(251,191,36,0.15)"
+              label="LTV/CAC"
+              value={overview.kpi.ltvCacAvg !== null ? `${overview.kpi.ltvCacAvg}×` : '—'}
+              valueColor={ltvCacColor(overview.kpi.ltvCacAvg)}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Revenue chart */}
+      <div className="glass-card p-4 md:p-5 rounded-2xl">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Доходы vs Расходы · {periodLabel}
+          </div>
+          <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <span className="flex items-center gap-1">
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: '#34d399', display: 'inline-block' }} />
+              Доход
+            </span>
+            <span className="flex items-center gap-1">
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: '#f87171', display: 'inline-block' }} />
+              Расход
+            </span>
+          </div>
+        </div>
+        {loading || !overview ? (
+          <div className="skeleton rounded-lg" style={{ height: 300 }} />
+        ) : (
+          <AreaChart data={overview.revenueChart} />
+        )}
+      </div>
+
+      {/* VPN mini-strip */}
+      <div className="glass-card p-4 rounded-2xl">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Wifi className="w-4 h-4" style={{ color: '#34d399' }} /> VPN</div>
+        </div>
+        {loading || !overview ? (
+          <div className="skeleton rounded-lg" style={{ height: 50 }} />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <MiniStat label="Ноды онлайн" value={overview.vpn.nodesOnline} color="#60a5fa" />
+            <MiniStat label="Сейчас" value={overview.vpn.onlineNow} color="#34d399" />
+            <MiniStat label="За день" value={overview.vpn.onlineToday} color="#a78bfa" />
+            <MiniStat label="За неделю" value={overview.vpn.onlineWeek} color="#fbbf24" />
+            <MiniStat label="Активных подписок" value={overview.vpn.activeSubs} color="#f87171" />
+          </div>
+        )}
+      </div>
+
+      {/* Marketing block */}
+      <div className="glass-card p-4 md:p-5 rounded-2xl">
+        <div className="text-base font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Megaphone className="w-5 h-5" style={{ color: '#60a5fa' }} /> Маркетинг</div>
+        {loading || !overview ? (
+          <div className="skeleton rounded-lg" style={{ height: 200 }} />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <MiniStat label="Потрачено" value={fmt(overview.marketing.totalSpend)} color="#f87171" asString />
+              <MiniStat label="Получено" value={fmt(overview.marketing.totalRevenue)} color="#34d399" asString />
+              <MiniStat
+                label="Клики → Оплаты"
+                value={`${overview.marketing.totalClicks} → ${overview.marketing.totalLeads} → ${overview.marketing.totalConversions}`}
+                color="#60a5fa"
+                asString
+              />
+              <MiniStat
+                label="Воронка"
+                value={`${overview.marketing.funnelRate}%`}
+                color="#a78bfa"
+                asString
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  Топ-3 кампании по ROI
+                </div>
+                {overview.marketing.topCampaigns.length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {overview.marketing.topCampaigns.map(c => (
+                      <div key={c.id}
+                        onClick={() => openPopup('campaign', c.id)}
+                        className="flex items-center justify-between text-xs py-2 px-2 rounded cursor-pointer hover:bg-white/[0.05] transition-colors"
+                        style={{ background: 'var(--glass-bg)' }}>
+                        <div className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{c.channelName}</div>
+                        <div className="flex gap-3 items-center">
+                          <span style={{ color: 'var(--text-secondary)' }}>{fmt(c.revenue)}</span>
+                          <span style={{
+                            color: c.roi >= 0 ? '#34d399' : '#f87171',
+                            fontWeight: 600, minWidth: 50, textAlign: 'right',
+                          }}>
+                            {c.roi >= 0 ? '+' : ''}{c.roi}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  Расход vs Доход по дням
+                </div>
+                <MiniBarChart data={overview.marketing.campaignsByDay} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Customers block */}
+      <div className="glass-card p-4 md:p-5 rounded-2xl">
+        <div className="text-base font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Users className="w-5 h-5" style={{ color: '#a78bfa' }} /> Клиенты</div>
+        {loading || !overview ? (
+          <div className="skeleton rounded-lg" style={{ height: 200 }} />
+        ) : (
+          <>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-3 mb-4">
+              <MiniStat label="Активных" value={overview.customers.active} color="#34d399" />
+              <MiniStat label="Истекло" value={overview.customers.expired} color="#f87171" />
+              <MiniStat label="Пробник" value={overview.customers.trial} color="#fbbf24" />
+              <MiniStat
+                label="Конверсия"
+                value={`${overview.customers.conversionRate}%`}
+                color="#a78bfa"
+                asString
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Топ-5 по LTV</div>
+                {overview.customers.topByLtv.length === 0 ? (
+                  <div className="text-xs py-3" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {overview.customers.topByLtv.map(u => (
+                      <div key={u.id}
+                        onClick={() => openPopup('user', u.id)}
+                        className="flex items-center justify-between text-xs py-2 px-2 rounded cursor-pointer hover:bg-white/[0.05] transition-colors"
+                        style={{ background: 'var(--glass-bg)' }}>
+                        <div className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>
+                          {u.email || u.telegramName || '—'}
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <span style={{ color: 'var(--text-tertiary)' }}>×{u.paymentsCount}</span>
+                          <span style={{ color: '#34d399', fontWeight: 600 }}>{fmt(u.totalPaid)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  Новые клиенты по дням
+                </div>
+                <MiniLineChart data={overview.customers.newByDay.map(r => ({ date: r.date, value: r.count }))} color="#60a5fa" label="Новых" />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Partners block */}
+      {buh?.partnersSummary && buh.partnersSummary.length > 0 && (
+        <div className="glass-card p-4 md:p-5 rounded-2xl">
+          <div className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Handshake className="w-5 h-5" style={{ color: '#fbbf24' }} /> Партнёры</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {buh.partnersSummary.map(p => (
+              <div key={p.id}
+                onClick={() => openPopup('partner', p.id)}
+                className="flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-white/[0.05] transition-colors"
+                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <div
+                  className="flex items-center justify-center rounded-full text-white font-bold text-sm"
+                  style={{ width: 40, height: 40, background: p.avatarColor || '#534AB7' }}
+                >
+                  {p.initials || p.name.slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    Долг: {fmt(p.remainingDebt)} · Дивиденды: {fmt(p.totalDividends)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Events feed */}
+      <div className="glass-card p-4 md:p-5 rounded-2xl">
+        <div className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          <Activity className="w-5 h-5" style={{ color: '#60a5fa' }} /> Последние события
+        </div>
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="skeleton rounded-lg" style={{ height: 50 }} />
+            ))}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="text-sm py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>Нет событий</div>
+        ) : (
+          <div className="space-y-1.5">
+            {events.map((e, i) => (
+              <div key={i}
+                onClick={() => e.entityId && openPopup(e.type, e.entityId)}
+                className={`flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${e.entityId ? 'cursor-pointer hover:bg-white/[0.05]' : ''}`}
+                style={{ background: 'var(--glass-bg)' }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{
+                  background: e.type === 'payment' ? 'rgba(52,211,153,0.15)'
+                    : e.type === 'user' ? 'rgba(96,165,250,0.15)'
+                    : e.type === 'expiring' ? 'rgba(251,191,36,0.15)'
+                    : 'rgba(248,113,113,0.15)',
+                }}>
+                  {e.type === 'payment' ? <CreditCard className="w-4 h-4" style={{ color: '#34d399' }} />
+                    : e.type === 'user' ? <UserPlus className="w-4 h-4" style={{ color: '#60a5fa' }} />
+                    : e.type === 'expiring' ? <AlertTriangle className="w-4 h-4" style={{ color: '#fbbf24' }} />
+                    : <ArrowDownCircle className="w-4 h-4" style={{ color: '#f87171' }} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{e.title}</div>
+                  <div className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>{e.subtitle}</div>
+                </div>
+                <div className="text-xs whitespace-nowrap" style={{ color: 'var(--text-tertiary)' }}>
+                  {timeAgo(e.time)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Detail Popup */}
+      {popup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setPopup(null)}>
+          <div
+            className="w-full max-w-md rounded-2xl p-5 space-y-4 animate-scale-in max-h-[80vh] overflow-y-auto"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+            onClick={e => e.stopPropagation()}>
+            {popup.loading ? (
+              <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Загрузка...</div>
+            ) : !popup.data ? (
+              <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Данные не найдены</div>
+            ) : popup.type === 'user' || popup.type === 'payment' || popup.type === 'expiring' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Клиент</h3>
+                  <button onClick={() => setPopup(null)} className="p-1 rounded hover:bg-white/[0.05]" style={{ color: 'var(--text-tertiary)' }}>✕</button>
+                </div>
+                <PopupRow label="Email" value={popup.data.email || '—'} />
+                <PopupRow label="Telegram" value={popup.data.telegramName ? `@${popup.data.telegramName}` : popup.data.telegramId || '—'} />
+                <PopupRow label="Статус" value={popup.data.subStatus || '—'} />
+                <PopupRow label="Подписка до" value={popup.data.subExpireAt ? new Date(popup.data.subExpireAt).toLocaleDateString('ru-RU') : '—'} />
+                <PopupRow label="Всего оплат" value={`${popup.data.paymentsCount ?? 0} шт · ${fmt(Number(popup.data.totalPaid ?? 0))}`} />
+                <PopupRow label="Источник" value={popup.data.customerSource || '—'} />
+                <PopupRow label="Регистрация" value={popup.data.createdAt ? new Date(popup.data.createdAt).toLocaleDateString('ru-RU') : '—'} />
+                <a href={`/admin/users/${popup.data.id}`}
+                  className="block text-center text-sm mt-2 py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                  Открыть карточку →
+                </a>
+              </>
+            ) : popup.type === 'campaign' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Рекламная кампания</h3>
+                  <button onClick={() => setPopup(null)} className="p-1 rounded hover:bg-white/[0.05]" style={{ color: 'var(--text-tertiary)' }}>✕</button>
+                </div>
+                <PopupRow label="Канал" value={popup.data.campaign?.channelName || '—'} />
+                <PopupRow label="UTM" value={popup.data.campaign?.utmCode || popup.data.utmCode || '—'} />
+                <PopupRow label="Формат" value={popup.data.campaign?.format || '—'} />
+                <PopupRow label="Затраты" value={fmt(Number(popup.data.summary?.spend ?? popup.data.campaign?.amount ?? 0))} />
+                <PopupRow label="Клики" value={String(popup.data.summary?.clicks ?? 0)} />
+                <PopupRow label="Лиды" value={String(popup.data.summary?.leads ?? 0)} />
+                <PopupRow label="Конверсии" value={String(popup.data.summary?.conversions ?? 0)} />
+                <PopupRow label="Доход" value={fmt(Number(popup.data.summary?.revenue ?? 0))} />
+                <PopupRow label="ROI" value={`${popup.data.summary?.roi ?? 0}%`}
+                  color={(popup.data.summary?.roi ?? 0) >= 0 ? '#34d399' : '#f87171'} />
+                <PopupRow label="LTV" value={fmt(Number(popup.data.summary?.ltv ?? 0))} />
+                <a href="/admin/marketing"
+                  className="block text-center text-sm mt-2 py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                  Открыть маркетинг →
+                </a>
+              </>
+            ) : popup.type === 'partner' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Партнёр</h3>
+                  <button onClick={() => setPopup(null)} className="p-1 rounded hover:bg-white/[0.05]" style={{ color: 'var(--text-tertiary)' }}>✕</button>
+                </div>
+                <PopupRow label="Имя" value={popup.data.name || '—'} />
+                <PopupRow label="Роль" value={popup.data.roleLabel || '—'} />
+                <PopupRow label="Инвестиции" value={fmt(Number(popup.data.initialInvestment ?? 0))} />
+                <PopupRow label="Доля" value={`${popup.data.sharePercent ?? 0}%`} />
+                <PopupRow label="Контакт" value={popup.data.telegramContact || popup.data.phone || '—'} />
+                <a href="/admin/partners-investors"
+                  className="block text-center text-sm mt-2 py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                  Открыть партнёров →
+                </a>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {exportModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setExportModal(null)}
+        >
+          <div
+            className="glass-card rounded-2xl p-5 max-w-md w-full"
+            style={{ background: 'var(--surface-1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+              Экспорт отчёта ({exportModal === 'pdf' ? 'PDF' : 'Excel'})
+            </div>
+            <div className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+              Период: {periodLabel}
+            </div>
+            <div className="space-y-2 mb-4">
+              {[
+                { key: 'kpi', label: 'KPI' },
+                { key: 'marketing', label: 'Маркетинг' },
+                { key: 'customers', label: 'Клиенты' },
+                { key: 'vpn', label: 'VPN' },
+                { key: 'events', label: 'События' },
+              ].map(s => (
+                <label key={s.key} className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!exportSections[s.key]}
+                    onChange={e => setExportSections(prev => ({ ...prev, [s.key]: e.target.checked }))}
+                  />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setExportModal(null)}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => handleExport(exportModal)}
+                className="px-4 py-2 rounded-lg text-sm text-white font-medium"
+                style={{ background: '#534AB7' }}
+              >
+                Сформировать
               </button>
             </div>
           </div>
@@ -682,185 +628,321 @@ export default function AdminDashboard() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────
-
-function KpiCard({ icon, label, value, sub, iconColor, accentColor, valueColor, subColor }: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub?: string
-  iconColor: string
-  accentColor: string
+function KpiCard({
+  icon, iconBg, label, value, sub, subLabel, valueColor,
+}: {
+  icon: React.ReactNode; iconBg?: string; label: string; value: string
+  sub?: { label: string; positive: boolean }
+  subLabel?: string
   valueColor?: string
-  subColor?: string
 }) {
   return (
-    <div className="rounded-2xl p-5 transition-all duration-300 animate-scale-in hover:-translate-y-0.5"
-         style={{
-           background: `linear-gradient(135deg, ${accentColor}18, ${accentColor}08)`,
-           border: `1px solid ${accentColor}30`,
-         }}>
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-             style={{ background: 'rgba(255,255,255,0.06)', color: iconColor }}>
+    <div className="glass-card p-4 rounded-2xl">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: iconBg || 'rgba(96,165,250,0.15)' }}>
           {icon}
         </div>
+        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
       </div>
-      <p className="text-[11px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>
-        {label}
-      </p>
-      <p className="text-xl font-bold" style={{ color: valueColor || 'var(--text-primary)' }}>{value}</p>
+      <div className="text-xl md:text-2xl font-bold" style={{ color: valueColor || 'var(--text-primary)' }}>
+        {value}
+      </div>
       {sub && (
-        <p className="text-[11px] mt-0.5" style={{ color: subColor || 'var(--text-tertiary)' }}>{sub}</p>
+        <div className="text-xs mt-1" style={{ color: sub.positive ? '#34d399' : '#f87171' }}>
+          {sub.positive ? '↑' : '↓'} {sub.label} vs пред.
+        </div>
+      )}
+      {subLabel && !sub && (
+        <div className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{subLabel}</div>
       )}
     </div>
   )
 }
 
-function AdminStatCard({ icon, label, value, sub, gradient, borderColor, iconColor }: {
-  icon: React.ReactNode; label: string; value: string; sub?: string
-  gradient: string; borderColor: string; iconColor: string
+function MiniStat({
+  label, value, color, asString,
+}: {
+  label: string; value: string | number; color: string; asString?: boolean
 }) {
   return (
-    <div className="rounded-2xl p-5 transition-all duration-300 animate-scale-in hover:-translate-y-0.5"
-         style={{ background: gradient, border: `1px solid ${borderColor}` }}>
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-             style={{ background: 'rgba(255,255,255,0.06)', color: iconColor }}>
-          {icon}
-        </div>
-      </div>
-      <p className="text-[11px] font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>
+    <div className="text-center p-2 rounded-lg" style={{ background: 'var(--glass-bg)' }}>
+      <div className="text-[10px] font-medium mb-1 uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
         {label}
-      </p>
-      <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{value}</p>
-      {sub && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>}
+      </div>
+      <div className="font-bold" style={{ color, fontSize: asString ? 15 : 18 }}>
+        {value}
+      </div>
     </div>
   )
 }
 
-function IncomeBarChart({ data }: { data: Array<{ date: string; amount: number }> }) {
-  const maxAmount = useMemo(() => Math.max(...data.map(d => Number(d.amount)), 1), [data])
+// ── Charts ──
+function AreaChart({ data }: { data: Array<{ date: string; income: number; expense: number }> }) {
+  const [hover, setHover] = useState<number | null>(null)
+  const w = 800, h = 300, padL = 65, padR = 20, padT = 20, padB = 40
 
   if (data.length === 0) {
-    return (
-      <div className="h-44 flex items-center justify-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        Нет данных за этот период
-      </div>
-    )
+    return <div className="text-xs text-center py-10" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
   }
 
+  const maxV = Math.max(1, ...data.flatMap(d => [d.income, d.expense]))
+  const chartW = w - padL - padR
+  const chartH = h - padT - padB
+  const stepX = chartW / Math.max(1, data.length - 1)
+  const y = (v: number) => padT + chartH - (v / maxV) * chartH
+  const x = (i: number) => padL + i * stepX
+
+  const pathLine = (key: 'income' | 'expense') =>
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(d[key])}`).join(' ')
+  const pathArea = (key: 'income' | 'expense') =>
+    `${pathLine(key)} L ${x(data.length - 1)} ${padT + chartH} L ${x(0)} ${padT + chartH} Z`
+
+  const labelStride = Math.max(1, Math.ceil(data.length / 7))
+
+  // Y-axis scale labels
+  const yTicks = [0, 0.25, 0.5, 0.75, 1]
+  const fmtAxis = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}K` : String(Math.round(v))
+
+  // Totals for header
+  const totalIncome = data.reduce((s, d) => s + d.income, 0)
+  const totalExpense = data.reduce((s, d) => s + d.expense, 0)
+
   return (
-    <div className="flex items-end gap-[3px] h-44">
-      {data.map((d, i) => {
-        const h = (Number(d.amount) / maxAmount) * 100
-        return (
-          <div key={i} className="group flex-1 flex flex-col items-center justify-end cursor-pointer relative">
-            <div className="absolute -top-12 left-1/2 -translate-x-1/2 px-2 py-1.5 rounded-lg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10"
-                 style={{ background: 'var(--surface-3)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}>
-              <span className="font-bold">{fmt(Number(d.amount))}</span>
-              <br />
-              <span style={{ color: 'var(--text-tertiary)' }}>{formatDateRu(d.date)}</span>
-            </div>
-            <div className="w-full rounded-t-sm transition-all duration-200 group-hover:opacity-100"
-                 style={{
-                   height: `${Math.max(h, 2)}%`,
-                   background: h > 60
-                     ? `linear-gradient(to top, ${INCOME_COLOR}, ${INCOME_COLOR}cc)`
-                     : h > 30
-                       ? `linear-gradient(to top, ${INCOME_COLOR}99, ${INCOME_COLOR}66)`
-                       : `${INCOME_COLOR}44`,
-                   opacity: 0.8,
-                 }} />
+    <div>
+      <div className="flex gap-4 mb-2 text-sm">
+        <span style={{ color: '#34d399' }}>Доход: <b>{fmt(totalIncome)}</b></span>
+        <span style={{ color: '#f87171' }}>Расход: <b>{fmt(totalExpense)}</b></span>
+        <span style={{ color: totalIncome - totalExpense >= 0 ? '#a78bfa' : '#f87171' }}>
+          Прибыль: <b>{fmt(totalIncome - totalExpense)}</b>
+        </span>
+      </div>
+      <div style={{ position: 'relative' }}>
+        <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ maxHeight: 320 }}>
+          <defs>
+            <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="gradExpense" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f87171" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#f87171" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+
+          {/* Y-axis grid lines + labels */}
+          {yTicks.map((t, i) => {
+            const yPos = padT + t * chartH
+            const val = maxV * (1 - t)
+            return (
+              <g key={i}>
+                <line x1={padL} y1={yPos} x2={w - padR} y2={yPos}
+                  stroke="var(--glass-border)" strokeWidth="0.5" strokeDasharray="3 3" />
+                <text x={padL - 8} y={yPos + 4} textAnchor="end" fontSize="10" fill="var(--text-tertiary)">
+                  {fmtAxis(val)}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Areas + lines */}
+          <path d={pathArea('expense')} fill="url(#gradExpense)" />
+          <path d={pathArea('income')} fill="url(#gradIncome)" />
+          <path d={pathLine('expense')} fill="none" stroke="#f87171" strokeWidth="2" />
+          <path d={pathLine('income')} fill="none" stroke="#34d399" strokeWidth="2" />
+
+          {/* X-axis date labels */}
+          {data.map((d, i) => (
+            i % labelStride === 0 ? (
+              <text key={`l${i}`} x={x(i)} y={padT + chartH + 18} textAnchor="middle" fontSize="10" fill="var(--text-tertiary)">
+                {formatDateShort(d.date)}
+              </text>
+            ) : null
+          ))}
+
+          {/* Hover line + dots */}
+          {hover !== null && (
+            <g>
+              <line x1={x(hover)} y1={padT} x2={x(hover)} y2={padT + chartH} stroke="var(--text-tertiary)" strokeWidth="0.8" strokeDasharray="4 2" />
+              <circle cx={x(hover)} cy={y(data[hover].income)} r="5" fill="#34d399" stroke="#fff" strokeWidth="2" />
+              <circle cx={x(hover)} cy={y(data[hover].expense)} r="5" fill="#f87171" stroke="#fff" strokeWidth="2" />
+            </g>
+          )}
+
+          {/* Invisible hover rects per column */}
+          {data.map((_, i) => (
+            <rect
+              key={`h${i}`}
+              x={x(i) - stepX / 2}
+              y={padT}
+              width={stepX}
+              height={chartH}
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            />
+          ))}
+        </svg>
+
+        {/* Tooltip */}
+        {hover !== null && (
+          <div
+            className="absolute z-10 rounded-lg px-3 py-2 text-xs pointer-events-none"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--glass-border)',
+              color: 'var(--text-primary)',
+              left: `${(x(hover) / w) * 100}%`,
+              top: 0,
+              transform: 'translateX(-50%)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <div className="font-semibold mb-1">{formatDateShort(data[hover].date)}</div>
+            <div style={{ color: '#34d399' }}>Доход: {fmt(data[hover].income)}</div>
+            <div style={{ color: '#f87171' }}>Расход: {fmt(data[hover].expense)}</div>
+            <div style={{ color: '#a78bfa' }}>Прибыль: {fmt(data[hover].income - data[hover].expense)}</div>
           </div>
-        )
-      })}
+        )}
+      </div>
     </div>
   )
 }
 
-function ExpenseByCategoryChart({ categories }: { categories: Array<{ category: string; amount: number; color?: string; percentage: number }> }) {
-  if (categories.length === 0) {
-    return (
-      <div className="h-44 flex items-center justify-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        Нет данных о расходах
-      </div>
-    )
+function MiniBarChart({ data }: { data: Array<{ date: string; spend: number; revenue: number }> }) {
+  const [hover, setHover] = useState<number | null>(null)
+  if (data.length === 0) {
+    return <div className="text-xs text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
   }
-
-  const maxPct = Math.max(...categories.map(c => c.percentage), 1)
+  const w = 400, h = 140, padB = 22
+  const chartH = h - padB
+  const maxV = Math.max(1, ...data.flatMap(d => [d.spend, d.revenue]))
+  const barGroupW = w / data.length
+  const barW = Math.max(2, Math.min(10, barGroupW / 3))
+  const labelStride = Math.max(1, Math.ceil(data.length / 6))
 
   return (
-    <div className="space-y-3">
-      {categories.map((cat, i) => {
-        const color = cat.color || CATEGORY_COLORS[i % CATEGORY_COLORS.length]
-        const barWidth = Math.max((cat.percentage / maxPct) * 100, 4)
-        return (
-          <div key={i}>
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: color }} />
-                <span className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)', maxWidth: '120px' }}>
-                  {cat.category}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                  {cat.percentage}%
-                </span>
-                <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {fmtShort(cat.amount)}
-                </span>
-              </div>
-            </div>
-            <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-              <div className="h-full rounded-full transition-all duration-500"
-                   style={{ width: `${barWidth}%`, background: color }} />
-            </div>
-          </div>
-        )
-      })}
+    <div style={{ position: 'relative' }}>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ maxHeight: 160 }}>
+        {data.map((d, i) => {
+          const gx = i * barGroupW + barGroupW / 2 - barW
+          const spendH = (d.spend / maxV) * (chartH - 6)
+          const revH = (d.revenue / maxV) * (chartH - 6)
+          const isHover = hover === i
+          return (
+            <g key={i}>
+              <rect x={gx} y={chartH - spendH} width={barW} height={spendH}
+                fill="#f87171" rx="1" opacity={isHover ? 1 : 0.8} />
+              <rect x={gx + barW} y={chartH - revH} width={barW} height={revH}
+                fill="#34d399" rx="1" opacity={isHover ? 1 : 0.8} />
+              {/* Invisible hover area */}
+              <rect x={i * barGroupW} y={0} width={barGroupW} height={chartH}
+                fill="transparent"
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)} />
+              {i % labelStride === 0 && (
+                <text x={gx + barW} y={chartH + 14} textAnchor="middle" fontSize="9" fill="var(--text-tertiary)">
+                  {formatDateShort(d.date)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+      {hover !== null && (
+        <div
+          className="absolute z-10 rounded-lg px-2 py-1.5 text-xs pointer-events-none"
+          style={{
+            background: 'var(--surface-2)', border: '1px solid var(--glass-border)',
+            color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            left: `${((hover + 0.5) / data.length) * 100}%`, top: 0,
+            transform: 'translateX(-50%)', whiteSpace: 'nowrap',
+          }}
+        >
+          <div className="font-semibold">{formatDateShort(data[hover].date)}</div>
+          <div style={{ color: '#f87171' }}>Расход: {fmt(data[hover].spend)}</div>
+          <div style={{ color: '#34d399' }}>Доход: {fmt(data[hover].revenue)}</div>
+        </div>
+      )}
     </div>
   )
 }
 
-function RmStatBox({ label, value, color }: { label: string; value: any; color?: string }) {
+function MiniLineChart({ data, color, label }: { data: Array<{ date: string; value: number }>; color: string; label?: string }) {
+  const [hover, setHover] = useState<number | null>(null)
+  if (data.length === 0) {
+    return <div className="text-xs text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+  }
+  const w = 400, h = 140, padB = 22, pad = 8
+  const chartH = h - padB
+  const maxV = Math.max(1, ...data.map(d => d.value))
+  const stepX = (w - pad * 2) / Math.max(1, data.length - 1)
+  const y = (v: number) => pad + chartH - pad - (v / maxV) * (chartH - pad * 2)
+  const x = (i: number) => pad + i * stepX
+  const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(d.value)}`).join(' ')
+  const labelStride = Math.max(1, Math.ceil(data.length / 6))
+
+  const total = data.reduce((s, d) => s + d.value, 0)
+
   return (
-    <div className="px-3 py-2 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-      <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
-      <p className="text-lg font-bold mt-0.5" style={{ color: color || 'var(--text-primary)' }}>
-        {value ?? '\u2014'}
-      </p>
+    <div style={{ position: 'relative' }}>
+      <div className="flex items-center justify-between mb-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        <span>Всего: <b style={{ color }}>{total}</b></span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ maxHeight: 160 }}>
+        <path d={`${path} L ${x(data.length - 1)} ${chartH} L ${x(0)} ${chartH} Z`}
+          fill={color} fillOpacity="0.12" />
+        <path d={path} fill="none" stroke={color} strokeWidth="2" />
+
+        {/* Date labels */}
+        {data.map((d, i) => (
+          i % labelStride === 0 ? (
+            <text key={`l${i}`} x={x(i)} y={chartH + 14} textAnchor="middle" fontSize="9" fill="var(--text-tertiary)">
+              {formatDateShort(d.date)}
+            </text>
+          ) : null
+        ))}
+
+        {/* Hover dot */}
+        {hover !== null && (
+          <g>
+            <line x1={x(hover)} y1={pad} x2={x(hover)} y2={chartH}
+              stroke="var(--text-tertiary)" strokeWidth="0.8" strokeDasharray="3 2" />
+            <circle cx={x(hover)} cy={y(data[hover].value)} r="4" fill={color} stroke="#fff" strokeWidth="2" />
+          </g>
+        )}
+
+        {/* Invisible hover rects */}
+        {data.map((_, i) => (
+          <rect key={`h${i}`} x={x(i) - stepX / 2} y={0} width={stepX} height={chartH}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(null)} />
+        ))}
+      </svg>
+      {hover !== null && (
+        <div
+          className="absolute z-10 rounded-lg px-2 py-1.5 text-xs pointer-events-none"
+          style={{
+            background: 'var(--surface-2)', border: '1px solid var(--glass-border)',
+            color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            left: `${(x(hover) / w) * 100}%`, top: 0,
+            transform: 'translateX(-50%)', whiteSpace: 'nowrap',
+          }}
+        >
+          <div className="font-semibold">{formatDateShort(data[hover].date)}</div>
+          <div style={{ color }}>{label || 'Значение'}: {data[hover].value}</div>
+        </div>
+      )}
     </div>
   )
 }
 
-function AdminSkeleton() {
+function PopupRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="space-y-2">
-          <div className="h-8 skeleton w-48" />
-          <div className="h-4 skeleton w-36" />
-        </div>
-        <div className="flex gap-2">
-          <div className="h-8 skeleton w-20 rounded-lg" />
-          <div className="h-8 skeleton w-20 rounded-lg" />
-          <div className="h-8 skeleton w-20 rounded-lg" />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {[...Array(5)].map((_, i) => <div key={i} className="h-32 skeleton rounded-2xl" />)}
-      </div>
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 h-64 skeleton rounded-2xl" />
-        <div className="h-64 skeleton rounded-2xl" />
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[...Array(4)].map((_, i) => <div key={i} className="h-32 skeleton rounded-2xl" />)}
-      </div>
-      <div className="grid lg:grid-cols-3 gap-4">
-        {[...Array(3)].map((_, i) => <div key={i} className="h-72 skeleton rounded-2xl" />)}
-      </div>
+    <div className="flex items-center justify-between py-1.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+      <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+      <span className="text-sm font-medium" style={{ color: color || 'var(--text-primary)' }}>{value}</span>
     </div>
   )
 }

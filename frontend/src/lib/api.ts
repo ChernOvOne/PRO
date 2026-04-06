@@ -177,6 +177,11 @@ export const paymentsApi = {
 export const adminApi = {
   stats:    () => apiFetch<AdminStats>('/admin/stats'),
 
+  dashboardOverview: (days: 1 | 7 | 30 | 365 = 30) =>
+    apiFetch<any>(`/admin/dashboard/overview?days=${days}`),
+  dashboardEvents: (limit = 20) =>
+    apiFetch<any>(`/admin/dashboard/events?limit=${limit}`),
+
   // File upload (multipart/form-data)
   uploadFile: async (formData: FormData): Promise<{ ok: boolean; url: string; filename: string }> => {
     const res = await fetch('/api/admin/upload', {
