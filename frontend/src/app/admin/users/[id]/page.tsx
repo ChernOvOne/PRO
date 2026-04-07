@@ -167,41 +167,89 @@ export default function AdminUserDetail() {
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => setShowExtend(true)} className="btn-primary text-xs py-2 px-3">
-          <Plus className="w-3.5 h-3.5" /> Добавить дни
-        </button>
-        <button onClick={() => action(() => adminApi.revokeUser(id), 'Ссылка подписки обновлена')}
-                className="btn-secondary text-xs py-2 px-3" disabled={acting}>
-          <RefreshCw className="w-3.5 h-3.5" /> Обновить ссылку
-        </button>
-        <button onClick={() => action(() => adminApi.resetTraffic(id), 'Трафик сброшен')}
-                className="btn-secondary text-xs py-2 px-3" disabled={acting}>
-          <RefreshCw className="w-3.5 h-3.5" /> Сброс трафика
-        </button>
-        <button onClick={() => setShowNotify(true)} className="btn-secondary text-xs py-2 px-3">
-          <Bell className="w-3.5 h-3.5" /> Уведомление
-        </button>
-        <button onClick={() => setShowNote(true)} className="btn-secondary text-xs py-2 px-3">
-          <FileText className="w-3.5 h-3.5" /> Заметка
-        </button>
-        <button onClick={() => setShowBalance(true)} className="btn-secondary text-xs py-2 px-3">
-          <DollarSign className="w-3.5 h-3.5" /> Баланс
-        </button>
-        <button onClick={() => setShowGrantDays(true)} className="btn-secondary text-xs py-2 px-3">
-          <Calendar className="w-3.5 h-3.5" /> Выдать дни
-        </button>
-        <button onClick={() => action(
-          () => user.isActive ? adminApi.disableUser(id) : adminApi.enableUser(id),
-          user.isActive ? 'Пользователь заблокирован' : 'Пользователь разблокирован'
-        )} className="btn-danger text-xs py-2 px-3" disabled={acting}>
-          {user.isActive ? <Ban className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-          {user.isActive ? 'Заблокировать' : 'Разблокировать'}
-        </button>
-        <button onClick={() => setShowDelete(true)} className="btn-danger text-xs py-2 px-3">
-          <Trash2 className="w-3.5 h-3.5" /> Удалить
-        </button>
+      {/* Action buttons — grouped cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* Подписка */}
+        <div className="rounded-2xl p-4 space-y-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--accent-1)' }}>Подписка</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setShowExtend(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
+              <Plus className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Добавить дни</span>
+            </button>
+            <button onClick={() => setShowGrantDays(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
+              <Calendar className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Выдать дни</span>
+            </button>
+            <button onClick={() => action(() => adminApi.revokeUser(id), 'Ссылка подписки обновлена')} disabled={acting}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--surface-3)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Обновить ссылку</span>
+            </button>
+            <button onClick={() => action(() => adminApi.resetTraffic(id), 'Трафик сброшен')} disabled={acting}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'var(--surface-3)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Сброс трафика</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Коммуникация */}
+        <div className="rounded-2xl p-4 space-y-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#f472b6' }}>Коммуникация</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setShowBalance(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', color: '#34d399' }}>
+              <DollarSign className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Баланс</span>
+            </button>
+            <button onClick={() => setShowNotify(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+              <Bell className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Уведомление</span>
+            </button>
+            <button onClick={() => setShowNote(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02] col-span-2"
+              style={{ background: 'var(--surface-3)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+              <FileText className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Добавить заметку</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Управление */}
+        <div className="rounded-2xl p-4 space-y-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#f87171' }}>Управление</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => action(
+              () => user.isActive ? adminApi.disableUser(id) : adminApi.enableUser(id),
+              user.isActive ? 'Пользователь заблокирован' : 'Пользователь разблокирован'
+            )} disabled={acting}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{
+                background: user.isActive ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                border: `1px solid ${user.isActive ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'}`,
+                color: user.isActive ? '#f87171' : '#34d399',
+              }}>
+              {user.isActive ? <Ban className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+              <span className="text-[12px] font-medium">{user.isActive ? 'Заблокировать' : 'Разблокировать'}</span>
+            </button>
+            <button onClick={() => setShowDelete(true)}
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}>
+              <Trash2 className="w-5 h-5" />
+              <span className="text-[12px] font-medium">Удалить</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-5">
@@ -209,8 +257,8 @@ export default function AdminUserDetail() {
         <div className="space-y-4">
           <div className="glass-card space-y-4">
             <div className="flex flex-col items-center text-center">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold gradient-border mb-3"
-                   style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold  mb-3"
+                   style={{ background: 'rgba(6,182,212,0.1)', color: '#a78bfa' }}>
                 {(user.telegramName || user.email || 'U')[0].toUpperCase()}
               </div>
               <p className="font-semibold">
@@ -793,7 +841,7 @@ export default function AdminUserDetail() {
                      className="w-full px-3 py-2 rounded-lg text-sm"
                      style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
             </div>
-            <div className="text-[10px] p-2 rounded-lg" style={{ background: 'rgba(139,92,246,0.08)', color: 'var(--text-tertiary)' }}>
+            <div className="text-[10px] p-2 rounded-lg" style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-tertiary)' }}>
               ℹ️ Изменения синхронизируются с REMNAWAVE
             </div>
             <div className="flex gap-2">
@@ -810,7 +858,7 @@ export default function AdminUserDetail() {
                   toast.error(e.message || 'Ошибка')
                 }
               }} className="flex-1 py-2 rounded-lg text-sm font-medium"
-                 style={{ background: '#8b5cf6', color: '#fff' }}>
+                 style={{ background: 'var(--accent-1)', color: '#fff' }}>
                 Сохранить
               </button>
               <button onClick={() => setShowEditProfile(false)}
@@ -867,7 +915,7 @@ export default function AdminUserDetail() {
               setShowDelete(false)
             }} disabled={acting}
               className="w-full text-left p-3 rounded-xl transition-all hover:brightness-110"
-              style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+              style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)' }}>
               <p className="text-sm font-medium" style={{ color: '#a78bfa' }}>Только из веб-системы</p>
               <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                 Удалит из БД, REMNAWAVE не затронет.
@@ -914,7 +962,7 @@ function ModalOverlay({ children, onClose, title }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 " onClick={onClose} />
       <div className="relative glass-card w-full max-w-md space-y-4 animate-scale-in"
            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
         <h3 className="font-semibold text-lg">{title}</h3>

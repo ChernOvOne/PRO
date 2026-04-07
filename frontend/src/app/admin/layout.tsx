@@ -110,7 +110,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--surface-1)' }}>
       <div className="relative w-10 h-10">
         <div className="absolute inset-0 rounded-full border-2 border-transparent"
-             style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+             style={{ borderTopColor: '#06b6d4', borderRightColor: '#0ea5e9', animation: 'spin 0.8s linear infinite' }} />
       </div>
       <style jsx>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -122,13 +122,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-               style={{ background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)' }}>
+               style={{ background: 'linear-gradient(135deg, #06b6d4, #0ea5e9)' }}>
             <Shield className="w-[18px] h-[18px] text-white" />
           </div>
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[15px]" style={{ color: 'var(--text-primary)' }}>HIDEYOU</span>
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>ADMIN</span>
+                  style={{ background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }}>ADMIN</span>
           </div>
         </div>
         <button className="md:hidden p-1" style={{ color: 'var(--text-tertiary)' }}
@@ -138,7 +138,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 overflow-y-auto" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter(
             item => !item.roles || item.roles.includes(userRole)
@@ -146,8 +146,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title}>
-              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider"
-                   style={{ color: 'var(--text-tertiary)' }}>
+              <div className="px-3 py-1 font-semibold uppercase"
+                   style={{ color: 'var(--text-tertiary)', fontSize: '11px', letterSpacing: '0.5px' }}>
                 {group.title}
               </div>
               <div className="space-y-0.5 mt-1">
@@ -155,21 +155,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   const active = href === '/admin' ? pathname === href : pathname.startsWith(href)
                   return (
                     <Link key={href} href={href} onClick={() => setSideOpen(false)}
-                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] transition-all duration-200 group"
+                          className="flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 group"
                           style={{
-                            background: active ? 'rgba(139,92,246,0.08)' : 'transparent',
-                            color: active ? '#a78bfa' : 'var(--text-secondary)',
+                            fontSize: '14px',
+                            background: active ? 'rgba(6,182,212,0.1)' : 'transparent',
+                            color: active ? 'var(--accent-1)' : 'var(--text-secondary)',
+                            borderLeft: active ? '3px solid var(--accent-1)' : '3px solid transparent',
                           }}>
-                      <Icon className="w-[18px] h-[18px] flex-shrink-0" style={{
-                        color: active ? '#a78bfa' : 'var(--text-tertiary)',
+                      <Icon className="flex-shrink-0" style={{
+                        width: '20px', height: '20px',
+                        color: active ? 'var(--accent-1)' : 'var(--text-tertiary)',
                       }} />
                       <span className={active ? 'font-medium' : 'group-hover:text-[var(--text-primary)]'}>
                         {label}
                       </span>
-                      {active && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full"
-                             style={{ background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)' }} />
-                      )}
                     </Link>
                   )
                 })}
@@ -182,9 +181,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Logout */}
       <div className="px-3 py-4" style={{ borderTop: '1px solid var(--glass-border)' }}>
         <button onClick={logout}
-                className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-[13px] transition-all duration-200 group"
-                style={{ color: 'var(--text-secondary)' }}>
-          <LogOut className="w-[18px] h-[18px] group-hover:text-red-400 transition-colors" />
+                className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl transition-all duration-200 group"
+                style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+          <LogOut style={{ width: '20px', height: '20px' }} className="group-hover:text-red-400 transition-colors" />
           <span className="group-hover:text-red-400 transition-colors">Выйти</span>
         </button>
       </div>
@@ -203,7 +202,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Mobile sidebar */}
       {sideOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSideOpen(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setSideOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-[270px] glass-sidebar animate-slide-right">
             <Sidebar />
           </aside>

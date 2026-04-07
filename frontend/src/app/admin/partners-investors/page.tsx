@@ -265,7 +265,7 @@ export default function AdminPartnersPage() {
               )}
               {p.sharePercent > 0 && (
                 <span className="ml-3 text-xs px-2 py-0.5 rounded-md inline-flex items-center gap-1"
-                      style={{ background: 'rgba(139,92,246,0.12)', color: '#a78bfa' }}>
+                      style={{ background: 'rgba(6,182,212,0.12)', color: '#a78bfa' }}>
                   <Percent className="w-3 h-3" />
                   {p.sharePercent}%
                 </span>
@@ -510,7 +510,7 @@ export default function AdminPartnersPage() {
       {/* ── Create / Edit Modal ─────────────────── */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setModal(null)} />
           <div className="relative w-full max-w-lg rounded-2xl p-6 space-y-4 animate-scale-in max-h-[90vh] overflow-y-auto"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             {/* Header */}
@@ -641,7 +641,7 @@ export default function AdminPartnersPage() {
       {/* ── Delete confirmation ─────────────────── */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteId(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setDeleteId(null)} />
           <div className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>

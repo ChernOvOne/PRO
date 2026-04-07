@@ -26,7 +26,7 @@ interface Partner {
 /* ── Constants ──────────────────────────────────────────────── */
 
 const DEFAULT_CATEGORIES: Category[] = [
-  { name: 'Хостинг',  color: '#534AB7' },
+  { name: 'Хостинг',  color: 'var(--accent-1)' },
   { name: 'Реклама',  color: '#BA7517' },
   { name: 'Зарплаты', color: '#E24B4A' },
   { name: 'Софт',     color: '#378ADD' },
@@ -34,7 +34,7 @@ const DEFAULT_CATEGORIES: Category[] = [
 ]
 
 const PRESET_COLORS = [
-  '#534AB7', '#BA7517', '#E24B4A', '#378ADD', '#639922',
+  'var(--accent-1)', '#BA7517', '#E24B4A', '#378ADD', '#639922',
   '#E85D9B', '#17A2B8', '#FF6B35', '#6C757D', '#28A745',
 ]
 
@@ -176,7 +176,7 @@ export default function SetupWizardPage() {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#8b5cf6' }} />
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-1)' }} />
       </div>
     )
   }
@@ -206,7 +206,7 @@ export default function SetupWizardPage() {
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
               style={{
                 background: i === step
-                  ? 'rgba(139,92,246,0.15)'
+                  ? 'rgba(6,182,212,0.15)'
                   : i < step
                     ? 'rgba(34,197,94,0.1)'
                     : 'rgba(255,255,255,0.03)',
@@ -259,7 +259,7 @@ export default function SetupWizardPage() {
         {step === 0 && (
           <div className="space-y-5">
             <div className="flex items-center gap-2 mb-2">
-              <Building2 className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+              <Building2 className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Информация о компании
               </h2>
@@ -350,7 +350,7 @@ export default function SetupWizardPage() {
         {step === 1 && (
           <div className="space-y-5">
             <div className="flex items-center gap-2 mb-2">
-              <Palette className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+              <Palette className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Категории расходов
               </h2>
@@ -435,7 +435,7 @@ export default function SetupWizardPage() {
               <button
                 onClick={addCategory}
                 className="p-2 rounded-xl transition-colors"
-                style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}
+                style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -447,7 +447,7 @@ export default function SetupWizardPage() {
         {step === 2 && (
           <div className="space-y-5">
             <div className="flex items-center gap-2 mb-2">
-              <Users className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+              <Users className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Партнёры и инвесторы
               </h2>
@@ -534,7 +534,7 @@ export default function SetupWizardPage() {
                   onClick={addPartner}
                   disabled={!pName.trim() || !pRole.trim()}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-40"
-                  style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}
+                  style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}
                 >
                   <Plus className="w-4 h-4" />
                   Добавить
@@ -548,7 +548,7 @@ export default function SetupWizardPage() {
         {step === 3 && (
           <div className="space-y-5">
             <div className="flex items-center gap-2 mb-2">
-              <Bot className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+              <Bot className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                 Telegram-интеграция
               </h2>
@@ -637,7 +637,7 @@ export default function SetupWizardPage() {
             {/* Company summary */}
             <div className="rounded-xl p-4 space-y-2" style={{
               background: 'rgba(139,92,246,0.05)',
-              border: '1px solid rgba(139,92,246,0.15)',
+              border: '1px solid rgba(6,182,212,0.15)',
             }}>
               <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#a78bfa' }}>
                 Компания

@@ -866,7 +866,7 @@ export default function FunnelBuilderPage() {
       <div className="flex items-center justify-center h-[80vh]">
         <div className="relative w-10 h-10">
           <div className="absolute inset-0 rounded-full border-2 border-transparent"
-               style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+               style={{ borderTopColor: 'var(--accent-1)', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
         </div>
       </div>
     )
@@ -931,7 +931,7 @@ export default function FunnelBuilderPage() {
               <div key={group.id}
                    className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors group"
                    style={{
-                     background: activeGroupId === group.id ? 'rgba(139,92,246,0.12)' : 'transparent',
+                     background: activeGroupId === group.id ? 'rgba(6,182,212,0.12)' : 'transparent',
                      color: activeGroupId === group.id ? '#a78bfa' : 'var(--text-secondary)',
                    }}
                    onClick={() => { setActiveGroupId(group.id); selectNode(null) }}>
@@ -960,7 +960,7 @@ export default function FunnelBuilderPage() {
                        style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                        autoFocus />
                 <div className="flex gap-1">
-                  <button onClick={createGroup} className="flex-1 px-2 py-1 rounded text-[11px] font-medium text-white" style={{ background: '#8b5cf6' }}>Создать</button>
+                  <button onClick={createGroup} className="flex-1 px-2 py-1 rounded text-[11px] font-medium text-white" style={{ background: 'var(--accent-1)' }}>Создать</button>
                   <button onClick={() => { setShowNewGroup(false); setNewGroupName('') }} className="px-2 py-1 rounded text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Отмена</button>
                 </div>
               </div>
@@ -978,7 +978,7 @@ export default function FunnelBuilderPage() {
         <div className="flex-1 relative overflow-hidden" style={{ background: 'var(--surface-1)' }}>
           {/* Canvas Toolbar */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded-xl"
-               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(12px)' }}>
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', // blur removed }}>
             {/* Add node menu */}
             <div className="relative">
               <button onClick={() => setShowAddNodeMenu(v => !v)}
@@ -1163,7 +1163,7 @@ export default function FunnelBuilderPage() {
                        zIndex: isSelected ? 10 : 2,
                        background: 'var(--glass-bg)',
                        border: `2px solid ${isSelected ? color : 'var(--glass-border)'}`,
-                       backdropFilter: 'blur(12px)',
+                       // blur removed,
                        cursor: dragging?.nodeId === node.id ? 'grabbing' : 'grab',
                        overflow: 'hidden',
                      }}
@@ -1177,8 +1177,8 @@ export default function FunnelBuilderPage() {
                     <div data-port
                          className="absolute -top-[6px] left-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 transition-all"
                          style={{
-                           background: hoveredInputPort === node.id ? '#8b5cf6' : 'var(--surface-1)',
-                           borderColor: hoveredInputPort === node.id ? '#8b5cf6' : 'var(--glass-border)',
+                           background: hoveredInputPort === node.id ? 'var(--accent-1)' : 'var(--surface-1)',
+                           borderColor: hoveredInputPort === node.id ? 'var(--accent-1)' : 'var(--glass-border)',
                            transform: `translate(-50%, 0) scale(${hoveredInputPort === node.id ? 1.3 : 1})`,
                            zIndex: 20, cursor: 'crosshair',
                          }}
@@ -1272,7 +1272,7 @@ export default function FunnelBuilderPage() {
                         }}>
                   {tab.label}
                   {activeTab === tab.key && (
-                    <div className="absolute bottom-0 left-1 right-1 h-[2px] rounded-full" style={{ background: '#8b5cf6' }} />
+                    <div className="absolute bottom-0 left-1 right-1 h-[2px] rounded-full" style={{ background: 'var(--accent-1)' }} />
                   )}
                 </button>
               ))}
@@ -1359,9 +1359,9 @@ export default function FunnelBuilderPage() {
                             }}
                                     className="w-9 h-9 rounded-lg text-[13px] font-medium transition-colors"
                                     style={{
-                                      background: active ? '#8b5cf6' : 'var(--surface-2)',
+                                      background: active ? 'var(--accent-1)' : 'var(--surface-2)',
                                       color: active ? '#fff' : 'var(--text-secondary)',
-                                      border: `1px solid ${active ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                      border: `1px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                     }}>
                               {d}
                             </button>
@@ -1452,7 +1452,7 @@ export default function FunnelBuilderPage() {
                                 {Object.keys(EMOJI_CATEGORIES).map(cat => (
                                   <button key={cat} onClick={() => setEmojiCategory(cat)}
                                           className="px-2 py-1 rounded text-[13px] transition-colors"
-                                          style={{ background: emojiCategory === cat ? '#8b5cf622' : 'transparent', color: emojiCategory === cat ? '#a78bfa' : 'var(--text-tertiary)' }}>
+                                          style={{ background: emojiCategory === cat ? 'rgba(6,182,212,0.13)' : 'transparent', color: emojiCategory === cat ? '#a78bfa' : 'var(--text-tertiary)' }}>
                                     {cat}
                                   </button>
                                 ))}
@@ -1505,7 +1505,7 @@ export default function FunnelBuilderPage() {
                                     idEl.value = ''; if (fbEl) fbEl.value = ''; if (nmEl) nmEl.value = ''
                                     toast.success('Emoji сохранён')
                                   } else { toast.error('Введите Emoji ID') }
-                                }} className="w-full py-1.5 rounded text-[13px] font-medium" style={{ background: '#8b5cf6', color: '#fff' }}>
+                                }} className="w-full py-1.5 rounded text-[13px] font-medium" style={{ background: 'var(--accent-1)', color: '#fff' }}>
                                   Сохранить emoji
                                 </button>
                               </div>
@@ -1529,7 +1529,7 @@ export default function FunnelBuilderPage() {
                                         if (editForm.tgParseMode !== 'HTML') { updateField('tgParseMode', 'HTML'); toast.success('Режим -> HTML') }
                                         setPremiumEmojiOpen(false)
                                       }} className="px-2 py-1 rounded text-[12px] font-medium flex-shrink-0"
-                                             style={{ background: '#8b5cf622', color: '#a78bfa' }}>В текст</button>
+                                             style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>В текст</button>
                                       <button onClick={() => removeSavedEmoji(em.id)} className="p-0.5 rounded hover:bg-red-500/20 flex-shrink-0">
                                         <Trash2 className="w-3 h-3 text-red-400" />
                                       </button>
@@ -1544,7 +1544,7 @@ export default function FunnelBuilderPage() {
                         </div>
                         {/* Variables */}
                         <div className="relative">
-                          <button onClick={() => setVariablePopupOpen(v => !v)} className="p-1.5 rounded hover:bg-white/10" title="Переменные" style={{ color: '#8b5cf6' }}>
+                          <button onClick={() => setVariablePopupOpen(v => !v)} className="p-1.5 rounded hover:bg-white/10" title="Переменные" style={{ color: 'var(--accent-1)' }}>
                             <Variable className="w-3.5 h-3.5" />
                           </button>
                           {variablePopupOpen && (
@@ -1584,7 +1584,7 @@ export default function FunnelBuilderPage() {
                             <button key={m} onClick={() => updateField('tgParseMode', m)}
                                     className="px-3 py-1 text-[13px]"
                                     style={{
-                                      background: editForm.tgParseMode === m ? '#8b5cf622' : 'transparent',
+                                      background: editForm.tgParseMode === m ? 'rgba(6,182,212,0.13)' : 'transparent',
                                       color: editForm.tgParseMode === m ? '#a78bfa' : 'var(--text-tertiary)',
                                     }}>{m}</button>
                           ))}
@@ -1600,7 +1600,7 @@ export default function FunnelBuilderPage() {
                                  style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                                  placeholder="URL или загрузите" />
                           <label className="px-2 py-1.5 rounded-lg text-[13px] font-medium cursor-pointer flex items-center gap-1 flex-shrink-0"
-                                 style={{ background: '#8b5cf622', color: '#a78bfa', border: '1px solid #8b5cf633' }}>
+                                 style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa', border: '1px solid rgba(6,182,212,0.2)' }}>
                             <ArrowUp className="w-3 h-3" />
                             <input type="file" className="hidden" accept="image/*,video/*,.gif,.mp4,.webm"
                                    onChange={async (e) => {
@@ -1647,7 +1647,7 @@ export default function FunnelBuilderPage() {
                           <label className="text-[13px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Кнопки</label>
                           <button onClick={() => { setEditingBtnIdx(null); setButtonForm({ label: '', type: 'url', url: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 }); setShowButtonForm(true) }}
                                   className="flex items-center gap-1 px-2 py-1 rounded text-[13px] font-medium"
-                                  style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                                  style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                             <Plus className="w-3 h-3" /> Добавить
                           </button>
                         </div>
@@ -1679,7 +1679,7 @@ export default function FunnelBuilderPage() {
                                            className="flex-1 py-1.5 px-2 rounded-lg text-center text-[13px] font-medium cursor-pointer transition-all hover:brightness-110 truncate"
                                            style={{
                                              background: styleColors[btn.style] ? styleColors[btn.style] + '22' : 'var(--surface-2)',
-                                             border: `1.5px solid ${editingBtnIdx === idx ? '#8b5cf6' : (styleColors[btn.style] || 'var(--glass-border)')}`,
+                                             border: `1.5px solid ${editingBtnIdx === idx ? 'var(--accent-1)' : (styleColors[btn.style] || 'var(--glass-border)')}`,
                                              color: styleColors[btn.style] || 'var(--text-primary)',
                                            }}>
                                         {btn.label}
@@ -1752,7 +1752,7 @@ export default function FunnelBuilderPage() {
                                       real[editingBtnIdx] = { ...buttonForm }
                                       updateField('tgButtons', [...real, ...eff])
                                       toast.success('Кнопка обновлена'); setEditingBtnIdx(null)
-                                    }} className="w-full py-1.5 rounded text-[13px] font-medium" style={{ background: '#8b5cf6', color: '#fff' }}>
+                                    }} className="w-full py-1.5 rounded text-[13px] font-medium" style={{ background: 'var(--accent-1)', color: '#fff' }}>
                                       Сохранить кнопку
                                     </button>
                                   </div>
@@ -1822,7 +1822,7 @@ export default function FunnelBuilderPage() {
                                 updateField('tgButtons', btns)
                                 setButtonForm({ label: '', type: 'url', url: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 })
                                 setShowButtonForm(false)
-                              }} className="flex-1 px-2 py-1.5 rounded text-[13px] font-medium text-white" style={{ background: '#8b5cf6' }}>
+                              }} className="flex-1 px-2 py-1.5 rounded text-[13px] font-medium text-white" style={{ background: 'var(--accent-1)' }}>
                                 Создать кнопку
                               </button>
                               <button onClick={() => setShowButtonForm(false)} className="px-3 py-1.5 rounded text-[13px]" style={{ color: 'var(--text-tertiary)' }}>Отмена</button>
@@ -1857,8 +1857,8 @@ export default function FunnelBuilderPage() {
                               }}
                                       className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-center transition-all"
                                       style={{
-                                        background: currentEffect === eff.id || (!currentEffect && !eff.id) ? '#8b5cf622' : 'var(--surface-2)',
-                                        border: `1.5px solid ${currentEffect === eff.id || (!currentEffect && !eff.id) ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                        background: currentEffect === eff.id || (!currentEffect && !eff.id) ? 'rgba(6,182,212,0.13)' : 'var(--surface-2)',
+                                        border: `1.5px solid ${currentEffect === eff.id || (!currentEffect && !eff.id) ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                         color: 'var(--text-primary)',
                                       }}>
                                 <span className="text-[16px]">{eff.emoji}</span>
@@ -2052,7 +2052,7 @@ export default function FunnelBuilderPage() {
             <div className="p-3 space-y-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <button onClick={saveNode}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-medium text-white transition-colors"
-                      style={{ background: editDirty ? '#8b5cf6' : '#6b7280' }}>
+                      style={{ background: editDirty ? 'var(--accent-1)' : '#6b7280' }}>
                 <Check className="w-4 h-4" /> Сохранить
               </button>
               <button onClick={async () => {
@@ -2115,7 +2115,7 @@ export default function FunnelBuilderPage() {
                   <span className={`w-2 h-2 rounded-full ${log.status === 'sent' ? 'bg-green-400' : log.status === 'failed' ? 'bg-red-400' : 'bg-yellow-400'}`} />
                   <span style={{ color: 'var(--text-tertiary)' }}>{new Date(log.createdAt).toLocaleString('ru')}</span>
                   <span style={{ color: 'var(--text-secondary)' }}>Шаг {log.stepOrder}</span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: '#8b5cf622', color: '#a78bfa' }}>{log.channel}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>{log.channel}</span>
                   <span className="flex-1 truncate" style={{ color: log.status === 'failed' ? '#ef4444' : 'var(--text-primary)' }}>{log.error || log.status}</span>
                 </div>
               ))}
@@ -2277,7 +2277,7 @@ function SettingsForm({ group, onSave }: { group: FunnelGroup; onSave: (data: an
 
       <button onClick={() => onSave(form)}
               className="w-full px-4 py-2.5 rounded-xl text-[14px] font-medium text-white"
-              style={{ background: '#8b5cf6' }}>
+              style={{ background: 'var(--accent-1)' }}>
         Сохранить настройки
       </button>
     </div>

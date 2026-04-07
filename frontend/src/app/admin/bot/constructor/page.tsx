@@ -999,7 +999,7 @@ export default function BotConstructorPage() {
       <div className="flex items-center justify-center h-[80vh]">
         <div className="relative w-10 h-10">
           <div className="absolute inset-0 rounded-full border-2 border-transparent"
-               style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+               style={{ borderTopColor: 'var(--accent-1)', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
         </div>
       </div>
     )
@@ -1096,7 +1096,7 @@ export default function BotConstructorPage() {
                     <div key={block.id}
                          className="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer transition-colors ml-2"
                          style={{
-                           background: selectedBlockId === block.id ? 'rgba(139,92,246,0.12)' : 'transparent',
+                           background: selectedBlockId === block.id ? 'rgba(6,182,212,0.12)' : 'transparent',
                            color: selectedBlockId === block.id ? '#a78bfa' : 'var(--text-secondary)',
                          }}
                          onClick={() => selectBlock(block)}>
@@ -1128,7 +1128,7 @@ export default function BotConstructorPage() {
                 <div className="flex gap-1">
                   <button onClick={createGroup}
                           className="flex-1 px-2 py-1 rounded text-[11px] font-medium text-white"
-                          style={{ background: '#8b5cf6' }}>
+                          style={{ background: 'var(--accent-1)' }}>
                     Создать группу
                   </button>
                   <button onClick={() => { setShowNewGroup(false); setNewGroupName('') }}
@@ -1154,7 +1154,7 @@ export default function BotConstructorPage() {
         <div className="flex-1 relative overflow-hidden" style={{ background: 'var(--surface-1)' }}>
           {/* Canvas Toolbar */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded-xl"
-               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(12px)' }}>
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', // blur removed }}>
             {/* Zoom */}
             <button onClick={() => setZoom(z => Math.max(z - 0.15, 0.2))} className="p-1.5 rounded-lg hover:bg-white/10">
               <Minus className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
@@ -1176,13 +1176,13 @@ export default function BotConstructorPage() {
             {/* Toggle group zones */}
             <button onClick={() => setShowGroupZones(v => !v)}
                     className="p-1.5 rounded-lg hover:bg-white/10" title="Зоны групп"
-                    style={{ background: showGroupZones ? '#8b5cf622' : 'transparent' }}>
+                    style={{ background: showGroupZones ? 'rgba(6,182,212,0.13)' : 'transparent' }}>
               <Layers className="w-3.5 h-3.5" style={{ color: showGroupZones ? '#a78bfa' : 'var(--text-tertiary)' }} />
             </button>
             {/* Toggle button connections */}
             <button onClick={() => setShowBtnConns(v => !v)}
                     className="p-1.5 rounded-lg hover:bg-white/10" title="Связи кнопок"
-                    style={{ background: showBtnConns ? '#8b5cf622' : 'transparent' }}>
+                    style={{ background: showBtnConns ? 'rgba(6,182,212,0.13)' : 'transparent' }}>
               <Link2 className="w-3.5 h-3.5" style={{ color: showBtnConns ? '#a78bfa' : 'var(--text-tertiary)' }} />
             </button>
             <div className="w-px h-5 mx-1" style={{ background: 'var(--glass-border)' }} />
@@ -1270,7 +1270,7 @@ export default function BotConstructorPage() {
                 if (conn.type === 'true') { strokeColor = '#22c55e'; dashArray = '6,3' }
                 else if (conn.type === 'false') { strokeColor = '#ef4444'; dashArray = '6,3' }
                 else if (conn.type === 'button') {
-                  strokeColor = '#8b5cf6'; dashArray = '4,2'
+                  strokeColor = 'var(--accent-1)'; dashArray = '4,2'
                   lineWidth = isHighlighted ? 1.5 : 1
                   lineOpacity = isHighlighted ? 0.7 : 0.15
                 }
@@ -1356,7 +1356,7 @@ export default function BotConstructorPage() {
                 const x2 = draggingConnection.mouseX
                 const y2 = draggingConnection.mouseY
 
-                let strokeColor = '#8b5cf6'
+                let strokeColor = 'var(--accent-1)'
                 if (draggingConnection.sourcePort === 'true') strokeColor = '#22c55e'
                 else if (draggingConnection.sourcePort === 'false') strokeColor = '#ef4444'
 
@@ -1545,7 +1545,7 @@ export default function BotConstructorPage() {
                           {btn.iconEmojiId && <span className="text-[9px] mr-0.5 flex-shrink-0">{btn.iconEmojiId}</span>}
                           <span className="text-[9px] truncate flex-1" style={{ color: 'var(--text-secondary)' }}>{btn.label}</span>
                           {btn.nextBlockId && (
-                            <span className="text-[7px] mr-0.5 px-0.5 rounded" style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                            <span className="text-[7px] mr-0.5 px-0.5 rounded" style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                               {blocks.find(b => b.id === btn.nextBlockId)?.name?.slice(0, 6) || '...'}
                             </span>
                           )}
@@ -1556,7 +1556,7 @@ export default function BotConstructorPage() {
                             style={{
                               width: 8,
                               height: 8,
-                              background: styleColors[btn.style] || '#8b5cf6',
+                              background: styleColors[btn.style] || 'var(--accent-1)',
                               border: '1.5px solid var(--surface-1)',
                               cursor: 'crosshair',
                               zIndex: 20,
@@ -1739,7 +1739,7 @@ export default function BotConstructorPage() {
                   )}
                   <button onClick={saveBlock}
                           className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1"
-                          style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                          style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                     <Save className="w-3 h-3" /> Сохранить
                   </button>
                   <button onClick={() => setRightPanelOpen(false)}
@@ -1843,7 +1843,7 @@ export default function BotConstructorPage() {
                             {Object.keys(EMOJI_CATEGORIES).map(cat => (
                               <button key={cat} onClick={() => setEmojiCategory(cat)}
                                       className="px-2 py-1 rounded text-[10px] transition-colors"
-                                      style={{ background: emojiCategory === cat ? '#8b5cf622' : 'transparent', color: emojiCategory === cat ? '#a78bfa' : 'var(--text-tertiary)' }}>
+                                      style={{ background: emojiCategory === cat ? 'rgba(6,182,212,0.13)' : 'transparent', color: emojiCategory === cat ? '#a78bfa' : 'var(--text-tertiary)' }}>
                                 {cat}
                               </button>
                             ))}
@@ -1919,7 +1919,7 @@ export default function BotConstructorPage() {
                               } else {
                                 toast.error('Введите Emoji ID')
                               }
-                            }} className="w-full py-1.5 rounded text-[11px] font-medium" style={{ background: '#8b5cf6', color: '#fff' }}>
+                            }} className="w-full py-1.5 rounded text-[11px] font-medium" style={{ background: 'var(--accent-1)', color: '#fff' }}>
                               Сохранить emoji
                             </button>
                           </div>
@@ -1950,7 +1950,7 @@ export default function BotConstructorPage() {
                                     }
                                     setPremiumEmojiOpen(false)
                                   }} className="px-2 py-1 rounded text-[9px] font-medium flex-shrink-0"
-                                         style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                                         style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                                     В текст
                                   </button>
                                   <button onClick={() => removeSavedEmoji(em.id)} className="p-0.5 rounded hover:bg-red-500/20 flex-shrink-0">
@@ -1996,7 +1996,7 @@ export default function BotConstructorPage() {
                                 onClick={() => updateField('parseMode', m)}
                                 className="px-3 py-1 text-[11px]"
                                 style={{
-                                  background: editForm.parseMode === m ? '#8b5cf622' : 'transparent',
+                                  background: editForm.parseMode === m ? 'rgba(6,182,212,0.13)' : 'transparent',
                                   color: editForm.parseMode === m ? '#a78bfa' : 'var(--text-tertiary)',
                                 }}>
                           {m}
@@ -2015,7 +2015,7 @@ export default function BotConstructorPage() {
                                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                                placeholder="URL или загрузите" />
                         <label className="px-2 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer flex items-center gap-1 flex-shrink-0"
-                               style={{ background: '#8b5cf622', color: '#a78bfa', border: '1px solid #8b5cf633' }}>
+                               style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa', border: '1px solid rgba(6,182,212,0.2)' }}>
                           <ArrowUp className="w-3 h-3" />
                           <input type="file" className="hidden" accept="image/*,video/*,.gif,.mp4,.webm,.pdf,.doc,.docx"
                                  onChange={async (e) => {
@@ -2092,8 +2092,8 @@ export default function BotConstructorPage() {
                                 onClick={() => updateField('deletePrev', m.key)}
                                 className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-center transition-all"
                                 style={{
-                                  background: (editForm.deletePrev || 'none') === m.key ? '#8b5cf622' : 'var(--surface-2)',
-                                  border: `1.5px solid ${(editForm.deletePrev || 'none') === m.key ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                  background: (editForm.deletePrev || 'none') === m.key ? 'rgba(6,182,212,0.13)' : 'var(--surface-2)',
+                                  border: `1.5px solid ${(editForm.deletePrev || 'none') === m.key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                   color: 'var(--text-primary)',
                                 }}>
                           <span className="text-[14px]">{m.emoji}</span>
@@ -2120,8 +2120,8 @@ export default function BotConstructorPage() {
                         <button key={eff.id} onClick={() => updateField('messageEffectId', eff.id || null)}
                                 className="flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-center transition-all"
                                 style={{
-                                  background: editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? '#8b5cf622' : 'var(--surface-2)',
-                                  border: `1.5px solid ${editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                  background: editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? 'rgba(6,182,212,0.13)' : 'var(--surface-2)',
+                                  border: `1.5px solid ${editForm.messageEffectId === eff.id || (!editForm.messageEffectId && !eff.id) ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                   color: 'var(--text-primary)',
                                 }}>
                           <span className="text-[16px]">{eff.emoji}</span>
@@ -2141,7 +2141,7 @@ export default function BotConstructorPage() {
                       <label className="text-[11px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Кнопки</label>
                       <button onClick={() => setShowButtonForm(true)}
                               className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium"
-                              style={{ background: '#8b5cf622', color: '#a78bfa' }}>
+                              style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                         <Plus className="w-3 h-3" /> Добавить
                       </button>
                     </div>
@@ -2167,7 +2167,7 @@ export default function BotConstructorPage() {
                             <div className="text-[9px] mb-1" style={{ color: 'var(--text-tertiary)' }}>Превью кнопок (перетащите для перестановки):</div>
                             {rowNums.map(rowNum => (
                               <div key={rowNum} className="flex gap-1"
-                                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = 'rgba(139,92,246,0.1)' }}
+                                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = 'rgba(6,182,212,0.1)' }}
                                    onDragLeave={e => { e.currentTarget.style.background = '' }}
                                    onDrop={async e => {
                                      e.currentTarget.style.background = ''
@@ -2193,7 +2193,7 @@ export default function BotConstructorPage() {
                                        className="flex-1 py-1.5 px-2 rounded-lg text-center text-[10px] font-medium cursor-grab active:cursor-grabbing transition-all hover:brightness-110 truncate"
                                        style={{
                                          background: styleColors[btn.style] ? styleColors[btn.style] + '22' : 'var(--surface-2)',
-                                         border: `1.5px solid ${editingButtonId === btn.id ? '#8b5cf6' : (styleColors[btn.style] || 'var(--glass-border)')}`,
+                                         border: `1.5px solid ${editingButtonId === btn.id ? 'var(--accent-1)' : (styleColors[btn.style] || 'var(--glass-border)')}`,
                                          color: styleColors[btn.style] || 'var(--text-primary)',
                                        }}>
                                     {btn.label}
@@ -2204,7 +2204,7 @@ export default function BotConstructorPage() {
                             {/* Drop zone для нового ряда */}
                             <div className="flex items-center justify-center py-1.5 rounded-lg text-[9px] border-2 border-dashed transition-colors"
                                  style={{ borderColor: 'var(--glass-border)', color: 'var(--text-tertiary)' }}
-                                 onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#8b5cf6'; e.currentTarget.style.color = '#a78bfa' }}
+                                 onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent-1)'; e.currentTarget.style.color = 'var(--accent-1)' }}
                                  onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
                                  onDrop={async e => {
                                    e.currentTarget.style.borderColor = 'var(--glass-border)'
@@ -2228,7 +2228,7 @@ export default function BotConstructorPage() {
                           return (
                             <div key={btn.id}>
                               <div className="flex items-center gap-2 px-2 py-1 rounded-lg"
-                                   style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid #8b5cf6' }}>
+                                   style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid #8b5cf6' }}>
                                 <span className="text-[11px] flex-1 truncate font-medium" style={{ color: 'var(--text-primary)' }}>✏️ {btn.label}</span>
                                 <button onClick={() => setEditingButtonId(null)} className="p-0.5 rounded hover:bg-white/10">
                                   <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
@@ -2306,9 +2306,9 @@ export default function BotConstructorPage() {
                                           <button key={em.id} onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: em.id }))}
                                                   className="px-1.5 py-0.5 rounded text-[9px] transition-all"
                                                   style={{
-                                                    background: buttonForm.iconEmojiId === em.id ? '#8b5cf622' : 'var(--surface-1)',
+                                                    background: buttonForm.iconEmojiId === em.id ? 'rgba(6,182,212,0.13)' : 'var(--surface-1)',
                                                     color: buttonForm.iconEmojiId === em.id ? '#a78bfa' : 'var(--text-secondary)',
-                                                    border: `1px solid ${buttonForm.iconEmojiId === em.id ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                                    border: `1px solid ${buttonForm.iconEmojiId === em.id ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                                   }}>
                                             {em.fallback} {em.name}
                                           </button>
@@ -2334,7 +2334,7 @@ export default function BotConstructorPage() {
                                       } catch { toast.error('Ошибка обновления кнопки') }
                                     }}
                                     className="w-full py-1.5 rounded text-[11px] font-medium"
-                                    style={{ background: '#8b5cf6', color: '#fff' }}>
+                                    style={{ background: 'var(--accent-1)', color: '#fff' }}>
                                     Сохранить кнопку
                                   </button>
                                 </div>
@@ -2430,9 +2430,9 @@ export default function BotConstructorPage() {
                                 <button key={em.id} onClick={() => setButtonForm(p => ({ ...p, iconEmojiId: em.id }))}
                                         className="px-2 py-1 rounded text-[9px] transition-all"
                                         style={{
-                                          background: buttonForm.iconEmojiId === em.id ? '#8b5cf622' : 'var(--surface-1)',
+                                          background: buttonForm.iconEmojiId === em.id ? 'rgba(6,182,212,0.13)' : 'var(--surface-1)',
                                           color: buttonForm.iconEmojiId === em.id ? '#a78bfa' : 'var(--text-secondary)',
-                                          border: `1px solid ${buttonForm.iconEmojiId === em.id ? '#8b5cf6' : 'var(--glass-border)'}`,
+                                          border: `1px solid ${buttonForm.iconEmojiId === em.id ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                                         }}>
                                   {em.fallback} {em.name}
                                 </button>
@@ -2450,7 +2450,7 @@ export default function BotConstructorPage() {
                         <div className="flex gap-2">
                           <button onClick={addButton}
                                   className="flex-1 px-2 py-1.5 rounded text-[11px] font-medium text-white"
-                                  style={{ background: '#8b5cf6' }}>
+                                  style={{ background: 'var(--accent-1)' }}>
                             Создать кнопку
                           </button>
                           <button onClick={() => setShowButtonForm(false)}
@@ -2823,7 +2823,7 @@ export default function BotConstructorPage() {
       {/* ── Модальное окно создания блока ────────────────────── */}
       {newBlockGroupId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setNewBlockGroupId(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setNewBlockGroupId(null)} />
           <div className="relative w-[420px] rounded-2xl p-6 shadow-2xl"
                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
             <h3 className="text-[15px] font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Создать блок</h3>

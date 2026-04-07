@@ -130,7 +130,7 @@ export default function AdminInstructions() {
       {/* Modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={close} />
+          <div className="absolute inset-0 bg-black/70 " onClick={close} />
           <div className="relative w-full max-w-2xl card space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-lg">

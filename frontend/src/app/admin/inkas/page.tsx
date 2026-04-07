@@ -290,7 +290,7 @@ export default function AdminInkasPage() {
 
       {/* Create Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 ">
           <div
             className="w-full max-w-lg mx-4 rounded-2xl p-6 space-y-4 animate-scale-in"
             style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}

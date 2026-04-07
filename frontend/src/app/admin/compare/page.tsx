@@ -250,7 +250,7 @@ export default function AdminComparePage() {
         <div className="rounded-2xl p-5 space-y-3"
              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ background: '#8b5cf6' }} />
+            <div className="w-3 h-3 rounded-full" style={{ background: 'var(--accent-1)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Период A</h3>
           </div>
           <div className="flex gap-3 items-center flex-wrap">
@@ -396,7 +396,7 @@ export default function AdminComparePage() {
                           </div>
                           <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
                             <span className="flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full" style={{ background: '#8b5cf6' }} />
+                              <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-1)' }} />
                               {fmtMoney(amtA)}
                             </span>
                             <span className="flex items-center gap-1">
@@ -407,9 +407,9 @@ export default function AdminComparePage() {
                         </div>
                         {/* Bar A (purple) */}
                         <div className="h-2 rounded-full overflow-hidden"
-                             style={{ background: 'rgba(139,92,246,0.08)' }}>
+                             style={{ background: 'rgba(6,182,212,0.08)' }}>
                           <div className="h-full rounded-full transition-all duration-500"
-                               style={{ width: `${pctA}%`, background: '#8b5cf6' }} />
+                               style={{ width: `${pctA}%`, background: 'var(--accent-1)' }} />
                         </div>
                         {/* Bar B (amber) */}
                         <div className="h-2 rounded-full overflow-hidden"
@@ -425,7 +425,7 @@ export default function AdminComparePage() {
               {/* Legend */}
               <div className="flex gap-6 pt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
                 <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  <span className="w-3 h-3 rounded-sm" style={{ background: '#8b5cf6' }} />
+                  <span className="w-3 h-3 rounded-sm" style={{ background: 'var(--accent-1)' }} />
                   Период A ({aFrom} — {aTo})
                 </div>
                 <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>

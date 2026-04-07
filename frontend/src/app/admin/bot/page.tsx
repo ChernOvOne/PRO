@@ -200,7 +200,7 @@ export default function AdminBotChats() {
                   disabled
                   className="text-xs px-2.5 py-1 rounded-lg cursor-default opacity-70 font-medium"
                   style={{
-                    background: 'rgba(139,92,246,0.12)',
+                    background: 'rgba(6,182,212,0.12)',
                     color: '#a78bfa',
                     border: '1px solid rgba(139,92,246,0.2)',
                   }}
@@ -286,7 +286,7 @@ export default function AdminBotChats() {
                   onClick={() => selectChat(item)}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-150"
                   style={{
-                    background: active ? 'rgba(139,92,246,0.08)' : 'transparent',
+                    background: active ? 'rgba(6,182,212,0.08)' : 'transparent',
                     borderBottom: '1px solid var(--glass-border)',
                   }}
                   onMouseEnter={e => {
@@ -423,7 +423,7 @@ export default function AdminBotChats() {
                     className="text-xs px-3 py-1 rounded-lg transition-colors"
                     style={{
                       color: 'var(--accent-1)',
-                      background: 'rgba(139,92,246,0.08)',
+                      background: 'rgba(6,182,212,0.08)',
                     }}
                   >
                     {msgsLoading ? 'Загрузка...' : 'Загрузить ранее'}
@@ -457,7 +457,7 @@ export default function AdminBotChats() {
                         style={{
                           background: isUser
                             ? 'rgba(255,255,255,0.07)'
-                            : 'rgba(139,92,246,0.12)',
+                            : 'rgba(6,182,212,0.12)',
                           border: `1px solid ${isUser
                             ? 'rgba(255,255,255,0.08)'
                             : 'rgba(139,92,246,0.2)'}`,
@@ -533,8 +533,8 @@ export default function AdminBotChats() {
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center"
               style={{
-                background: 'rgba(139,92,246,0.08)',
-                border: '1px solid rgba(139,92,246,0.15)',
+                background: 'rgba(6,182,212,0.08)',
+                border: '1px solid rgba(6,182,212,0.15)',
               }}
             >
               <MessageCircle className="w-7 h-7" style={{ color: '#a78bfa' }} />
@@ -564,7 +564,7 @@ export default function AdminBotChats() {
           {mobileProfileOpen && (
             <div className="fixed inset-0 z-50 md:hidden">
               <div
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                className="absolute inset-0 bg-black/60 "
                 onClick={() => setMobileProfileOpen(false)}
               />
               <div
@@ -645,12 +645,12 @@ function ProfilePanel({ user }: { user: ChatUser }) {
         href={`/admin/users/${user.id}`}
         className="flex items-center justify-center gap-2 w-full py-2 rounded-xl text-sm font-medium transition-all duration-200"
         style={{
-          background: 'rgba(139,92,246,0.08)',
+          background: 'rgba(6,182,212,0.08)',
           color: '#a78bfa',
-          border: '1px solid rgba(139,92,246,0.15)',
+          border: '1px solid rgba(6,182,212,0.15)',
         }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.15)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.08)' }}
       >
         <ExternalLink className="w-3.5 h-3.5" />
         Полный профиль
@@ -665,7 +665,7 @@ function ProfileRow({ icon, label, value }: { icon: React.ReactNode; label: stri
       <div
         className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
         style={{
-          background: 'rgba(139,92,246,0.06)',
+          background: 'rgba(6,182,212,0.06)',
           color: 'var(--text-tertiary)',
         }}
       >

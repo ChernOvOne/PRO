@@ -48,7 +48,7 @@ export default function AdminProxiesPage() {
       </div>
 
       {editing && (
-        <div className="glass-card gradient-border animate-scale-in space-y-4">
+        <div className="glass-card  animate-scale-in space-y-4">
           <h2 className="font-semibold">{editing.id ? 'Редактировать' : 'Новый прокси'}</h2>
 
           <input className="glass-input" placeholder="Название"

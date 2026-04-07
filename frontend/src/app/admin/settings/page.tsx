@@ -355,7 +355,7 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
     <button onClick={() => onChange(!checked)} type="button"
             className="relative w-11 h-6 rounded-full transition-all duration-300 flex-shrink-0"
             style={{
-              background: checked ? '#534AB7' : 'rgba(255,255,255,0.08)',
+              background: checked ? 'var(--accent-1)' : 'rgba(255,255,255,0.08)',
             }}>
       <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
             style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }} />
@@ -651,7 +651,7 @@ export default function AdminSettings() {
           )}
           <button onClick={save} disabled={!isDirty || saving}
             className="px-4 py-2 rounded-xl text-sm font-medium inline-flex items-center gap-2"
-            style={{ background: isDirty ? '#534AB7' : 'var(--glass-bg)', color: isDirty ? '#fff' : 'var(--text-tertiary)' }}>
+            style={{ background: isDirty ? 'var(--accent-1)' : 'var(--glass-bg)', color: isDirty ? '#fff' : 'var(--text-tertiary)' }}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Сохранить
           </button>
@@ -704,7 +704,7 @@ function SettingField({ field, value, onChange, envValue }: {
           className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] transition-colors flex-shrink-0"
           style={{
             background: showHint ? 'rgba(83,74,183,0.13)' : 'var(--glass-bg)',
-            color: showHint ? '#534AB7' : 'var(--text-tertiary)',
+            color: showHint ? 'var(--accent-1)' : 'var(--text-tertiary)',
             border: '1px solid var(--glass-border)',
           }}
           type="button">
@@ -777,7 +777,7 @@ function SettingField({ field, value, onChange, envValue }: {
         <div className="flex items-center gap-3">
           <input
             type="color"
-            value={value || '#534AB7'}
+            value={value || 'var(--accent-1)'}
             onChange={e => onChange(e.target.value)}
             className="w-10 h-10 rounded-lg cursor-pointer border-0"
             style={{ background: 'transparent' }}
@@ -787,7 +787,7 @@ function SettingField({ field, value, onChange, envValue }: {
             className="glass-input text-sm flex-1 font-mono"
             value={value}
             onChange={e => onChange(e.target.value)}
-            placeholder="#534AB7"
+            placeholder="var(--accent-1)"
           />
         </div>
       </div>
@@ -885,7 +885,7 @@ function RolesTab({ settings, update, adminUsers, adminsLoading, changeUserRole 
                           checked={checked}
                           disabled={role === 'ADMIN'}
                           onChange={() => togglePermission(role, section)}
-                          className="w-4 h-4 rounded accent-[#534AB7]"
+                          className="w-4 h-4 rounded accent-[var(--accent-1)]"
                           style={{ cursor: role === 'ADMIN' ? 'not-allowed' : 'pointer' }}
                         />
                       </td>

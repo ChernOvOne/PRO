@@ -189,7 +189,7 @@ export default function AdminDashboardPage() {
               onClick={() => setDays(d)}
               className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
               style={{
-                background: days === d ? '#534AB7' : 'var(--glass-bg)',
+                background: days === d ? 'var(--accent-1)' : 'var(--glass-bg)',
                 color: days === d ? '#fff' : 'var(--text-secondary)',
                 border: '1px solid var(--glass-border)',
               }}
@@ -430,7 +430,7 @@ export default function AdminDashboardPage() {
                 style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                 <div
                   className="flex items-center justify-center rounded-full text-white font-bold text-sm"
-                  style={{ width: 40, height: 40, background: p.avatarColor || '#534AB7' }}
+                  style={{ width: 40, height: 40, background: p.avatarColor || 'var(--accent-1)' }}
                 >
                   {p.initials || p.name.slice(0, 2)}
                 </div>
@@ -615,7 +615,7 @@ export default function AdminDashboardPage() {
               <button
                 onClick={() => handleExport(exportModal)}
                 className="px-4 py-2 rounded-lg text-sm text-white font-medium"
-                style={{ background: '#534AB7' }}
+                style={{ background: 'var(--accent-1)' }}
               >
                 Сформировать
               </button>

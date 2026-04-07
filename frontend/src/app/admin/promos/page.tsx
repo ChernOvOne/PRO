@@ -13,7 +13,7 @@ const TYPES = [
 ]
 
 const TYPE_COLORS: Record<string, string> = {
-  bonus_days: '#8b5cf6',
+  bonus_days: '#06b6d4',
   discount:   '#06b6d4',
   balance:    '#10b981',
   trial:      '#f59e0b',
@@ -136,7 +136,7 @@ export default function AdminPromosPage() {
 
       {/* Edit / Create Form */}
       {editing && (
-        <div className="glass-card gradient-border animate-scale-in space-y-4">
+        <div className="glass-card  animate-scale-in space-y-4">
           <h2 className="font-semibold text-lg">{editing.id ? 'Редактировать' : 'Новый промокод'}</h2>
 
           {/* Type tabs */}
@@ -280,8 +280,8 @@ export default function AdminPromosPage() {
               {/* Code & badge */}
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                     style={{ background: `${TYPE_COLORS[p.type] || '#8b5cf6'}15` }}>
-                  <Tag className="w-5 h-5" style={{ color: TYPE_COLORS[p.type] || '#8b5cf6' }} />
+                     style={{ background: `${TYPE_COLORS[p.type] || '#06b6d4'}15` }}>
+                  <Tag className="w-5 h-5" style={{ color: TYPE_COLORS[p.type] || '#06b6d4' }} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -295,8 +295,8 @@ export default function AdminPromosPage() {
                     </button>
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
                           style={{
-                            background: `${TYPE_COLORS[p.type] || '#8b5cf6'}15`,
-                            color: TYPE_COLORS[p.type] || '#8b5cf6',
+                            background: `${TYPE_COLORS[p.type] || '#06b6d4'}15`,
+                            color: TYPE_COLORS[p.type] || '#06b6d4',
                           }}>
                       {TYPES.find(t => t.value === p.type)?.label || p.type}
                     </span>
@@ -359,7 +359,7 @@ export default function AdminPromosPage() {
       {/* Stats modal */}
       {stats && (
         <div className="fixed inset-0 z-[100]">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setStats(null)} />
+          <div className="absolute inset-0 bg-black/50 " onClick={() => setStats(null)} />
           <div className="fixed inset-0 md:absolute md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-lg md:rounded-2xl md:max-h-[90vh] overflow-y-auto p-5 pb-24 md:p-6 md:pb-8"
                style={{ background: 'var(--surface-2)', boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }}>
             <button onClick={() => setStats(null)} className="sticky top-0 float-right p-2 rounded-xl z-10 hover:bg-white/5"

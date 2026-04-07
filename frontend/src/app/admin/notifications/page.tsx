@@ -8,7 +8,7 @@ const TYPE_CONFIG: Record<string, { label: string; color: string; icon: string; 
   INFO:    { label: 'Инфо',        color: '#06b6d4', icon: 'ℹ️', badgeClass: 'badge-blue' },
   WARNING: { label: 'Внимание',    color: '#f59e0b', icon: '⚠️', badgeClass: 'badge-yellow' },
   SUCCESS: { label: 'Успех',       color: '#10b981', icon: '✅', badgeClass: 'badge-green' },
-  PROMO:   { label: 'Промо',       color: '#8b5cf6', icon: '🎁', badgeClass: 'badge-violet' },
+  PROMO:   { label: 'Промо',       color: 'var(--accent-1)', icon: '🎁', badgeClass: 'badge-violet' },
 }
 
 export default function AdminNotificationsPage() {

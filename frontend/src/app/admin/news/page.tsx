@@ -62,7 +62,7 @@ export default function AdminNewsPage() {
 
       {/* Editor modal */}
       {editing && (
-        <div className="glass-card gradient-border animate-scale-in">
+        <div className="glass-card  animate-scale-in">
           <h2 className="font-semibold mb-4">{editing.id ? 'Редактировать' : 'Новая запись'}</h2>
 
           <div className="space-y-4">

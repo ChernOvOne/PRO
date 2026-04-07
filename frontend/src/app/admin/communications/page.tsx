@@ -117,7 +117,7 @@ const NOTIF_TYPE_CONFIG: Record<string, { label: string; color: string; icon: st
   INFO: { label: 'Инфо', color: '#06b6d4', icon: 'ℹ️', badgeClass: 'badge-blue' },
   WARNING: { label: 'Внимание', color: '#f59e0b', icon: '⚠️', badgeClass: 'badge-yellow' },
   SUCCESS: { label: 'Успех', color: '#10b981', icon: '✅', badgeClass: 'badge-green' },
-  PROMO: { label: 'Промо', color: '#8b5cf6', icon: '🎁', badgeClass: 'badge-violet' },
+  PROMO: { label: 'Промо', color: 'var(--accent-1)', icon: '🎁', badgeClass: 'badge-violet' },
 }
 
 const fmtDate = (iso: string) => {
@@ -252,7 +252,7 @@ export default function CommunicationsPage() {
             onClick={() => setActiveTab(t.key)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
             style={{
-              background: activeTab === t.key ? 'rgba(139,92,246,0.12)' : 'transparent',
+              background: activeTab === t.key ? 'rgba(6,182,212,0.12)' : 'transparent',
               color: activeTab === t.key ? 'var(--accent-1)' : 'var(--text-secondary)',
             }}
           >
@@ -665,7 +665,7 @@ function BroadcastsTab() {
         {([['create', 'Создать'], ['history', 'История']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setSubTab(key)}
             className="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background: subTab === key ? 'rgba(139,92,246,0.12)' : 'transparent', color: subTab === key ? 'var(--accent-1)' : 'var(--text-secondary)' }}
+            style={{ background: subTab === key ? 'rgba(6,182,212,0.12)' : 'transparent', color: subTab === key ? 'var(--accent-1)' : 'var(--text-secondary)' }}
           >{label}</button>
         ))}
       </div>
@@ -673,10 +673,10 @@ function BroadcastsTab() {
       {subTab === 'create' && (
         <div className="space-y-6">
           {/* Step 1: Channel */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>1</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>1</span>
               Канал
             </h3>
             <div className="flex gap-2 flex-wrap">
@@ -689,7 +689,7 @@ function BroadcastsTab() {
                 <button key={ch} onClick={() => setChannelMode(ch)}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm transition-all"
                   style={{
-                    background: channelMode === ch ? 'rgba(139,92,246,0.12)' : 'var(--glass-bg)',
+                    background: channelMode === ch ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
                     border: `1px solid ${channelMode === ch ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                     color: channelMode === ch ? 'var(--accent-1)' : 'var(--text-secondary)',
                   }}>
@@ -700,10 +700,10 @@ function BroadcastsTab() {
           </div>
 
           {/* Step 2: Audience */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>2</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>2</span>
               Аудитория
               {recipientCount !== null && (
                 <span className="ml-auto badge-green text-xs px-2 py-0.5 rounded-full font-medium">
@@ -716,7 +716,7 @@ function BroadcastsTab() {
               {filteredAudienceOptions.map(opt => (
                 <label key={opt.value}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all"
-                  style={{ background: audience === opt.value ? 'rgba(139,92,246,0.06)' : 'transparent' }}>
+                  style={{ background: audience === opt.value ? 'rgba(6,182,212,0.06)' : 'transparent' }}>
                   <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
                     style={{ border: `2px solid ${audience === opt.value ? 'var(--accent-1)' : 'var(--glass-border)'}` }}>
                     {audience === opt.value && <div className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-1)' }} />}
@@ -730,10 +730,10 @@ function BroadcastsTab() {
           </div>
 
           {/* Step 3: Message */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>3</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>3</span>
               Сообщение
             </h3>
             <div className="space-y-5">
@@ -751,7 +751,7 @@ function BroadcastsTab() {
                       <button key={mode} onClick={() => setTgParseMode(mode)}
                         className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
                         style={{
-                          background: tgParseMode === mode ? 'rgba(139,92,246,0.15)' : 'transparent',
+                          background: tgParseMode === mode ? 'rgba(6,182,212,0.15)' : 'transparent',
                           color: tgParseMode === mode ? '#a78bfa' : 'var(--text-tertiary)',
                         }}>
                         {mode}
@@ -802,7 +802,7 @@ function BroadcastsTab() {
                     <button onClick={insertCustomEmoji} title="Премиум эмоджи"
                       className="px-2.5 py-1.5 rounded-lg text-xs transition-all hover:scale-105"
                       style={{
-                        background: 'rgba(139,92,246,0.08)',
+                        background: 'rgba(6,182,212,0.08)',
                         border: '1px solid rgba(139,92,246,0.2)',
                         color: '#a78bfa',
                       }}>
@@ -824,7 +824,7 @@ function BroadcastsTab() {
                         <button key={mt.value} onClick={() => { setTgMediaType(mt.value); if (!mt.value) setTgMediaUrl('') }}
                           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
                           style={{
-                            background: tgMediaType === mt.value ? 'rgba(139,92,246,0.12)' : 'var(--glass-bg)',
+                            background: tgMediaType === mt.value ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
                             border: `1px solid ${tgMediaType === mt.value ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                             color: tgMediaType === mt.value ? 'var(--accent-1)' : 'var(--text-tertiary)',
                           }}>
@@ -838,7 +838,7 @@ function BroadcastsTab() {
                           placeholder="URL медиа или путь /uploads/..." className="glass-input flex-1 text-sm" />
                         <label className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-medium cursor-pointer transition-all"
                           style={{
-                            background: 'rgba(139,92,246,0.08)',
+                            background: 'rgba(6,182,212,0.08)',
                             border: '1px solid rgba(139,92,246,0.2)',
                             color: '#a78bfa',
                             opacity: uploading ? 0.5 : 1,
@@ -878,7 +878,7 @@ function BroadcastsTab() {
                     ))}
                     {tgButtons.length < 5 && (
                       <button onClick={addTgButton} className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg transition-all"
-                        style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.06)' }}>
+                        style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.06)' }}>
                         <Plus className="w-3.5 h-3.5" /> Добавить кнопку
                       </button>
                     )}
@@ -900,7 +900,7 @@ function BroadcastsTab() {
                           {tgPollOptions.map((opt, i) => (
                             <div key={i} className="flex gap-2 items-center">
                               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                                style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{i + 1}</span>
+                                style={{ background: 'rgba(6,182,212,0.1)', color: '#a78bfa' }}>{i + 1}</span>
                               <input value={opt} onChange={e => updatePollOption(i, e.target.value)}
                                 placeholder={`Вариант ${i + 1}`} className="glass-input flex-1 text-sm" />
                               {tgPollOptions.length > 2 && (
@@ -912,7 +912,7 @@ function BroadcastsTab() {
                           ))}
                           {tgPollOptions.length < 10 && (
                             <button onClick={addPollOption} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg transition-all"
-                              style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.06)' }}>
+                              style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.06)' }}>
                               <Plus className="w-3 h-3" /> Добавить вариант
                             </button>
                           )}
@@ -1092,10 +1092,10 @@ function BroadcastsTab() {
           </div>
 
           {/* Step 4: Send */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>4</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>4</span>
               Отправка
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -1122,14 +1122,14 @@ function BroadcastsTab() {
       {subTab === 'history' && (
         <div className="space-y-6">
           {/* Broadcast history */}
-          <div className="glass-card gradient-border overflow-hidden">
+          <div className="glass-card  overflow-hidden">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 px-1" style={{ color: 'var(--text-primary)' }}>
               <Send className="w-4 h-4" style={{ color: '#a78bfa' }} /> Рассылки (TG / Email)
             </h3>
             {loadingHistory ? (
               <div className="flex justify-center py-8">
                 <div className="w-8 h-8 rounded-full border-2 border-transparent"
-                  style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+                  style={{ borderTopColor: 'var(--accent-1)', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
               </div>
             ) : history.length === 0 ? (
               <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>
@@ -1218,7 +1218,7 @@ function BroadcastsTab() {
           </div>
 
           {/* Notification history */}
-          <div className="glass-card gradient-border p-0 overflow-hidden">
+          <div className="glass-card  p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
               <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <Bell className="w-4 h-4" style={{ color: '#a78bfa' }} /> Уведомления в ЛК ({notifTotal})
@@ -1279,7 +1279,7 @@ function BroadcastsTab() {
       {/* Preview */}
       {showPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowPreview(false)} />
           <div className="glass-card relative z-10 w-full max-w-lg max-h-[80vh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Предпросмотр</h3>
@@ -1289,7 +1289,7 @@ function BroadcastsTab() {
               <div className="mb-4">
                 <p className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
                   <MessageCircle className="w-3.5 h-3.5" /> Telegram
-                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>{tgParseMode}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.1)', color: '#a78bfa' }}>{tgParseMode}</span>
                 </p>
                 <div className="rounded-2xl overflow-hidden"
                   style={{
@@ -1393,7 +1393,7 @@ function BroadcastsTab() {
       {/* Schedule Modal */}
       {showScheduler && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowScheduler(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowScheduler(false)} />
           <div className="glass-card relative z-10 w-full max-w-sm animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -1416,7 +1416,7 @@ function BroadcastsTab() {
       {/* Confirm Send Modal */}
       {confirmSend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setConfirmSend(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setConfirmSend(false)} />
           <div className="glass-card relative z-10 w-full max-w-sm animate-scale-in">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)' }}>
@@ -1776,7 +1776,7 @@ function FunnelsTab() {
                             <p className="text-xs font-medium mb-1" style={{color:'var(--text-secondary)'}}>{section.title}</p>
                             <div className="grid gap-y-0.5" style={{gridTemplateColumns:'auto 1fr'}}>
                               {section.vars.map(([v, desc]) => (
-                                <><code key={v} className="font-mono px-1.5 py-0.5 rounded mr-3 text-xs" style={{background:'rgba(139,92,246,0.08)',color:'#a78bfa'}}>{v}</code>
+                                <><code key={v} className="font-mono px-1.5 py-0.5 rounded mr-3 text-xs" style={{background:'rgba(6,182,212,0.08)',color:'#a78bfa'}}>{v}</code>
                                 <span className="text-xs" style={{color:'var(--text-tertiary)'}}>{desc}</span></>
                               ))}
                             </div>
@@ -1853,7 +1853,7 @@ function FunnelsTab() {
       {/* Create modal */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowCreate(false)} />
           <div className="relative glass-card w-full max-w-md space-y-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <h3 className="font-semibold">Создать воронку</h3>
             <div>
@@ -1983,7 +1983,7 @@ function BotSettingsTab() {
           <div key={section.id} className="glass-card rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(139,92,246,0.12)' }}>
+                style={{ background: 'rgba(6,182,212,0.12)' }}>
                 <Icon className="w-[18px] h-[18px]" style={{ color: '#a78bfa' }} />
               </div>
               <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{section.title}</h2>
@@ -2124,7 +2124,7 @@ function ChatHistoryTab() {
               {row.map((btn, bi) => (
                 <button key={bi} disabled
                   className="text-xs px-2.5 py-1 rounded-lg cursor-default opacity-70 font-medium"
-                  style={{ background: 'rgba(139,92,246,0.12)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.2)' }}>
+                  style={{ background: 'rgba(6,182,212,0.12)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.2)' }}>
                   {btn.text}
                 </button>
               ))}
@@ -2179,7 +2179,7 @@ function ChatHistoryTab() {
               return (
                 <button key={item.user.id} onClick={() => selectChat(item)}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-150"
-                  style={{ background: active ? 'rgba(139,92,246,0.08)' : 'transparent', borderBottom: '1px solid var(--glass-border)' }}
+                  style={{ background: active ? 'rgba(6,182,212,0.08)' : 'transparent', borderBottom: '1px solid var(--glass-border)' }}
                   onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
                   onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
                   <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
@@ -2239,7 +2239,7 @@ function ChatHistoryTab() {
                 <div className="text-center py-2">
                   <button onClick={() => loadMessages(activeUserId!, msgsPage + 1, true)} disabled={msgsLoading}
                     className="text-xs px-3 py-1 rounded-lg transition-colors"
-                    style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.08)' }}>
+                    style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.08)' }}>
                     {msgsLoading ? 'Загрузка...' : 'Загрузить ранее'}
                   </button>
                 </div>
@@ -2264,7 +2264,7 @@ function ChatHistoryTab() {
                     <div key={msg.id} className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
                       <div className="max-w-[75%] rounded-2xl px-3.5 py-2"
                         style={{
-                          background: isUser ? 'rgba(255,255,255,0.07)' : 'rgba(139,92,246,0.12)',
+                          background: isUser ? 'rgba(255,255,255,0.07)' : 'rgba(6,182,212,0.12)',
                           border: `1px solid ${isUser ? 'rgba(255,255,255,0.08)' : 'rgba(139,92,246,0.2)'}`,
                           borderBottomLeftRadius: isUser ? '6px' : undefined,
                           borderBottomRightRadius: !isUser ? '6px' : undefined,
@@ -2297,7 +2297,7 @@ function ChatHistoryTab() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}>
+              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)' }}>
               <MessageCircle className="w-7 h-7" style={{ color: '#a78bfa' }} />
             </div>
             <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Выберите чат</h3>
@@ -2315,7 +2315,7 @@ function ChatHistoryTab() {
           </div>
           {mobileProfileOpen && (
             <div className="fixed inset-0 z-50 md:hidden">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileProfileOpen(false)} />
+              <div className="absolute inset-0 bg-black/60 " onClick={() => setMobileProfileOpen(false)} />
               <div className="absolute right-0 top-0 h-full w-[300px] max-w-[85vw] overflow-y-auto"
                 style={{ background: 'var(--surface-2)', borderLeft: '1px solid var(--glass-border)' }}>
                 <div className="flex items-center justify-between p-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
@@ -2355,9 +2355,9 @@ function ChatProfilePanel({ user }: { user: ChatUser }) {
       </div>
       <Link href={`/admin/users/${user.id}`}
         className="flex items-center justify-center gap-2 w-full py-2 rounded-xl text-sm font-medium transition-all duration-200"
-        style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.15)' }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}>
+        style={{ background: 'rgba(6,182,212,0.08)', color: '#a78bfa', border: '1px solid rgba(6,182,212,0.15)' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.15)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.08)' }}>
         <ExternalLink className="w-3.5 h-3.5" /> Полный профиль
       </Link>
     </div>
@@ -2368,7 +2368,7 @@ function ChatProfileRow({ icon, label, value }: { icon: React.ReactNode; label: 
   return (
     <div className="flex items-start gap-2.5">
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-        style={{ background: 'rgba(139,92,246,0.06)', color: 'var(--text-tertiary)' }}>{icon}</div>
+        style={{ background: 'rgba(6,182,212,0.06)', color: 'var(--text-tertiary)' }}>{icon}</div>
       <div className="min-w-0">
         <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
         <p className="text-[13px] break-all" style={{ color: 'var(--text-primary)' }}>{value}</p>

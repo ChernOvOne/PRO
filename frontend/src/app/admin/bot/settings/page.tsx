@@ -225,7 +225,7 @@ export default function BotSettingsPage() {
           <div key={section.id} className="glass-card rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                   style={{ background: 'rgba(139,92,246,0.12)' }}>
+                   style={{ background: 'rgba(6,182,212,0.12)' }}>
                 <Icon className="w-[18px] h-[18px]" style={{ color: '#a78bfa' }} />
               </div>
               <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>

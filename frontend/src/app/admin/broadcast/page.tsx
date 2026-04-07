@@ -138,7 +138,7 @@ const EMAIL_TEMPLATES: { value: string; label: string; bg: string; text: string 
 ]
 
 const BUTTON_STYLE_COLORS: Record<TgButtonStyle, { bg: string; text: string; label: string }> = {
-  default: { bg: 'rgba(139,92,246,0.1)', text: '#a78bfa', label: 'Default' },
+  default: { bg: 'rgba(6,182,212,0.1)', text: '#a78bfa', label: 'Default' },
   success: { bg: 'rgba(52,211,153,0.15)', text: '#34d399', label: 'Success' },
   danger: { bg: 'rgba(239,68,68,0.15)', text: '#f87171', label: 'Danger' },
   primary: { bg: 'rgba(59,130,246,0.15)', text: '#60a5fa', label: 'Primary' },
@@ -611,7 +611,7 @@ export default function AdminBroadcastPage() {
             onClick={() => setTab(key)}
             className="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all"
             style={{
-              background: tab === key ? 'rgba(139,92,246,0.12)' : 'transparent',
+              background: tab === key ? 'rgba(6,182,212,0.12)' : 'transparent',
               color: tab === key ? 'var(--accent-1)' : 'var(--text-secondary)',
             }}
           >
@@ -624,17 +624,17 @@ export default function AdminBroadcastPage() {
       {tab === 'create' && (
         <div className="space-y-6">
           {/* Step 1 — Channel */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>1</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>1</span>
               Канал
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {([
                 ['telegram', 'Telegram', MessageCircle, '#0088cc', 'rgba(0,136,204,0.12)'],
                 ['email', 'Email', Mail, '#ea580c', 'rgba(234,88,12,0.12)'],
-                ['lk', 'ЛК', Bell, '#8b5cf6', 'rgba(139,92,246,0.12)'],
+                ['lk', 'ЛК', Bell, '#06b6d4', 'rgba(6,182,212,0.12)'],
                 ['all', 'Все каналы', Send, '#06b6d4', 'rgba(6,182,212,0.12)'],
               ] as const).map(([ch, label, Icon, accentColor, accentBg]) => (
                 <button
@@ -655,10 +655,10 @@ export default function AdminBroadcastPage() {
           </div>
 
           {/* Step 2 — Audience */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>2</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>2</span>
               Аудитория
               {recipientCount !== null && (
                 <span className="ml-auto badge-green text-xs px-2 py-0.5 rounded-full font-medium">
@@ -673,7 +673,7 @@ export default function AdminBroadcastPage() {
                   key={opt.value}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all"
                   style={{
-                    background: audience === opt.value ? 'rgba(139,92,246,0.06)' : 'transparent',
+                    background: audience === opt.value ? 'rgba(6,182,212,0.06)' : 'transparent',
                   }}
                 >
                   <div
@@ -701,10 +701,10 @@ export default function AdminBroadcastPage() {
           </div>
 
           {/* Step 3 — Message */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>3</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>3</span>
               Сообщение
             </h3>
 
@@ -721,7 +721,7 @@ export default function AdminBroadcastPage() {
                     onClick={() => setContentTab(key)}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-all"
                     style={{
-                      background: contentTab === key ? 'rgba(139,92,246,0.12)' : 'transparent',
+                      background: contentTab === key ? 'rgba(6,182,212,0.12)' : 'transparent',
                       color: contentTab === key ? 'var(--accent-1)' : 'var(--text-secondary)',
                     }}
                   >
@@ -749,7 +749,7 @@ export default function AdminBroadcastPage() {
                         onClick={() => setTgParseMode(mode)}
                         className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
                         style={{
-                          background: tgParseMode === mode ? 'rgba(139,92,246,0.12)' : 'var(--glass-bg)',
+                          background: tgParseMode === mode ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
                           border: `1px solid ${tgParseMode === mode ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                           color: tgParseMode === mode ? 'var(--accent-1)' : 'var(--text-secondary)',
                         }}
@@ -798,7 +798,7 @@ export default function AdminBroadcastPage() {
                               <button key={ci} onClick={() => setEmojiCategory(ci)}
                                 className="px-2 py-1 rounded-lg text-xs whitespace-nowrap transition-all"
                                 style={{
-                                  background: emojiCategory === ci ? 'rgba(139,92,246,0.12)' : 'transparent',
+                                  background: emojiCategory === ci ? 'rgba(6,182,212,0.12)' : 'transparent',
                                   color: emojiCategory === ci ? 'var(--accent-1)' : 'var(--text-tertiary)',
                                 }}>
                                 {cat.label}
@@ -857,7 +857,7 @@ export default function AdminBroadcastPage() {
                                   <button key={em.id}
                                     onClick={() => { insertAtCursor(`<tg-emoji emoji-id="${em.id}">${em.fallback}</tg-emoji>`); setShowPremiumEmoji(false) }}
                                     className="px-2 py-1 rounded-lg text-xs transition-all hover:bg-white/10 flex items-center gap-1"
-                                    style={{ background: 'rgba(139,92,246,0.1)', color: 'var(--accent-1)' }}>
+                                    style={{ background: 'rgba(6,182,212,0.1)', color: 'var(--accent-1)' }}>
                                     <span>{em.fallback}</span>
                                     <span className="opacity-60">{em.name}</span>
                                   </button>
@@ -944,7 +944,7 @@ export default function AdminBroadcastPage() {
                           <button key={mt} onClick={() => setTgMediaType(mt)}
                             className="px-2 py-1 rounded-lg text-xs transition-all"
                             style={{
-                              background: tgMediaType === mt ? 'rgba(139,92,246,0.12)' : 'transparent',
+                              background: tgMediaType === mt ? 'rgba(6,182,212,0.12)' : 'transparent',
                               border: `1px solid ${tgMediaType === mt ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                               color: tgMediaType === mt ? 'var(--accent-1)' : 'var(--text-tertiary)',
                             }}>
@@ -967,7 +967,7 @@ export default function AdminBroadcastPage() {
                       </label>
                       <button onClick={addTgButton}
                         className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium"
-                        style={{ background: 'rgba(139,92,246,0.12)', color: 'var(--accent-1)' }}>
+                        style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>
                         <Plus className="w-3 h-3" /> Добавить
                       </button>
                     </div>
@@ -988,7 +988,7 @@ export default function AdminBroadcastPage() {
                           <p className="text-[11px] mb-1.5" style={{ color: 'var(--text-tertiary)' }}>Перетащите кнопки между рядами:</p>
                           {rowNums.map(rowNum => (
                             <div key={rowNum} className="flex gap-1"
-                              onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = 'rgba(139,92,246,0.1)' }}
+                              onDragOver={e => { e.preventDefault(); e.currentTarget.style.background = 'rgba(6,182,212,0.1)' }}
                               onDragLeave={e => { e.currentTarget.style.background = '' }}
                               onDrop={e => {
                                 e.currentTarget.style.background = ''
@@ -1006,7 +1006,7 @@ export default function AdminBroadcastPage() {
                                   className="flex-1 py-2 px-2 rounded-lg text-center text-[12px] font-medium cursor-grab active:cursor-grabbing transition-all hover:brightness-110 truncate"
                                   style={{
                                     background: BUTTON_STYLE_COLORS[btn.style]?.bg || 'var(--surface-2)',
-                                    border: `2px solid ${editingBtnIdx === idx ? '#8b5cf6' : (BUTTON_STYLE_COLORS[btn.style]?.text || 'var(--glass-border)')}`,
+                                    border: `2px solid ${editingBtnIdx === idx ? 'var(--accent-1)' : (BUTTON_STYLE_COLORS[btn.style]?.text || 'var(--glass-border)')}`,
                                     color: BUTTON_STYLE_COLORS[btn.style]?.text || 'var(--text-primary)',
                                   }}>
                                   {btn.iconEmojiId && <span className="mr-1">{btn.iconEmojiId.length > 6 ? '⭐' : btn.iconEmojiId}</span>}
@@ -1018,7 +1018,7 @@ export default function AdminBroadcastPage() {
                           {/* Drop zone for new row */}
                           <div className="flex items-center justify-center py-2 rounded-lg text-[10px] border-2 border-dashed transition-colors"
                             style={{ borderColor: 'var(--glass-border)', color: 'var(--text-tertiary)' }}
-                            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#8b5cf6' }}
+                            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent-1)' }}
                             onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--glass-border)' }}
                             onDrop={e => {
                               e.currentTarget.style.borderColor = 'var(--glass-border)'
@@ -1066,7 +1066,7 @@ export default function AdminBroadcastPage() {
                                 <button key={t} onClick={() => updateTgButton(i, 'type', t)}
                                   className="px-2.5 py-1 rounded text-[12px] transition-all"
                                   style={{
-                                    background: btn.type === t ? 'rgba(139,92,246,0.15)' : 'transparent',
+                                    background: btn.type === t ? 'rgba(6,182,212,0.15)' : 'transparent',
                                     color: btn.type === t ? '#a78bfa' : 'var(--text-tertiary)',
                                     border: `1px solid ${btn.type === t ? '#a78bfa' : 'var(--glass-border)'}`,
                                   }}>
@@ -1105,14 +1105,14 @@ export default function AdminBroadcastPage() {
                                     <button key={em.id} onClick={() => updateTgButton(i, 'iconEmojiId', em.id)}
                                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-[12px] transition-all hover:bg-white/[0.06]"
                                       style={{
-                                        background: btn.iconEmojiId === em.id ? 'rgba(139,92,246,0.15)' : 'transparent',
-                                        border: `1.5px solid ${btn.iconEmojiId === em.id ? '#8b5cf6' : 'transparent'}`,
+                                        background: btn.iconEmojiId === em.id ? 'rgba(6,182,212,0.15)' : 'transparent',
+                                        border: `1.5px solid ${btn.iconEmojiId === em.id ? 'var(--accent-1)' : 'transparent'}`,
                                         color: 'var(--text-primary)',
                                       }}>
                                       <span className="text-base flex-shrink-0">{em.fallback}</span>
                                       <span className="flex-1 truncate">{em.name}</span>
                                       <code className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>{em.id.slice(-8)}</code>
-                                      {btn.iconEmojiId === em.id && <span style={{ color: '#8b5cf6' }}>✓</span>}
+                                      {btn.iconEmojiId === em.id && <span style={{ color: 'var(--accent-1)' }}>✓</span>}
                                     </button>
                                   ))}
                                 </div>
@@ -1160,7 +1160,7 @@ export default function AdminBroadcastPage() {
                         {tgPollOptions.length < 10 && (
                           <button onClick={addPollOption}
                             className="text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1"
-                            style={{ color: 'var(--accent-1)', background: 'rgba(139,92,246,0.06)' }}>
+                            style={{ color: 'var(--accent-1)', background: 'rgba(6,182,212,0.06)' }}>
                             <Plus className="w-3 h-3" /> Добавить вариант
                           </button>
                         )}
@@ -1188,7 +1188,7 @@ export default function AdminBroadcastPage() {
                         <button key={ef.id} onClick={() => setTgMessageEffectId(ef.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all"
                           style={{
-                            background: tgMessageEffectId === ef.id ? 'rgba(139,92,246,0.12)' : 'var(--glass-bg)',
+                            background: tgMessageEffectId === ef.id ? 'rgba(6,182,212,0.12)' : 'var(--glass-bg)',
                             border: `1px solid ${tgMessageEffectId === ef.id ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                             color: tgMessageEffectId === ef.id ? 'var(--accent-1)' : 'var(--text-secondary)',
                           }}>
@@ -1229,7 +1229,7 @@ export default function AdminBroadcastPage() {
                           className="flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs transition-all flex-1"
                           style={{
                             border: `1.5px solid ${emailTemplate === tmpl.value ? 'var(--accent-1)' : 'var(--glass-border)'}`,
-                            background: emailTemplate === tmpl.value ? 'rgba(139,92,246,0.08)' : 'var(--glass-bg)',
+                            background: emailTemplate === tmpl.value ? 'rgba(6,182,212,0.08)' : 'var(--glass-bg)',
                           }}>
                           <div className="w-8 h-5 rounded" style={{
                             background: tmpl.bg,
@@ -1350,10 +1350,10 @@ export default function AdminBroadcastPage() {
           </div>
 
           {/* Step 4 — Send */}
-          <div className="glass-card gradient-border">
+          <div className="glass-card ">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>4</span>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#a78bfa' }}>4</span>
               Отправка
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -1385,11 +1385,11 @@ export default function AdminBroadcastPage() {
 
       {/* ═══ HISTORY TAB ═══ */}
       {tab === 'history' && (
-        <div className="glass-card gradient-border overflow-hidden">
+        <div className="glass-card  overflow-hidden">
           {loadingHistory ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 rounded-full border-2 border-transparent"
-                   style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+                   style={{ borderTopColor: 'var(--accent-1)', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-12" style={{ color: 'var(--text-tertiary)' }}>
@@ -1516,7 +1516,7 @@ export default function AdminBroadcastPage() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowPreview(false)} />
           <div className="glass-card relative z-10 w-full max-w-lg max-h-[80vh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Предпросмотр</h3>
@@ -1559,7 +1559,7 @@ export default function AdminBroadcastPage() {
                     </div>
                   )}
                   {tgPollEnabled && tgPollQuestion && (
-                    <div className="mt-3 rounded-xl p-3" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid var(--glass-border)' }}>
+                    <div className="mt-3 rounded-xl p-3" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid var(--glass-border)' }}>
                       <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-primary)' }}>{tgPollQuestion}</p>
                       {tgPollOptions.filter(o => o.trim()).map((opt, i) => (
                         <div key={i} className="text-xs py-1.5 px-3 mb-1 rounded-lg" style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)' }}>
@@ -1580,7 +1580,7 @@ export default function AdminBroadcastPage() {
               <div className="mb-4">
                 <p className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
                   <Mail className="w-3.5 h-3.5" /> Email
-                  <span className="ml-auto text-[11px] px-2 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: 'var(--accent-1)' }}>
+                  <span className="ml-auto text-[11px] px-2 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.1)', color: 'var(--accent-1)' }}>
                     {emailTemplate}
                   </span>
                 </p>
@@ -1629,7 +1629,7 @@ export default function AdminBroadcastPage() {
       {/* Schedule Modal */}
       {showScheduler && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowScheduler(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowScheduler(false)} />
           <div className="glass-card relative z-10 w-full max-w-sm animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -1664,7 +1664,7 @@ export default function AdminBroadcastPage() {
       {/* Confirm Send Modal */}
       {confirmSend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setConfirmSend(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setConfirmSend(false)} />
           <div className="glass-card relative z-10 w-full max-w-sm animate-scale-in">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full flex items-center justify-center"

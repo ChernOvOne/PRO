@@ -302,7 +302,7 @@ export default function AdminTransactionsPage() {
           icon={<TrendingUp className="w-4 h-4" />}
           label="Прибыль (стр.)"
           value={fmtMoney(summary.profit)}
-          color={summary.profit >= 0 ? '#8b5cf6' : '#f87171'}
+          color={summary.profit >= 0 ? '#06b6d4' : '#f87171'}
         />
       </div>
 
@@ -328,7 +328,7 @@ export default function AdminTransactionsPage() {
                       onClick={() => { setTypeFilter(v); resetPage() }}
                       className="px-3 py-2 text-xs font-medium transition-colors"
                       style={{
-                        background: typeFilter === v ? 'rgba(139,92,246,0.12)' : 'transparent',
+                        background: typeFilter === v ? 'rgba(6,182,212,0.12)' : 'transparent',
                         color: typeFilter === v ? '#a78bfa' : 'var(--text-secondary)',
                       }}>
                 {v === '' ? 'Все' : v === 'INCOME' ? 'Доходы' : 'Расходы'}
@@ -479,7 +479,7 @@ export default function AdminTransactionsPage() {
                         const src = t.source || 'web'
                         const labels: Record<string, { text: string; color: string; bg: string }> = {
                           web: { text: 'Веб', color: '#3b82f6', bg: '#3b82f622' },
-                          bot: { text: 'Бот', color: '#8b5cf6', bg: '#8b5cf622' },
+                          bot: { text: 'Бот', color: 'var(--accent-1)', bg: 'rgba(6,182,212,0.13)' },
                           webhook: { text: 'Webhook', color: '#f59e0b', bg: '#f59e0b22' },
                           system: { text: 'Система', color: '#6b7280', bg: '#6b728022' },
                         }
@@ -562,7 +562,7 @@ export default function AdminTransactionsPage() {
       {/* ── Create / Edit Modal ─────────────────── */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setModal(null)} />
           <div className="relative w-full max-w-lg rounded-2xl p-6 space-y-5 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             {/* Header */}
@@ -666,7 +666,7 @@ export default function AdminTransactionsPage() {
       {/* ── Delete confirmation ─────────────────── */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteId(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setDeleteId(null)} />
           <div className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
@@ -690,7 +690,7 @@ export default function AdminTransactionsPage() {
       {/* ── Detail slide-over ───────────────────────────────── */}
       {detail && (
         <div className="fixed inset-0 z-40 flex" onClick={() => setDetail(null)}>
-          <div className="flex-1 bg-black/50 backdrop-blur-sm" />
+          <div className="flex-1 bg-black/50 " />
           <div
             className="w-full max-w-[560px] h-full overflow-y-auto p-6 space-y-5 animate-slide-in-right"
             style={{ background: 'var(--surface-1)', borderLeft: '1px solid var(--glass-border)' }}

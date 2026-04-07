@@ -246,7 +246,7 @@ function StepEditor({ step, onUpdate, onDelete }: {
                       { v: 'outline', label: 'Контур', bg: 'transparent', c: 'var(--accent-1)' },
                       { v: 'success', label: 'Зелёная', bg: 'rgba(16,185,129,0.15)', c: '#34d399' },
                       { v: 'danger', label: 'Красная', bg: 'rgba(239,68,68,0.15)', c: '#f87171' },
-                      { v: 'violet', label: 'Фиолет', bg: 'rgba(139,92,246,0.15)', c: '#a78bfa' },
+                      { v: 'violet', label: 'Фиолет', bg: 'rgba(6,182,212,0.15)', c: '#a78bfa' },
                     ].map(s => (
                       <button key={s.v} onClick={() => { btns[bi].style = s.v; setButtonsJson(JSON.stringify(btns)) }}
                               className="px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all"

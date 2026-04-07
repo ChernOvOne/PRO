@@ -91,7 +91,7 @@ export default function AdminWebhookPaymentsPage() {
               onClick={() => setTab(t.id)}
               className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors"
               style={{
-                background: active ? 'rgba(139,92,246,0.12)' : 'transparent',
+                background: active ? 'rgba(6,182,212,0.12)' : 'transparent',
                 color: active ? '#a78bfa' : 'var(--text-secondary)',
               }}
             >
@@ -270,7 +270,7 @@ function ApiKeysTab() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <code className="text-xs px-2 py-1 rounded-md"
-                              style={{ background: 'rgba(139,92,246,0.08)', color: 'var(--text-secondary)' }}>
+                              style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-secondary)' }}>
                           {revealed[k.id] ? k.key : maskKey(k.key)}
                         </code>
                         <button onClick={() => toggleReveal(k.id)}
@@ -338,7 +338,7 @@ function ApiKeysTab() {
       {/* ── Create modal ───────────────────────────── */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowCreate(false)} />
           <div className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <div className="flex items-center justify-between">
@@ -376,7 +376,7 @@ function ApiKeysTab() {
       {/* ── Key created success modal ──────────────── */}
       {createdKey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCreatedKey(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setCreatedKey(null)} />
           <div className="relative w-full max-w-lg rounded-2xl p-6 space-y-5 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <div className="flex items-center gap-3">
@@ -395,7 +395,7 @@ function ApiKeysTab() {
             </div>
 
             <div className="rounded-xl p-4"
-                 style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+                 style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)' }}>
               <code className="text-sm break-all block" style={{ color: 'var(--text-primary)' }}>
                 {createdKey}
               </code>
@@ -420,7 +420,7 @@ function ApiKeysTab() {
       {/* ── Delete confirmation ────────────────────── */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteId(null)} />
+          <div className="absolute inset-0 bg-black/60 " onClick={() => setDeleteId(null)} />
           <div className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-scale-in"
                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
             <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
@@ -540,7 +540,7 @@ function PaymentsTab() {
                       <td className="px-4 py-3">
                         {p.externalId ? (
                           <code className="text-xs px-1.5 py-0.5 rounded"
-                                style={{ background: 'rgba(139,92,246,0.08)', color: 'var(--text-secondary)' }}>
+                                style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-secondary)' }}>
                             {p.externalId}
                           </code>
                         ) : (
@@ -572,7 +572,7 @@ function PaymentsTab() {
                       <td className="px-4 py-3">
                         {p.source ? (
                           <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md"
-                                style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa' }}>
+                                style={{ background: 'rgba(6,182,212,0.08)', color: '#a78bfa' }}>
                             <Hash className="w-3 h-3" />
                             {p.source}
                           </span>
