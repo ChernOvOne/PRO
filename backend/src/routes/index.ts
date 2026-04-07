@@ -40,6 +40,7 @@ import { adminWebhookKeyRoutes }   from './admin-webhook-keys'
 import { buhWebhookPaymentRoutes } from './buh-webhook-payment'
 import { buhUtmPublicRoutes }      from './buh-utm-public'
 import { adminSetupWizardRoutes }  from './admin-setup-wizard'
+import { adminSettingsRoutes }     from './admin-settings'
 import { adminFunnelNodeRoutes }   from './admin-funnel-nodes'
 import { remnawaveWebhookRoutes }  from './webhook-remnawave'
 
@@ -102,6 +103,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminChannelRoutes,       { prefix: '/api/admin/channels'       })
   await app.register(adminWebhookKeyRoutes,    { prefix: '/api/admin/webhook-keys'   })
   await app.register(adminSetupWizardRoutes,   { prefix: '/api/admin/setup-wizard'    })
+  await app.register(adminSettingsRoutes,     { prefix: '/api/admin/settings'        })
   await app.register(adminReportsExportRoutes, { prefix: '/api/admin/reports'         })
   await app.register(adminFunnelNodeRoutes,   { prefix: '/api/admin/funnel-builder' })
   await app.register(uploadRoutes,             { prefix: '/api/admin'                })

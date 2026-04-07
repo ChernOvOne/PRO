@@ -513,27 +513,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return { ok: true }
   })
 
-  // ─────────────────────────────────────────────────────────
-  //  SETTINGS
-  // ─────────────────────────────────────────────────────────
-  app.get('/settings', admin, async () => {
-    const settings = await prisma.setting.findMany()
-    return Object.fromEntries(settings.map(s => [s.key, s.value]))
-  })
-
-  app.put('/settings', admin, async (req) => {
-    const updates = req.body as Record<string, string>
-    await Promise.all(
-      Object.entries(updates).map(([key, value]) =>
-        prisma.setting.upsert({
-          where:  { key },
-          create: { key, value },
-          update: { value },
-        }),
-      ),
-    )
-    return { ok: true }
-  })
+  // SETTINGS — moved to admin-settings.ts (registered at /api/admin/settings)
 
   // ─────────────────────────────────────────────────────────
   //  IMPORT STATUS

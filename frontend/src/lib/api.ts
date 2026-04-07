@@ -285,6 +285,13 @@ export const adminApi = {
   settings:       () => apiFetch<Record<string, string>>('/admin/settings'),
   updateSettings: (data: Record<string, string>) =>
     apiFetch<{ ok: boolean }>('/admin/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getSettings:    () => apiFetch<Record<string, string>>('/admin/settings'),
+  saveSettings:   (settings: { key: string; value: string }[]) =>
+    apiFetch<{ ok: boolean }>('/admin/settings', { method: 'PUT', body: JSON.stringify({ settings }) }),
+  testEmail:      () => apiFetch<any>('/admin/settings/test-email', { method: 'POST' }),
+  testRemnawave:  () => apiFetch<any>('/admin/settings/test-remnawave', { method: 'POST' }),
+  restartServices: () => apiFetch<{ ok: boolean }>('/admin/settings/restart', { method: 'POST' }),
+  envStatus:      () => apiFetch<Record<string, string>>('/admin/settings/env-status'),
 
   // News
   news:         (page = 1) => apiFetch<{ news: News[]; total: number }>(`/admin/news?page=${page}`),
