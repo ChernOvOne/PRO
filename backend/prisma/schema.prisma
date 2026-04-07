@@ -548,17 +548,37 @@ model Broadcast {
 // ── Auto-Funnels ─────────────────────────────────────────────
 model Funnel {
   id            String   @id @default(uuid())
-  triggerId     String   @unique @map("trigger_id")
+  triggerId     String?  @map("trigger_id")
   name          String
   description   String?
   enabled       Boolean  @default(false)
   isCustom      Boolean  @default(false) @map("is_custom")
   sortOrder     Int      @default(0) @map("sort_order")
+  category      String?  @map("category")
+
+  stopOnPayment   Boolean @default(false) @map("stop_on_payment")
+  stopOnConnect   Boolean @default(false) @map("stop_on_connect")
+  stopOnUnsub     Boolean @default(false) @map("stop_on_unsub")
+  stopOnTag       String? @map("stop_on_tag")
+  stopOnActiveSub Boolean @default(false) @map("stop_on_active_sub")
+  stopOnBotMessage Boolean @default(false) @map("stop_on_bot_message")
+  sandboxMode     Boolean @default(false) @map("sandbox_mode")
+  sandboxTag      String? @map("sandbox_tag")
+  maxMessages     Int?    @map("max_messages")
+  timeoutDays     Int?    @map("timeout_days")
+  workHoursStart  String? @map("work_hours_start")
+  workHoursEnd    String? @map("work_hours_end")
+  timezone        String? @map("timezone")
+  priority        Int     @default(0) @map("priority")
+  quietHoursStart String? @map("quiet_hours_start")
+  quietHoursEnd   String? @map("quiet_hours_end")
+  antiSpamHours   Int?    @map("anti_spam_hours")
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   steps         FunnelStep[]
+  nodes         FunnelNode[]
   logs          FunnelLog[]
 
   @@map("funnels")
@@ -612,18 +632,100 @@ model FunnelStep {
   @@map("funnel_steps")
 }
 
+model FunnelNode {
+  id            String   @id @default(uuid())
+  funnelId      String   @map("funnel_id")
+  funnel        Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  nodeType      String   @map("node_type")
+  name          String   @default("")
+  posX          Float    @default(0) @map("pos_x")
+  posY          Float    @default(0) @map("pos_y")
+  nextNodeId    String?  @map("next_node_id")
+  trueNodeId    String?  @map("true_node_id")
+  falseNodeId   String?  @map("false_node_id")
+
+  triggerType   String?  @map("trigger_type")
+  triggerParam  Int?     @map("trigger_param")
+
+  delayType     String   @default("immediate") @map("delay_type")
+  delayValue    Int      @default(0) @map("delay_value")
+  delayTime     String?  @map("delay_time")
+  delayWeekdays Json?    @map("delay_weekdays")
+
+  conditionType  String?  @map("condition_type")
+  conditionValue String?  @map("condition_value")
+  conditionLogic String?  @map("condition_logic")
+  conditions     Json?    @map("conditions")
+
+  channelTg     Boolean  @default(false) @map("channel_tg")
+  channelEmail  Boolean  @default(false) @map("channel_email")
+  channelLk     Boolean  @default(false) @map("channel_lk")
+  channelPush   Boolean  @default(false) @map("channel_push")
+
+  tgText        String?  @map("tg_text")   @db.Text
+  tgButtons     Json?    @map("tg_buttons")
+  tgParseMode   String   @default("Markdown") @map("tg_parse_mode")
+  tgMediaUrl    String?  @map("tg_media_url")
+  tgMediaType   String?  @map("tg_media_type")
+  tgPin         Boolean  @default(false) @map("tg_pin")
+  tgDeletePrev  Boolean  @default(false) @map("tg_delete_prev")
+
+  emailSubject  String?  @map("email_subject")
+  emailHtml     String?  @map("email_html") @db.Text
+  emailBtnText  String?  @map("email_btn_text")
+  emailBtnUrl   String?  @map("email_btn_url")
+  emailTemplate String   @default("dark") @map("email_template")
+
+  lkTitle       String?  @map("lk_title")
+  lkMessage     String?  @map("lk_message") @db.Text
+  lkType        String   @default("INFO") @map("lk_type")
+
+  actionType    String   @default("none") @map("action_type")
+  actionValue   String?  @map("action_value_str")
+  actionPromoExpiry Int  @default(7) @map("action_promo_expiry")
+
+  splitPercent  Int?     @map("split_percent")
+  waitEvent     String?  @map("wait_event")
+  waitTimeout   Int?     @map("wait_timeout")
+
+  gotoTargetType String? @map("goto_target_type")
+  gotoTargetId  String?  @map("goto_target_id")
+
+  httpUrl       String?  @map("http_url")
+  httpMethod    String?  @map("http_method")
+  httpHeaders   Json?    @map("http_headers")
+  httpBody      String?  @map("http_body") @db.Text
+
+  notifyChannel String?  @map("notify_channel")
+  notifyText    String?  @map("notify_text") @db.Text
+
+  repeatEnabled Boolean  @default(false) @map("repeat_enabled")
+  repeatInterval Int?    @map("repeat_interval")
+  repeatMax     Int?     @map("repeat_max")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([funnelId])
+  @@index([nodeType])
+  @@map("funnel_nodes")
+}
+
 model FunnelLog {
   id        String   @id @default(uuid())
   funnelId  String   @map("funnel_id")
   funnel    Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
   userId    String   @map("user_id")
   stepOrder Int      @default(0) @map("step_order")
+  nodeId    String?  @map("node_id")
   channel   String
   status    String   @default("sent")
   error     String?
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([funnelId, userId, stepOrder])
+  @@index([funnelId, userId, nodeId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("funnel_logs")
 }

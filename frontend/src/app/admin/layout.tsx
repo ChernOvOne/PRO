@@ -38,7 +38,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/partners-investors', icon: Handshake,     label: 'Партнёры',      roles: ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER'] },
       { href: '/admin/inkas',            icon: Wallet,          label: 'Инкассация',    roles: ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER'] },
       { href: '/admin/reports-export',   icon: FileText,        label: 'Отчёты',        roles: ['ADMIN', 'EDITOR'] },
-      { href: '/admin/compare',          icon: BarChart2,       label: 'Сравнение',     roles: ['ADMIN', 'EDITOR'] },
     ],
   },
   {
@@ -63,7 +62,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/news',             icon: Newspaper,       label: 'Новости',       roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/broadcast',        icon: MessageCircle,   label: 'Рассылки',      roles: ['ADMIN', 'EDITOR'] },
-      { href: '/admin/communications',   icon: MessageCircle,   label: 'Воронки',       roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/communications/funnel-builder', icon: MessageCircle, label: 'Воронки', roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/promos',           icon: Tag,             label: 'Промокоды',     roles: ['ADMIN', 'EDITOR'] },
     ],
   },

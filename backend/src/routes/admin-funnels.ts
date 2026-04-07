@@ -50,7 +50,7 @@ export async function adminFunnelRoutes(app: FastifyInstance) {
       sortOrder: z.number().default(1100),
     }).parse(req.body)
 
-    const exists = await prisma.funnel.findUnique({ where: { triggerId: body.triggerId } })
+    const exists = await prisma.funnel.findFirst({ where: { triggerId: body.triggerId } })
     if (exists) return reply.status(409).send({ error: 'Воронка с этим триггером уже существует' })
 
     const funnel = await prisma.funnel.create({
@@ -216,7 +216,7 @@ export async function adminFunnelRoutes(app: FastifyInstance) {
     let sortOrder = 100
     for (const group of TRIGGER_OPTIONS) {
       for (const t of group.triggers) {
-        const exists = await prisma.funnel.findUnique({ where: { triggerId: t.id } })
+        const exists = await prisma.funnel.findFirst({ where: { triggerId: t.id } })
         if (exists) { sortOrder += 10; continue }
 
         const funnel = await prisma.funnel.create({

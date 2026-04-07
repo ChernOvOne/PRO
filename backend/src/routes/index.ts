@@ -40,6 +40,8 @@ import { adminWebhookKeyRoutes }   from './admin-webhook-keys'
 import { buhWebhookPaymentRoutes } from './buh-webhook-payment'
 import { buhUtmPublicRoutes }      from './buh-utm-public'
 import { adminSetupWizardRoutes }  from './admin-setup-wizard'
+import { adminFunnelNodeRoutes }   from './admin-funnel-nodes'
+import { remnawaveWebhookRoutes }  from './webhook-remnawave'
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -101,11 +103,15 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminWebhookKeyRoutes,    { prefix: '/api/admin/webhook-keys'   })
   await app.register(adminSetupWizardRoutes,   { prefix: '/api/admin/setup-wizard'    })
   await app.register(adminReportsExportRoutes, { prefix: '/api/admin/reports'         })
+  await app.register(adminFunnelNodeRoutes,   { prefix: '/api/admin/funnel-builder' })
   await app.register(uploadRoutes,             { prefix: '/api/admin'                })
 
   // Buhgalteria public routes (no auth)
   await app.register(buhUtmPublicRoutes,       { prefix: '/'                         })
   await app.register(buhWebhookPaymentRoutes,  { prefix: '/api/webhooks/payment-ingest' })
+
+  // Remnawave webhooks (public, HMAC verified)
+  await app.register(remnawaveWebhookRoutes,   { prefix: '/api/webhooks'             })
 
   // Serve uploaded files
   app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })

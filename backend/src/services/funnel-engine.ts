@@ -60,6 +60,24 @@ export const VARIABLE_DOCS = [
   { var: '{appUrl}', desc: 'URL вашего сервиса', group: 'Система' },
   { var: '{supportUrl}', desc: 'Ссылка на поддержку', group: 'Система' },
   { var: '{channelUrl}', desc: 'Ссылка на Telegram-канал', group: 'Система' },
+
+  // Расширенные
+  { var: '{daysSinceRegistration}', desc: 'Дней с момента регистрации', group: 'Пользователь' },
+  { var: '{hoursLeft}', desc: 'Часов до окончания подписки', group: 'Подписка' },
+  { var: '{tariffPrice}', desc: 'Цена текущего тарифа', group: 'Финансы' },
+  { var: '{subLink}', desc: 'Ссылка подключения VPN', group: 'Подписка' },
+  { var: '{isTrialUsed}', desc: 'Использовал ли триал', group: 'Подписка' },
+  { var: '{trafficLeft}', desc: 'Осталось трафика (ГБ)', group: 'Подписка' },
+  { var: '{totalPaid}', desc: 'Сумма всех оплат (₽)', group: 'Финансы' },
+  { var: '{lastPaymentDate}', desc: 'Дата последней оплаты', group: 'Финансы' },
+  { var: '{lastPaymentAmount}', desc: 'Сумма последней оплаты', group: 'Финансы' },
+  { var: '{paymentUrl}', desc: 'Ссылка на страницу оплаты', group: 'Финансы' },
+  { var: '{appName}', desc: 'Название сервиса', group: 'Система' },
+  { var: '{currentDate}', desc: 'Сегодняшняя дата', group: 'Система' },
+  { var: '{currentTime}', desc: 'Текущее время', group: 'Система' },
+  { var: '{customerSource}', desc: 'Откуда пришёл (UTM)', group: 'Пользователь' },
+  { var: '{campaignName}', desc: 'Рекламная кампания', group: 'Пользователь' },
+  { var: '{promoDiscount}', desc: 'Размер скидки промокода (%)', group: 'Промо' },
 ]
 
 // ── Available triggers for dropdown ─────────────────────────
@@ -123,13 +141,13 @@ export const TRIGGER_OPTIONS = [
 ]
 
 // ── Helpers ─────────────────────────────────────────────────
-function subVars(text: string, vars: Record<string, string>): string {
+export function subVars(text: string, vars: Record<string, string>): string {
   let r = text
   for (const [k, v] of Object.entries(vars)) r = r.replace(new RegExp(`\\{${k}\\}`, 'g'), v || '')
   return r.replace(/\{appUrl\}/g, config.appUrl)
 }
 
-async function buildVars(userId: string, extra: Record<string, string> = {}): Promise<Record<string, string>> {
+export async function buildVars(userId: string, extra: Record<string, string> = {}): Promise<Record<string, string>> {
   const u = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -137,6 +155,7 @@ async function buildVars(userId: string, extra: Record<string, string> = {}): Pr
       referralCode: true, balance: true, bonusDays: true,
       subStatus: true, subExpireAt: true, remnawaveUuid: true,
       createdAt: true, lastLoginAt: true,
+      totalPaid: true, lastPaymentAt: true, subLink: true, customerSource: true,
       _count: { select: { referrals: true } },
     },
   })
@@ -170,6 +189,9 @@ async function buildVars(userId: string, extra: Record<string, string> = {}): Pr
   const supportUrl = await prisma.setting.findUnique({ where: { key: 'support_url' } }).then(s => s?.value || '').catch(() => '')
   const channelUrl = await prisma.setting.findUnique({ where: { key: 'channel_url' } }).then(s => s?.value || '').catch(() => '')
 
+  const daysSinceReg = Math.floor((Date.now() - new Date(u.createdAt).getTime()) / 86400000)
+  const hoursLeft = Math.max(0, Math.floor((new Date(u.subExpireAt || 0).getTime() - Date.now()) / 3600000))
+
   return {
     name: u.telegramName || u.email?.split('@')[0] || 'Пользователь',
     email: u.email || '',
@@ -193,6 +215,23 @@ async function buildVars(userId: string, extra: Record<string, string> = {}): Pr
     appUrl: config.appUrl,
     supportUrl, channelUrl,
     generatedPromo: '', topupAmount: '',
+    // Расширенные переменные
+    daysSinceRegistration: String(daysSinceReg),
+    hoursLeft: String(hoursLeft),
+    totalPaid: String(Number(u.totalPaid || 0)),
+    lastPaymentDate: u.lastPaymentAt ? new Date(u.lastPaymentAt).toLocaleDateString('ru-RU') : '—',
+    lastPaymentAmount: '',
+    subLink: u.subLink || '',
+    currentDate: new Date().toLocaleDateString('ru-RU'),
+    currentTime: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+    customerSource: u.customerSource || '',
+    paymentUrl: config.appUrl + '/payment',
+    appName: 'HIDEYOU',
+    campaignName: '',
+    promoDiscount: '',
+    tariffPrice: '',
+    isTrialUsed: '',
+    trafficLeft: '',
     ...extra,
   }
 }
@@ -355,20 +394,86 @@ async function sendStep(step: any, funnelId: string, userId: string, extraVars: 
 
 // ── EVENT TRIGGER ───────────────────────────────────────────
 export async function triggerEvent(triggerId: string, userId: string, extraVars: Record<string, string> = {}) {
-  const funnel = await prisma.funnel.findUnique({
+  // === NEW: Check FunnelNode system first ===
+  const triggerNodes = await prisma.funnelNode.findMany({
+    where: { nodeType: 'trigger', triggerType: triggerId },
+    include: { funnel: true },
+  })
+
+  for (const triggerNode of triggerNodes) {
+    if (!triggerNode.funnel.enabled) continue
+
+    // Check stop conditions
+    const funnel = triggerNode.funnel as any
+    if (funnel.stopOnPayment || funnel.stopOnActiveSub || funnel.stopOnConnect || funnel.stopOnBotMessage) {
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { paymentsCount: true, subStatus: true, remnawaveUuid: true } })
+      if (funnel.stopOnPayment && user && user.paymentsCount > 0) continue
+      if (funnel.stopOnActiveSub && user?.subStatus === 'ACTIVE') continue
+    }
+
+    // Check sandbox mode
+    if (funnel.sandboxMode) {
+      const tag = funnel.sandboxTag || 'test_funnel'
+      const hasTag = await prisma.userTag.findFirst({ where: { userId, tag } })
+      if (!hasTag) continue
+    }
+
+    // Send the trigger node itself (it has message fields)
+    await sendNode(triggerNode, triggerNode.funnel.id, userId, extraVars)
+
+    // Follow the chain: nextNodeId → nextNodeId → ...
+    let nextId = triggerNode.nextNodeId
+    while (nextId) {
+      const nextNode = await prisma.funnelNode.findUnique({ where: { id: nextId } })
+      if (!nextNode) break
+      if (nextNode.nodeType === 'stop') break
+
+      // Check if already sent
+      const alreadySent = await prisma.funnelLog.findFirst({
+        where: { funnelId: triggerNode.funnelId, userId, nodeId: nextNode.id, status: 'sent' },
+      })
+      if (alreadySent) { nextId = nextNode.nextNodeId; continue }
+
+      // Check condition
+      if (nextNode.conditionType && nextNode.conditionType !== 'none') {
+        const passed = await checkCondition(nextNode.conditionType, userId)
+        if (!passed) { nextId = nextNode.nextNodeId; continue }
+      }
+
+      // Calculate delay
+      let delayMs = 0
+      switch (nextNode.delayType) {
+        case 'minutes': delayMs = nextNode.delayValue * 60_000; break
+        case 'hours':   delayMs = nextNode.delayValue * 3600_000; break
+        case 'days':    delayMs = nextNode.delayValue * 86400_000; break
+      }
+
+      if (delayMs === 0) {
+        await sendNode(nextNode, triggerNode.funnelId, userId, extraVars)
+        nextId = nextNode.nextNodeId
+      } else if (delayMs <= 24 * 3600_000) {
+        setTimeout(() => sendNode(nextNode, triggerNode.funnelId, userId, extraVars).catch(() => {}), delayMs)
+        logger.info(`Funnel node ${nextNode.id} scheduled for ${userId} in ${delayMs / 60000}min`)
+        break
+      } else {
+        break // Cron will handle long delays
+      }
+    }
+  }
+
+  // === LEGACY: Old FunnelStep system (backward compat) ===
+  const funnel = await prisma.funnel.findFirst({
     where: { triggerId },
     include: { steps: { orderBy: { stepOrder: 'asc' } } },
   })
   if (!funnel || !funnel.enabled || funnel.steps.length === 0) return
 
   for (const step of funnel.steps) {
-    // Check if this step was already sent
     const sent = await prisma.funnelLog.findFirst({
       where: { funnelId: funnel.id, userId, stepOrder: step.stepOrder, status: 'sent' },
     })
     if (sent) continue
 
-    // Calculate delay
     let delayMs = 0
     switch (step.delayType) {
       case 'minutes': delayMs = step.delayValue * 60_000; break
@@ -379,13 +484,72 @@ export async function triggerEvent(triggerId: string, userId: string, extraVars:
     if (delayMs === 0) {
       await sendStep(step, funnel.id, userId, extraVars)
     } else if (delayMs <= 24 * 3600_000) {
-      // Short delay: setTimeout
       setTimeout(() => sendStep(step, funnel.id, userId, extraVars).catch(() => {}), delayMs)
       logger.info(`Funnel ${triggerId} step ${step.stepOrder} scheduled for ${userId} in ${delayMs / 60000}min`)
-      break // Don't schedule further steps — cron will pick them up
-    } else {
-      // Long delay: cron will handle
       break
+    } else {
+      break
+    }
+  }
+}
+
+// ── SEND NODE (new system) ─────────────────────────────────
+async function sendNode(node: any, funnelId: string, userId: string, extraVars: Record<string, string> = {}) {
+  const vars = await buildVars(userId, extraVars)
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { telegramId: true, email: true },
+  })
+  if (!user) return
+
+  // Execute action if set
+  if (node.actionType && node.actionType !== 'none') {
+    await executeAction({ actionType: node.actionType, actionValue: Number(node.actionValue || 0), actionPromoExpiry: node.actionPromoExpiry || 7 } as any, userId, vars)
+  }
+
+  // TG
+  if (node.channelTg && user.telegramId && node.tgText) {
+    try {
+      const text = subVars(node.tgText, vars)
+      const buttons = (node.tgButtons as any[] || []).filter((b: any) => b && !b._type)
+      const kb = buttons.length > 0 ? buildKb(buttons) : undefined
+      await bot.api.sendMessage(user.telegramId, text, {
+        parse_mode: (node.tgParseMode as any) || 'Markdown',
+        ...(kb && { reply_markup: kb }),
+      })
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'sent' } })
+    } catch (e: any) {
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'failed', error: e.message } })
+    }
+  }
+
+  // Email
+  if (node.channelEmail && user.email && node.emailSubject) {
+    try {
+      await emailService.sendBroadcastEmail({
+        to: user.email, subject: subVars(node.emailSubject, vars),
+        html: subVars(node.emailHtml || node.tgText || '', vars),
+        btnText: node.emailBtnText ?? undefined,
+        btnUrl: node.emailBtnUrl ? subVars(node.emailBtnUrl, vars) : undefined,
+        template: node.emailTemplate || 'dark',
+      })
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'email', status: 'sent' } })
+    } catch (e: any) {
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'email', status: 'failed', error: e.message } })
+    }
+  }
+
+  // LK
+  if (node.channelLk && node.lkTitle) {
+    try {
+      await inAppNotifications.sendToUser({
+        userId, title: subVars(node.lkTitle, vars),
+        message: subVars(node.lkMessage || '', vars),
+        type: (node.lkType || 'INFO') as any,
+      })
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'lk', status: 'sent' } })
+    } catch (e: any) {
+      await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'lk', status: 'failed', error: e.message } })
     }
   }
 }
@@ -413,7 +577,7 @@ export async function runCronFunnels() {
 }
 
 async function processConditionTrigger(triggerId: string, where: any) {
-  const funnel = await prisma.funnel.findUnique({
+  const funnel = await prisma.funnel.findFirst({
     where: { triggerId },
     include: { steps: { orderBy: { stepOrder: 'asc' }, take: 1 } },
   })

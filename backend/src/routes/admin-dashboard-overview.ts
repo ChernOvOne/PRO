@@ -344,7 +344,7 @@ async function collectEvents(limit: number) {
       take: limit,
       select: {
         id: true, amount: true, confirmedAt: true,
-        user: { select: { email: true, telegramName: true } },
+        user: { select: { id: true, email: true, telegramName: true } },
       },
     }),
     prisma.user.findMany({

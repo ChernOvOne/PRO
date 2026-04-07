@@ -466,6 +466,24 @@ export const adminApi = {
   deleteBuhWebhookKey: (id: string) =>
     apiFetch<void>(`/admin/webhook-keys/${id}`, { method: 'DELETE' }),
 
+  // ── Funnel Builder (visual node constructor) ────────────
+  funnelGroups: () => apiFetch<any[]>('/admin/funnel-builder/groups'),
+  funnelGroup: (id: string) => apiFetch<any>(`/admin/funnel-builder/groups/${id}`),
+  createFunnelGroup: (data: any) => apiFetch<any>('/admin/funnel-builder/groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateFunnelGroup: (id: string, data: any) => apiFetch<any>(`/admin/funnel-builder/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteFunnelGroup: (id: string) => apiFetch<void>(`/admin/funnel-builder/groups/${id}`, { method: 'DELETE' }),
+  toggleFunnelGroup: (id: string) => apiFetch<any>(`/admin/funnel-builder/groups/${id}/toggle`, { method: 'POST' }),
+  duplicateFunnelGroup: (id: string) => apiFetch<any>(`/admin/funnel-builder/groups/${id}/duplicate`, { method: 'POST' }),
+  createFunnelNode: (groupId: string, data: any) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/nodes`, { method: 'POST', body: JSON.stringify(data) }),
+  updateFunnelNode: (nodeId: string, data: any) => apiFetch<any>(`/admin/funnel-builder/nodes/${nodeId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteFunnelNode: (nodeId: string) => apiFetch<void>(`/admin/funnel-builder/nodes/${nodeId}`, { method: 'DELETE' }),
+  updateNodePosition: (nodeId: string, posX: number, posY: number) => apiFetch<any>(`/admin/funnel-builder/nodes/${nodeId}/position`, { method: 'PUT', body: JSON.stringify({ posX, posY }) }),
+  connectNodes: (nodeId: string, data: any) => apiFetch<any>(`/admin/funnel-builder/nodes/${nodeId}/connect`, { method: 'PUT', body: JSON.stringify(data) }),
+  funnelNodeTypes: () => apiFetch<any[]>('/admin/funnel-builder/node-types'),
+  funnelVariables: () => apiFetch<any>('/admin/funnel-builder/variables'),
+  funnelBotBlocks: () => apiFetch<any>('/admin/funnel-builder/bot-blocks'),
+  funnelLogs: (groupId: string, skip = 0) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/logs?skip=${skip}`),
+
   // ── Bot Constructor ─────────────────────────────────────
   botBlockGroups: () => apiFetch<any[]>('/admin/bot-blocks/groups'),
   botBlocks: (params: { groupId?: string; type?: string; search?: string } = {}) => {
