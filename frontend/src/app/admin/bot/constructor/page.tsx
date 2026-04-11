@@ -1154,7 +1154,7 @@ export default function BotConstructorPage() {
         <div className="flex-1 relative overflow-hidden" style={{ background: 'var(--surface-1)' }}>
           {/* Canvas Toolbar */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded-xl"
-               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', // blur removed }}>
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
             {/* Zoom */}
             <button onClick={() => setZoom(z => Math.max(z - 0.15, 0.2))} className="p-1.5 rounded-lg hover:bg-white/10">
               <Minus className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />

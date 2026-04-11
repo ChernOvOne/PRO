@@ -701,9 +701,7 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
         })
         logger.info('Replace OK: edited message ' + prevMsgId)
         setLastMessageId(chatId, prevMsgId).catch(() => {})
-        prisma.botMessage.create({
-          data: { chatId, userId, direction: 'OUT', text: finalText.slice(0, 4000) },
-        }).catch(() => {})
+        // Note: outgoing message is logged by API transformer in bot/index.ts
         if (block.nextBlockId) {
           await executeBlock(block.nextBlockId, ctx, userId, chatId)
         }
@@ -791,18 +789,7 @@ async function handleMessage(block: any, ctx: Context | null, userId: string, ch
     } catch { /* ignore */ }
   }
 
-  // Log outgoing message to BotMessage table
-  if (sentMessage?.message_id) {
-    prisma.botMessage.create({
-      data: {
-        chatId,
-        userId,
-        direction: 'OUT',
-        text: finalText?.slice(0, 4000) || block.name,
-        buttonsJson: block.buttons?.length ? block.buttons.map((b: any) => ({ label: b.label, type: b.type })) : undefined,
-      },
-    }).catch(() => {})
-  }
+  // Note: outgoing message is logged by API transformer in bot/index.ts — no need to log here
 
   // Execute next block if there's one
   if (block.nextBlockId) {
@@ -981,12 +968,14 @@ async function handleReaction(block: any, ctx: Context | null, userId: string, c
     return
   }
 
-  try {
-    await bot.api.setMessageReaction(chatId, ctx.message.message_id, [
-      { type: 'emoji', emoji: block.reactionEmoji },
-    ])
-  } catch (e) {
-    logger.debug(`Reaction failed for block ${block.id}`, e)
+  if (ctx?.message?.message_id) {
+    try {
+      await bot.api.setMessageReaction(chatId, ctx.message.message_id, [
+        { type: 'emoji', emoji: block.reactionEmoji },
+      ])
+    } catch (e) {
+      logger.debug(`Reaction failed for block ${block.id}`, e)
+    }
   }
 
   if (block.nextBlockId) {

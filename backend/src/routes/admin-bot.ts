@@ -93,15 +93,18 @@ export async function adminBotRoutes(app: FastifyInstance) {
     const { page, limit } = qs
     const offset = (page - 1) * limit
 
-    const [messages, total] = await Promise.all([
-      prisma.botMessage.findMany({
-        where:   { userId },
-        orderBy: { createdAt: 'asc' },
-        skip:    offset,
-        take:    limit,
-      }),
-      prisma.botMessage.count({ where: { userId } }),
-    ])
+    const total = await prisma.botMessage.count({ where: { userId } })
+
+    // Get latest messages: skip from the end, sort asc for display
+    const skipFromEnd = Math.max(0, total - page * limit)
+    const takeCount = page === 1 ? Math.min(limit, total) : limit
+
+    const messages = await prisma.botMessage.findMany({
+      where:   { userId },
+      orderBy: { createdAt: 'asc' },
+      skip:    Math.max(0, skipFromEnd),
+      take:    takeCount,
+    })
 
     return { messages, total, page, limit }
   })
@@ -126,16 +129,45 @@ export async function adminBotRoutes(app: FastifyInstance) {
       return reply.status(502).send({ error: 'Failed to send message via Telegram' })
     }
 
-    await prisma.botMessage.create({
-      data: {
-        chatId:    user.telegramId,
-        userId,
-        direction: 'OUT',
-        text,
-      },
-    })
-
+    // Note: outgoing message is logged by API transformer in bot/index.ts
     return { ok: true }
+  })
+
+  // ── POST /chats/:userId/send-block — send bot block to user ─────
+  app.post('/chats/:userId/send-block', admin, async (req, reply) => {
+    const { userId } = z.object({ userId: z.string() }).parse(req.params)
+    const { blockId } = z.object({ blockId: z.string() }).parse(req.body)
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { telegramId: true },
+    })
+    if (!user?.telegramId) {
+      return reply.status(404).send({ error: 'User not found' })
+    }
+
+    try {
+      const { executeBlock } = await import('../bot/engine')
+      await executeBlock(blockId, null, userId, user.telegramId)
+      return { ok: true }
+    } catch (err: any) {
+      logger.error(`Failed to send block ${blockId} to user ${userId}: ${err.message}`)
+      return reply.status(500).send({ error: 'Failed to send block' })
+    }
+  })
+
+  // ── GET /blocks-for-picker — groups with blocks for picker ─────
+  app.get('/blocks-for-picker', admin, async () => {
+    const groups = await prisma.botBlockGroup.findMany({
+      include: {
+        blocks: {
+          select: { id: true, name: true, type: true, text: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    })
+    return groups
   })
 
   // ── GET /settings — bot settings ────────────────────────────────

@@ -18,6 +18,7 @@ model User {
   emailVerified Boolean   @default(false) @map("email_verified")
   telegramId    String?   @unique @map("telegram_id")
   telegramName  String?   @map("telegram_name")
+  leadtehId     String?   @unique @map("leadteh_id")
   passwordHash  String?   @map("password_hash")
 
   remnawaveUuid String?   @unique @map("remnawave_uuid")
@@ -162,6 +163,8 @@ model Payment {
   provider        PaymentProvider
   providerOrderId String?       @map("provider_order_id")
   amount          Float
+  commission         Decimal? @default(0) @db.Decimal(10, 2)
+  externalPaymentId  String?  @unique @map("external_payment_id")
   currency        String        @default("RUB")
   status          PaymentStatus @default(PENDING)
   purpose         PaymentPurpose @default(SUBSCRIPTION)

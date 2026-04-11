@@ -330,6 +330,30 @@ export const adminApi = {
   importStatus: () => apiFetch<{ total: number; matched: number; pending: number; unmatched: number }>('/admin/import'),
   exportUsers:  (format = 'json') => apiFetch<{ users: any[]; total: number }>(`/admin/export/users?format=${format}`),
 
+  // Universal import (new)
+  uploadImport: async (file: File): Promise<any> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/admin/import/upload', {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    })
+    if (!res.ok) throw new Error('Upload failed')
+    return res.json()
+  },
+  startUserImport: (fileId: string, mapping: any) =>
+    apiFetch<{ jobId: string }>('/admin/import/users/import', {
+      method: 'POST',
+      body: JSON.stringify({ fileId, mapping }),
+    }),
+  startPaymentImport: (fileId: string, mapping: any) =>
+    apiFetch<{ jobId: string }>('/admin/import/payments/import', {
+      method: 'POST',
+      body: JSON.stringify({ fileId, mapping }),
+    }),
+  importStats: () => apiFetch<{ usersWithLeadtehId: number; paymentsWithCommission: number; totalCommission: number }>('/admin/import/stats'),
+
   squads: () => apiFetch<{ squads: InternalSquad[]; total: number }>('/admin/squads'),
 
   // Promos

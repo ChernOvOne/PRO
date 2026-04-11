@@ -33,6 +33,19 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [extendModal, setExtendModal] = useState<User|null>(null)
   const [extendDays, setExtendDays]   = useState(30)
+  const [campaignsByUtm, setCampaignsByUtm] = useState<Record<string, { id: string; channelName: string }>>({})
+
+  // Load ad campaigns once for source column mapping
+  useEffect(() => {
+    fetch('/api/admin/ads', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((ads: any[]) => {
+        const map: Record<string, any> = {}
+        ads.forEach(a => { if (a.utmCode) map[a.utmCode] = a })
+        setCampaignsByUtm(map)
+      })
+      .catch(() => {})
+  }, [])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -154,8 +167,23 @@ export default function AdminUsers() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {u.customerSource || '—'}
+                  <td className="px-4 py-3 text-xs" onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const src = u.customerSource
+                      if (!src) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      const camp = campaignsByUtm[src]
+                      if (camp) {
+                        return (
+                          <Link href="/admin/marketing"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md hover:underline"
+                            style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}
+                            title={`UTM: ${src}`}>
+                            📣 {camp.channelName}
+                          </Link>
+                        )
+                      }
+                      return <span className="font-mono" style={{ color: 'var(--text-tertiary)' }}>{src}</span>
+                    })()}
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <span className={STATUS_COLORS[u.subStatus] || 'badge-gray'}>

@@ -978,7 +978,7 @@ export default function FunnelBuilderPage() {
         <div className="flex-1 relative overflow-hidden" style={{ background: 'var(--surface-1)' }}>
           {/* Canvas Toolbar */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded-xl"
-               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', // blur removed }}>
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
             {/* Add node menu */}
             <div className="relative">
               <button onClick={() => setShowAddNodeMenu(v => !v)}

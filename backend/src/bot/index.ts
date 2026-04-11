@@ -123,13 +123,19 @@ bot.use(async (ctx, next) => {
   const telegramId = String(ctx.from?.id ?? '')
 
   // Log incoming
-  if (ctx.message?.text) {
-    const user = await ensureUser(telegramId)
-    await logIncoming(chatId, user?.id ?? null, ctx.message.text)
-  } else if (ctx.callbackQuery?.data) {
-    const user = await ensureUser(telegramId)
-    const label = callbackToLabel(ctx.callbackQuery.data)
-    await logIncoming(chatId, user?.id ?? null, label, ctx.callbackQuery.data)
+  try {
+    if (ctx.message?.text) {
+      const user = await ensureUser(telegramId)
+      await logIncoming(chatId, user?.id ?? null, ctx.message.text)
+      logger.info(`[chat-log] IN text from ${telegramId}: ${ctx.message.text.slice(0, 50)}`)
+    } else if (ctx.callbackQuery?.data) {
+      const user = await ensureUser(telegramId)
+      const label = callbackToLabel(ctx.callbackQuery.data)
+      await logIncoming(chatId, user?.id ?? null, label, ctx.callbackQuery.data)
+      logger.info(`[chat-log] IN callback from ${telegramId}: ${ctx.callbackQuery.data.slice(0, 50)}`)
+    }
+  } catch (e: any) {
+    logger.error(`[chat-log] Failed to log incoming: ${e.message}`)
   }
 
   await next()

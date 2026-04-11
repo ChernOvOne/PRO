@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Search, Send, ArrowLeft, User, MessageCircle,
-  ExternalLink, X, Calendar, Wallet, Gift, Star,
+  ExternalLink, X, Calendar, Wallet, Gift, Star, Workflow,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -71,6 +71,36 @@ const initial = (u: ChatUser) =>
 const displayName = (u: ChatUser) =>
   u.telegramName || u.email?.split('@')[0] || `ID:${u.id.slice(0, 8)}`
 
+// Fully hidden (technical junk)
+const isHiddenMessage = (text: string) =>
+  text.startsWith('Действие: blk:') ||
+  text.startsWith('Действие: engine:') ||
+  text.startsWith('engine:') ||
+  text.startsWith('blk:') ||
+  text.startsWith('callback:') ||
+  text === '⠀'
+
+// User action (button click) — show as compact action bubble
+const isUserAction = (text: string) =>
+  text.startsWith('Действие:') && !isHiddenMessage(text)
+
+// Clean action label: "Действие: 📱 Устройства" → "📱 Устройства"
+const cleanActionLabel = (text: string) =>
+  text.replace(/^Действие:\s*/, '')
+
+function parseMarkdown(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(.+?)\*/g, '<b>$1</b>')
+    .replace(/__(.+?)__/g, '<i>$1</i>')
+    .replace(/_(.+?)_/g, '<i>$1</i>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--accent-1); text-decoration: underline;">$1</a>')
+}
+
 /* ---------- component ---------- */
 
 export default function AdminBotChats() {
@@ -92,6 +122,15 @@ export default function AdminBotChats() {
   /* --- send state --- */
   const [draft, setDraft]     = useState('')
   const [sending, setSending] = useState(false)
+
+  /* --- system messages toggle --- */
+  const [showSystem, setShowSystem] = useState(false)
+
+  /* --- block picker --- */
+  const [showBlockPicker, setShowBlockPicker] = useState(false)
+  const [botBlocks, setBotBlocks] = useState<any[]>([])
+  const [blockSearch, setBlockSearch] = useState('')
+  const [sendingBlock, setSendingBlock] = useState(false)
 
   /* --- mobile drawers --- */
   const [mobileListOpen, setMobileListOpen]     = useState(true)
@@ -146,6 +185,15 @@ export default function AdminBotChats() {
     }
   }, [])
 
+  // Auto-refresh messages every 5 seconds
+  useEffect(() => {
+    if (!activeUserId) return
+    const interval = setInterval(() => {
+      loadMessages(activeUserId, 1)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [activeUserId])
+
   const selectChat = (item: ChatListItem) => {
     setActiveUserId(item.user.id)
     setActiveUser(item.user)
@@ -184,6 +232,36 @@ export default function AdminBotChats() {
     }
   }
 
+  /* ---------- block picker ---------- */
+
+  const loadBotBlocks = async () => {
+    try {
+      const res = await fetch('/api/admin/bot/blocks-for-picker', { credentials: 'include' })
+      if (res.ok) setBotBlocks(await res.json())
+    } catch {}
+  }
+
+  const sendBlock = async (blockId: string) => {
+    if (!activeUserId) return
+    setSendingBlock(true)
+    try {
+      const res = await fetch(`/api/admin/bot/chats/${activeUserId}/send-block`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blockId }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Блок отправлен')
+      setShowBlockPicker(false)
+      await loadMessages(activeUserId, 1)
+      loadChats()
+    } catch {
+      toast.error('Ошибка отправки блока')
+    } finally {
+      setSendingBlock(false)
+    }
+  }
+
   /* ---------- render helpers ---------- */
 
   const renderButtons = (json: string | null | undefined) => {
@@ -201,8 +279,8 @@ export default function AdminBotChats() {
                   className="text-xs px-2.5 py-1 rounded-lg cursor-default opacity-70 font-medium"
                   style={{
                     background: 'rgba(6,182,212,0.12)',
-                    color: '#a78bfa',
-                    border: '1px solid rgba(139,92,246,0.2)',
+                    color: 'var(--accent-1)',
+                    border: '1px solid rgba(6,182,212,0.2)',
                   }}
                 >
                   {btn.text}
@@ -300,9 +378,9 @@ export default function AdminBotChats() {
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
                     style={{
-                      background: active ? 'rgba(139,92,246,0.2)' : 'rgba(6,182,212,0.1)',
-                      border: `1px solid ${active ? 'rgba(139,92,246,0.3)' : 'rgba(6,182,212,0.15)'}`,
-                      color: active ? '#a78bfa' : 'var(--accent-1)',
+                      background: active ? 'rgba(6,182,212,0.2)' : 'rgba(6,182,212,0.1)',
+                      border: `1px solid ${active ? 'rgba(6,182,212,0.3)' : 'rgba(6,182,212,0.15)'}`,
+                      color: active ? 'var(--accent-1)' : 'var(--accent-1)',
                     }}
                   >
                     {initial(item.user)}
@@ -313,7 +391,7 @@ export default function AdminBotChats() {
                     <div className="flex items-center justify-between gap-1">
                       <span
                         className="text-[13px] font-medium truncate"
-                        style={{ color: active ? '#a78bfa' : 'var(--text-primary)' }}
+                        style={{ color: active ? 'var(--accent-1)' : 'var(--text-primary)' }}
                       >
                         {displayName(item.user)}
                       </span>
@@ -399,6 +477,12 @@ export default function AdminBotChats() {
                 </p>
               </div>
 
+              {/* system messages toggle */}
+              <label className="hidden md:flex items-center gap-1.5 cursor-pointer ml-auto">
+                <input type="checkbox" checked={showSystem} onChange={e => setShowSystem(e.target.checked)} className="rounded" />
+                <span className="text-[11px] whitespace-nowrap" style={{ color: 'var(--text-tertiary)' }}>Системные</span>
+              </label>
+
               {/* profile toggle on mobile */}
               <button
                 className="md:hidden p-1.5 rounded-lg"
@@ -447,46 +531,75 @@ export default function AdminBotChats() {
               ) : (
                 messages.map(msg => {
                   const isUser = msg.direction === 'IN'
+
+                  // Fully hide technical messages
+                  if (isHiddenMessage(msg.text)) {
+                    if (!showSystem) return null
+                    return (
+                      <div key={msg.id} className="flex justify-center">
+                        <p className="text-[10px] italic px-2 py-0.5" style={{ color: 'var(--text-tertiary)' }}>{msg.text}</p>
+                      </div>
+                    )
+                  }
+
+                  // User action (button click) — compact bubble
+                  if (isUserAction(msg.text)) {
+                    return (
+                      <div key={msg.id} className="flex justify-start">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+                          style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)' }}>
+                          <span className="text-[12px]" style={{ color: 'var(--accent-1)' }}>
+                            {cleanActionLabel(msg.text)}
+                          </span>
+                          <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                            {new Date(msg.createdAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   return (
                     <div
                       key={msg.id}
                       className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}
                     >
-                      <div
-                        className="max-w-[75%] rounded-2xl px-3.5 py-2"
-                        style={{
-                          background: isUser
-                            ? 'rgba(255,255,255,0.07)'
-                            : 'rgba(6,182,212,0.12)',
-                          border: `1px solid ${isUser
-                            ? 'rgba(255,255,255,0.08)'
-                            : 'rgba(139,92,246,0.2)'}`,
-                          borderBottomLeftRadius: isUser ? '6px' : undefined,
-                          borderBottomRightRadius: !isUser ? '6px' : undefined,
-                        }}
-                      >
-                        <p
-                          className="text-[13px] whitespace-pre-wrap break-words"
+                      {false ? (
+                        <div />
+                      ) : (
+                        <div
+                          className="max-w-[75%] rounded-2xl px-3.5 py-2"
                           style={{
-                            color: isUser ? 'var(--text-primary)' : 'var(--text-primary)',
+                            background: isUser
+                              ? 'rgba(255,255,255,0.07)'
+                              : 'rgba(6,182,212,0.12)',
+                            border: `1px solid ${isUser
+                              ? 'rgba(255,255,255,0.08)'
+                              : 'rgba(6,182,212,0.2)'}`,
+                            borderBottomLeftRadius: isUser ? '6px' : undefined,
+                            borderBottomRightRadius: !isUser ? '6px' : undefined,
                           }}
                         >
-                          {msg.text}
-                        </p>
-                        {renderButtons(msg.buttonsJson)}
-                        <p
-                          className="text-[10px] mt-1"
-                          style={{
-                            color: 'var(--text-tertiary)',
-                            textAlign: isUser ? 'left' : 'right',
-                          }}
-                        >
-                          {new Date(msg.createdAt).toLocaleTimeString('ru', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
+                          <p
+                            className="text-[13px] whitespace-pre-wrap break-words"
+                            style={{ color: 'var(--text-primary)' }}
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.text) }}
+                          />
+                          {renderButtons(msg.buttonsJson)}
+                          <p
+                            className="text-[10px] mt-1"
+                            style={{
+                              color: 'var(--text-tertiary)',
+                              textAlign: isUser ? 'left' : 'right',
+                            }}
+                          >
+                            {new Date(msg.createdAt).toLocaleTimeString('ru', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -512,14 +625,79 @@ export default function AdminBotChats() {
                 }}
                 disabled={sending}
               />
+              {/* Send block button */}
+              <div className="relative">
+                <button
+                  onClick={() => { if (!showBlockPicker) loadBotBlocks(); setShowBlockPicker(!showBlockPicker) }}
+                  className="p-2.5 rounded-xl transition-all duration-200"
+                  style={{ background: showBlockPicker ? 'rgba(6,182,212,0.15)' : 'rgba(255,255,255,0.05)', color: showBlockPicker ? 'var(--accent-1)' : 'var(--text-tertiary)' }}
+                  title="Отправить блок"
+                >
+                  <Workflow className="w-4 h-4" />
+                </button>
+
+                {showBlockPicker && (
+                  <div className="absolute bottom-full right-0 mb-2 w-80 max-h-96 overflow-y-auto rounded-2xl p-3 space-y-2"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 50 }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Отправить блок</span>
+                      <button onClick={() => setShowBlockPicker(false)} className="p-1 rounded hover:bg-white/10">
+                        <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                      </button>
+                    </div>
+                    <input
+                      className="glass-input w-full py-1.5 text-xs mb-2"
+                      placeholder="Поиск блока..."
+                      value={blockSearch}
+                      onChange={e => setBlockSearch(e.target.value)}
+                    />
+                    {botBlocks.map(group => {
+                      const filtered = group.blocks?.filter((b: any) =>
+                        !blockSearch || b.name?.toLowerCase().includes(blockSearch.toLowerCase())
+                      ) || []
+                      if (filtered.length === 0) return null
+                      return (
+                        <div key={group.id}>
+                          <div className="text-[11px] font-bold uppercase tracking-wider px-1 py-1" style={{ color: 'var(--accent-1)' }}>
+                            {group.name}
+                          </div>
+                          {filtered.map((block: any) => (
+                            <button
+                              key={block.id}
+                              onClick={() => sendBlock(block.id)}
+                              disabled={sendingBlock}
+                              className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left text-sm hover:bg-white/[0.06] transition-colors"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              <Workflow className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-1)' }} />
+                              <div className="flex-1 min-w-0">
+                                <div className="truncate font-medium">{block.name}</div>
+                                {block.text && (
+                                  <div className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+                                    {block.text.slice(0, 50)}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    {botBlocks.length === 0 && (
+                      <div className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>
+                        Нет блоков в конструкторе
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={sendMessage}
                 disabled={!draft.trim() || sending}
                 className="p-2.5 rounded-xl transition-all duration-200 disabled:opacity-30"
                 style={{
-                  background: draft.trim()
-                    ? 'linear-gradient(135deg, #8b5cf6, #06b6d4)'
-                    : 'rgba(255,255,255,0.05)',
+                  background: draft.trim() ? 'var(--accent-1)' : 'rgba(255,255,255,0.05)',
                   color: '#fff',
                 }}
               >
@@ -537,7 +715,7 @@ export default function AdminBotChats() {
                 border: '1px solid rgba(6,182,212,0.15)',
               }}
             >
-              <MessageCircle className="w-7 h-7" style={{ color: '#a78bfa' }} />
+              <MessageCircle className="w-7 h-7" style={{ color: 'var(--accent-1)' }} />
             </div>
             <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
               Выберите чат
@@ -646,7 +824,7 @@ function ProfilePanel({ user }: { user: ChatUser }) {
         className="flex items-center justify-center gap-2 w-full py-2 rounded-xl text-sm font-medium transition-all duration-200"
         style={{
           background: 'rgba(6,182,212,0.08)',
-          color: '#a78bfa',
+          color: 'var(--accent-1)',
           border: '1px solid rgba(6,182,212,0.15)',
         }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.15)' }}
