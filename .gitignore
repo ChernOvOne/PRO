@@ -19,7 +19,14 @@ rad.json
 #License-file
 *.flf
 #Test results file
-TestResults.xml.env
+TestResults.xml
+
+# Environment
+.env
+.env.*
+
+# Package lock
+frontend/package-lock.json
 
 # Node / Next.js build artifacts
 node_modules/

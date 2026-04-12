@@ -43,6 +43,7 @@ import { adminSetupWizardRoutes }  from './admin-setup-wizard'
 import { adminSettingsRoutes }     from './admin-settings'
 import { adminFunnelNodeRoutes }   from './admin-funnel-nodes'
 import { remnawaveWebhookRoutes }  from './webhook-remnawave'
+import { emailTrackingRoutes }     from './email-tracking'
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({
@@ -114,6 +115,9 @@ export async function registerRoutes(app: FastifyInstance) {
 
   // Remnawave webhooks (public, HMAC verified)
   await app.register(remnawaveWebhookRoutes,   { prefix: '/api/webhooks'             })
+
+  // Email open/click tracking (public)
+  await app.register(emailTrackingRoutes,      { prefix: '/api/track'                })
 
   // Serve uploaded files
   app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })

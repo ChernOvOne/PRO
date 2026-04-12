@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   DollarSign, Users, TrendingUp, Target, Megaphone,
   Activity, FileText, Table2, Wifi, Handshake,
   CreditCard, UserPlus, AlertTriangle, ArrowDownCircle,
+  ArrowRight, Clock, XCircle, CheckCircle, Server, Calendar, Ban,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -14,8 +15,18 @@ type Days = 1 | 7 | 30 | 365
 
 interface Overview {
   period: { days: number; from: string; to: string }
+  alerts?: {
+    pendingPayments: number
+    revenueDropPct: number
+    unprocessedWebhooks: number
+    lossCampaigns: number
+    infraDueSoon?: number
+    infraOverdue?: number
+    botBlockedUsers?: number
+  }
   kpi: {
     revenue: number; revenuePrev: number
+    mrr?: number
     newCustomers: number; newCustomersPaid: number
     profit: number; profitPrev: number
     ltvCacAvg: number | null
@@ -31,6 +42,7 @@ interface Overview {
   customers: {
     newByDay: Array<{ date: string; count: number }>
     topByLtv: Array<{ id: string; email: string | null; telegramName: string | null; totalPaid: number; paymentsCount: number }>
+    topReferrers?: Array<{ id: string; email: string | null; telegramName: string | null; referralCount: number; totalCount?: number }>
     conversionRate: number
     active: number; expired: number; trial: number
   }
@@ -116,6 +128,11 @@ export default function AdminDashboardPage() {
         data = res.ok ? await res.json() : null
       } else if (type === 'partner') {
         data = await adminApi.buhPartnerById(id)
+      } else if (type === 'admin_income' || type === 'admin_expense') {
+        data = await adminApi.getBuhTransaction(id)
+      } else if (type === 'inkas') {
+        const list = await adminApi.buhInkas()
+        data = (list || []).find((x: any) => x.id === id) || null
       }
       setPopup({ type, data })
     } catch {
@@ -124,7 +141,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     let cancelled = false
     setLoading(true)
     Promise.all([
@@ -142,6 +159,25 @@ export default function AdminDashboardPage() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [days])
+
+  useEffect(() => {
+    const cleanup = loadData()
+    return cleanup
+  }, [loadData])
+
+  const dismissAlert = async (alertKey: string) => {
+    try {
+      await fetch('/api/admin/dashboard/dismiss-alert', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alertKey }),
+      })
+      loadData()
+    } catch {
+      toast.error('Не удалось скрыть уведомление')
+    }
+  }
 
   const periodLabel = useMemo(() => ({
     1: 'Сегодня', 7: '7 дней', 30: '30 дней', 365: 'Год',
@@ -216,11 +252,229 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* ── Секция "Требует внимания" ── */}
+      {overview?.alerts && (
+        overview.alerts.pendingPayments > 0 ||
+        overview.alerts.revenueDropPct >= 20 ||
+        overview.alerts.unprocessedWebhooks > 0 ||
+        overview.alerts.lossCampaigns > 0 ||
+        (overview.alerts.infraDueSoon ?? 0) > 0 ||
+        (overview.alerts.infraOverdue ?? 0) > 0 ||
+        (overview.alerts.botBlockedUsers ?? 0) > 0
+      ) && (
+        <div className="space-y-3">
+          {overview.alerts.pendingPayments > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(251,191,36,0.15)' }}>
+                <CreditCard className="w-6 h-6" style={{ color: '#fbbf24' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#fbbf24' }}>
+                  {overview.alerts.pendingPayments} платежей зависли в PENDING больше часа
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Проверьте — возможно требуется ручная обработка
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`pendingPayments_${overview.alerts!.pendingPayments}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/payments?status=PENDING"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#fbbf24', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+
+          {overview.alerts.revenueDropPct >= 20 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(248,113,113,0.15)' }}>
+                <ArrowDownCircle className="w-6 h-6" style={{ color: '#f87171' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#f87171' }}>
+                  Выручка вчера упала на {overview.alerts.revenueDropPct}% относительно среднего за неделю
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Проверьте платежи и кампании
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`revenueDropPct_${overview.alerts!.revenueDropPct}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/payments"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#f87171', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+
+          {overview.alerts.unprocessedWebhooks > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(167,139,250,0.15)' }}>
+                <AlertTriangle className="w-6 h-6" style={{ color: '#a78bfa' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#a78bfa' }}>
+                  {overview.alerts.unprocessedWebhooks} необработанных webhook-платежей
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Платежи от внешних ботов без привязки к транзакции
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`unprocessedWebhooks_${overview.alerts!.unprocessedWebhooks}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/buhgalteria/webhooks"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#a78bfa', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+
+          {overview.alerts.lossCampaigns > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(244,114,182,0.08)', border: '1px solid rgba(244,114,182,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(244,114,182,0.15)' }}>
+                <Megaphone className="w-6 h-6" style={{ color: '#f472b6' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#f472b6' }}>
+                  {overview.alerts.lossCampaigns} кампаний в убытке (ROI &lt; 0)
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Проверьте и скорректируйте или отключите
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`lossCampaigns_${overview.alerts!.lossCampaigns}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/buhgalteria/ads"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#f472b6', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+
+          {(overview.alerts.infraOverdue ?? 0) > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(239,68,68,0.15)' }}>
+                <Server className="w-6 h-6" style={{ color: '#f87171' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#f87171' }}>
+                  {overview.alerts.infraOverdue} записей инфраструктуры просрочены
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Срок оплаты прошёл — сервисы могут быть отключены
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`infraOverdue_${overview.alerts!.infraOverdue}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/infrastructure"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#f87171', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+
+          {(overview.alerts.botBlockedUsers ?? 0) > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(239,68,68,0.15)' }}>
+                <Ban className="w-6 h-6" style={{ color: '#f87171' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#f87171' }}>
+                  {overview.alerts.botBlockedUsers} пользователей заблокировали бота
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Эти получатели не увидят ваши рассылки
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`botBlockedUsers_${overview.alerts!.botBlockedUsers}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+            </div>
+          )}
+
+          {(overview.alerts.infraDueSoon ?? 0) > 0 && (
+            <div className="rounded-2xl p-4 flex items-center gap-3 flex-wrap"
+              style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(251,191,36,0.15)' }}>
+                <Calendar className="w-6 h-6" style={{ color: '#fbbf24' }} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-sm font-semibold" style={{ color: '#fbbf24' }}>
+                  {overview.alerts.infraDueSoon} платежей инфраструктуры в ближайшие 7 дней
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Подготовьте средства или настройте автопродление
+                </div>
+              </div>
+              <button
+                onClick={() => dismissAlert(`infraDueSoon_${overview.alerts!.infraDueSoon}`)}
+                className="px-3 py-1.5 rounded-lg text-xs whitespace-nowrap"
+                style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                ✓ Просмотрено
+              </button>
+              <a href="/admin/infrastructure"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                style={{ background: '#fbbf24', color: '#0b1121' }}>
+                Открыть
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TOP KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {loading || !overview ? (
           Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="glass-card p-4 rounded-2xl skeleton" style={{ height: 110 }} />
+            <div key={i} className="glass-card p-4 rounded-2xl skeleton" style={{ height: 130 }} />
           ))
         ) : (
           <>
@@ -230,13 +484,31 @@ export default function AdminDashboardPage() {
               label="Выручка"
               value={fmt(overview.kpi.revenue)}
               sub={pctChange(overview.kpi.revenue, overview.kpi.revenuePrev)}
+              tooltip="Сумма всех оплаченных платежей (status=PAID) за выбранный период. Стрелка и % — сравнение с предыдущим периодом такой же длительности."
+              big
+            />
+            <KpiCard
+              icon={<TrendingUp className="w-4 h-4" style={{ color: '#06b6d4' }} />}
+              iconBg="rgba(6,182,212,0.15)"
+              label="MRR (30 дней)"
+              value={fmt(overview.kpi.mrr ?? 0)}
+              subLabel="выручка за последние 30 дней"
+              valueColor="#06b6d4"
+              tooltip="Monthly Recurring Revenue — повторяющаяся месячная выручка. Считается как сумма всех оплат за последние 30 дней. Показывает стабильный ежемесячный доход."
+              big
             />
             <KpiCard
               icon={<Users className="w-4 h-4" style={{ color: '#60a5fa' }} />}
               iconBg="rgba(96,165,250,0.15)"
               label="Новые клиенты"
               value={String(overview.kpi.newCustomers)}
-              subLabel={`${overview.kpi.newCustomersPaid} оплатили`}
+              subLabel={
+                overview.kpi.newCustomers > 0
+                  ? `${overview.kpi.newCustomersPaid} оплатили (${Math.round((overview.kpi.newCustomersPaid / overview.kpi.newCustomers) * 100)}%)`
+                  : '0 оплатили'
+              }
+              tooltip="Зарегистрированные пользователи за выбранный период. В подписи — сколько из них совершили хотя бы один платёж и процент конверсии в оплату."
+              big
             />
             <KpiCard
               icon={<TrendingUp className="w-4 h-4" style={{ color: '#a78bfa' }} />}
@@ -248,13 +520,9 @@ export default function AdminDashboardPage() {
                   ? `${Math.round((overview.kpi.profit / overview.kpi.revenue) * 100)}% маржа`
                   : '—'
               }
-            />
-            <KpiCard
-              icon={<Target className="w-4 h-4" style={{ color: '#fbbf24' }} />}
-              iconBg="rgba(251,191,36,0.15)"
-              label="LTV/CAC"
-              value={overview.kpi.ltvCacAvg !== null ? `${overview.kpi.ltvCacAvg}×` : '—'}
-              valueColor={ltvCacColor(overview.kpi.ltvCacAvg)}
+              valueColor={overview.kpi.profit >= 0 ? '#a78bfa' : '#f87171'}
+              tooltip="Чистая прибыль = Выручка − Расходы (все BuhTransaction типа EXPENSE за период). Маржа = Прибыль / Выручка × 100%. Зелёная = в плюсе, красная = в минусе."
+              big
             />
           </>
         )}
@@ -263,8 +531,11 @@ export default function AdminDashboardPage() {
       {/* Revenue chart */}
       <div className="glass-card p-4 md:p-5 rounded-2xl">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Доходы vs Расходы · {periodLabel}
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Доходы vs Расходы · {periodLabel}
+            </div>
+            <InfoTooltip text="График ежедневных оплат клиентов (зелёная линия) и расходов из учёта транзакций (красная линия) за выбранный период. Площадь между линиями = чистая прибыль." />
           </div>
           <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
             <span className="flex items-center gap-1">
@@ -287,7 +558,10 @@ export default function AdminDashboardPage() {
       {/* VPN mini-strip */}
       <div className="glass-card p-4 rounded-2xl">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Wifi className="w-4 h-4" style={{ color: '#34d399' }} /> VPN</div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Wifi className="w-4 h-4" style={{ color: '#34d399' }} /> VPN
+            <InfoTooltip text="Состояние VPN-инфраструктуры из REMNAWAVE: Ноды онлайн — активные серверы, Сейчас — подключённые клиенты прямо сейчас, За день/неделю — уникальные подключения за период, Активных подписок — клиенты со статусом ACTIVE." />
+          </div>
         </div>
         {loading || !overview ? (
           <div className="skeleton rounded-lg" style={{ height: 50 }} />
@@ -302,121 +576,205 @@ export default function AdminDashboardPage() {
         )}
       </div>
 
-      {/* Marketing block */}
-      <div className="glass-card p-4 md:p-5 rounded-2xl">
-        <div className="text-base font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Megaphone className="w-5 h-5" style={{ color: '#60a5fa' }} /> Маркетинг</div>
+      {/* Marketing block — compact */}
+      <div className="glass-card p-5 rounded-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Megaphone className="w-5 h-5" style={{ color: '#60a5fa' }} />
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Маркетинг</h3>
+            <InfoTooltip text="Статистика рекламных кампаний: сумма потрачена, общий доход от клиентов пришедших по UTM, ROI = (Доход−Затраты)/Затраты×100%. LTV/CAC = средняя выручка с клиента / стоимость привлечения. Воронка: клики→лиды→оплаты показывает конверсию на каждом этапе. Топ-3 — кампании с самым высоким ROI." />
+          </div>
+          <a href="/admin/marketing" className="text-xs" style={{ color: 'var(--accent-1)' }}>Подробнее →</a>
+        </div>
+
         {loading || !overview ? (
-          <div className="skeleton rounded-lg" style={{ height: 200 }} />
+          <div className="skeleton rounded-lg" style={{ height: 240 }} />
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <MiniStat label="Потрачено" value={fmt(overview.marketing.totalSpend)} color="#f87171" asString />
-              <MiniStat label="Получено" value={fmt(overview.marketing.totalRevenue)} color="#34d399" asString />
-              <MiniStat
-                label="Клики → Оплаты"
-                value={`${overview.marketing.totalClicks} → ${overview.marketing.totalLeads} → ${overview.marketing.totalConversions}`}
-                color="#60a5fa"
-                asString
-              />
-              <MiniStat
-                label="Воронка"
-                value={`${overview.marketing.funnelRate}%`}
-                color="#a78bfa"
-                asString
-              />
+            {/* Top metrics row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Потрачено</div>
+                <div className="text-lg font-bold" style={{ color: '#f87171' }}>{fmt(overview.marketing.totalSpend)}</div>
+              </div>
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Доход</div>
+                <div className="text-lg font-bold" style={{ color: '#34d399' }}>{fmt(overview.marketing.totalRevenue)}</div>
+              </div>
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>ROI</div>
+                <div className="text-lg font-bold" style={{
+                  color: (() => {
+                    const roi = overview.marketing.totalSpend > 0
+                      ? Math.round(((overview.marketing.totalRevenue - overview.marketing.totalSpend) / overview.marketing.totalSpend) * 100)
+                      : 0
+                    return roi >= 0 ? '#34d399' : '#f87171'
+                  })(),
+                }}>
+                  {(() => {
+                    const roi = overview.marketing.totalSpend > 0
+                      ? Math.round(((overview.marketing.totalRevenue - overview.marketing.totalSpend) / overview.marketing.totalSpend) * 100)
+                      : 0
+                    return `${roi >= 0 ? '+' : ''}${roi}%`
+                  })()}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>LTV/CAC</div>
+                <div className="text-lg font-bold" style={{ color: ltvCacColor(overview.kpi.ltvCacAvg) }}>
+                  {overview.kpi.ltvCacAvg !== null ? `${overview.kpi.ltvCacAvg}×` : '—'}
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-                  Топ-3 кампании по ROI
+
+            {/* Funnel */}
+            <div className="rounded-xl p-3 mb-4" style={{ background: 'var(--surface-1)' }}>
+              <div className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Воронка ({overview.marketing.funnelRate}%)</div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="flex-1 text-center">
+                  <div className="font-bold" style={{ color: '#60a5fa' }}>{overview.marketing.totalClicks}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Клики</div>
                 </div>
-                {overview.marketing.topCampaigns.length === 0 ? (
-                  <div className="text-xs py-3" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {overview.marketing.topCampaigns.map(c => (
-                      <div key={c.id}
-                        onClick={() => openPopup('campaign', c.id)}
-                        className="flex items-center justify-between text-xs py-2 px-2 rounded cursor-pointer hover:bg-white/[0.05] transition-colors"
-                        style={{ background: 'var(--glass-bg)' }}>
-                        <div className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{c.channelName}</div>
-                        <div className="flex gap-3 items-center">
-                          <span style={{ color: 'var(--text-secondary)' }}>{fmt(c.revenue)}</span>
-                          <span style={{
-                            color: c.roi >= 0 ? '#34d399' : '#f87171',
-                            fontWeight: 600, minWidth: 50, textAlign: 'right',
-                          }}>
-                            {c.roi >= 0 ? '+' : ''}{c.roi}%
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-                  Расход vs Доход по дням
+                <ArrowRight className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                <div className="flex-1 text-center">
+                  <div className="font-bold" style={{ color: '#fbbf24' }}>{overview.marketing.totalLeads}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Лиды</div>
                 </div>
-                <MiniBarChart data={overview.marketing.campaignsByDay} />
+                <ArrowRight className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                <div className="flex-1 text-center">
+                  <div className="font-bold" style={{ color: '#34d399' }}>{overview.marketing.totalConversions}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Оплаты</div>
+                </div>
               </div>
+            </div>
+
+            {/* Top 3 campaigns */}
+            <div>
+              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-tertiary)' }}>Топ-3 кампании по ROI</div>
+              {overview.marketing.topCampaigns.length === 0 ? (
+                <div className="text-xs py-3" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+              ) : (
+                <div className="space-y-1">
+                  {overview.marketing.topCampaigns.map((c, i) => (
+                    <div key={c.id}
+                      onClick={() => openPopup('campaign', c.id)}
+                      className="flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer hover:bg-white/[0.05] transition-colors"
+                      style={{ background: 'var(--surface-1)' }}>
+                      <span className="text-xs font-bold" style={{ color: 'var(--text-tertiary)' }}>{i + 1}.</span>
+                      <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{c.channelName}</span>
+                      <span className="text-xs font-bold" style={{ color: c.roi >= 0 ? '#34d399' : '#f87171' }}>
+                        {c.roi >= 0 ? '+' : ''}{c.roi}%
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmt(c.revenue)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
 
-      {/* Customers block */}
-      <div className="glass-card p-4 md:p-5 rounded-2xl">
-        <div className="text-base font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}><Users className="w-5 h-5" style={{ color: '#a78bfa' }} /> Клиенты</div>
-        {loading || !overview ? (
-          <div className="skeleton rounded-lg" style={{ height: 200 }} />
-        ) : (
-          <>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-3 mb-4">
-              <MiniStat label="Активных" value={overview.customers.active} color="#34d399" />
-              <MiniStat label="Истекло" value={overview.customers.expired} color="#f87171" />
-              <MiniStat label="Пробник" value={overview.customers.trial} color="#fbbf24" />
-              <MiniStat
-                label="Конверсия"
-                value={`${overview.customers.conversionRate}%`}
-                color="#a78bfa"
-                asString
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Топ-5 по LTV</div>
-                {overview.customers.topByLtv.length === 0 ? (
-                  <div className="text-xs py-3" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {overview.customers.topByLtv.map(u => (
-                      <div key={u.id}
-                        onClick={() => openPopup('user', u.id)}
-                        className="flex items-center justify-between text-xs py-2 px-2 rounded cursor-pointer hover:bg-white/[0.05] transition-colors"
-                        style={{ background: 'var(--glass-bg)' }}>
-                        <div className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>
-                          {u.email || u.telegramName || '—'}
-                        </div>
-                        <div className="flex gap-2 items-center">
-                          <span style={{ color: 'var(--text-tertiary)' }}>×{u.paymentsCount}</span>
-                          <span style={{ color: '#34d399', fontWeight: 600 }}>{fmt(u.totalPaid)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-                  Новые клиенты по дням
+      {/* Customers — 3-column compact */}
+      {loading || !overview ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="glass-card p-5 rounded-2xl skeleton" style={{ height: 120 }} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[
+            { label: 'Активные', value: overview.customers.active, color: '#34d399', Icon: CheckCircle, href: '/admin/users?status=ACTIVE', tooltip: 'Клиенты с субстатусом ACTIVE — активная подписка, подключение работает. Клик → все активные.' },
+            { label: 'На триале', value: overview.customers.trial, color: '#fbbf24', Icon: Clock, href: '/admin/users?status=TRIAL', tooltip: 'Клиенты на пробном периоде (subStatus = TRIAL). Важно — сколько из них потом оплатит (конверсия trial→paid).' },
+            { label: 'Истекли', value: overview.customers.expired, color: '#f87171', Icon: XCircle, href: '/admin/users?status=EXPIRED', tooltip: 'Клиенты с истёкшей подпиской. Кандидаты для реактивационных рассылок. Клик → фильтр EXPIRED.' },
+          ].map(c => (
+            <a key={c.label} href={c.href} className="glass-card rounded-2xl p-5 hover:scale-[1.02] transition-transform block">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <c.Icon className="w-5 h-5" style={{ color: c.color }} />
+                  <InfoTooltip text={c.tooltip} />
                 </div>
-                <MiniLineChart data={overview.customers.newByDay.map(r => ({ date: r.date, value: r.count }))} color="#60a5fa" label="Новых" />
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>→</span>
               </div>
-            </div>
-          </>
-        )}
-      </div>
+              <div className="text-3xl font-bold" style={{ color: c.color }}>{c.value}</div>
+              <div className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{c.label}</div>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Two-column: Top by LTV + New customers chart */}
+      {loading || !overview ? null : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="glass-card p-5 rounded-2xl">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <TrendingUp className="w-4 h-4" style={{ color: '#34d399' }} /> Топ клиенты по LTV
+              <InfoTooltip text="LTV (Lifetime Value) = сумма всех оплат клиента за всё время. Топ-5 пользователей которые принесли больше всего денег. × — количество платежей, цифра справа — общая сумма. Клик → карточка клиента." />
+            </h3>
+            {overview.customers.topByLtv.length === 0 ? (
+              <div className="text-xs py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+            ) : (
+              <div className="space-y-1.5">
+                {overview.customers.topByLtv.map((u, i) => (
+                  <div key={u.id}
+                    onClick={() => openPopup('user', u.id)}
+                    className="flex items-center gap-2 py-2 px-2 rounded-lg cursor-pointer hover:bg-white/[0.05] transition-colors"
+                    style={{ background: 'var(--surface-1)' }}>
+                    <span className="text-xs font-bold w-5" style={{ color: 'var(--text-tertiary)' }}>{i + 1}.</span>
+                    <div className="flex-1 truncate text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {u.email || u.telegramName || '—'}
+                    </div>
+                    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>×{u.paymentsCount}</span>
+                    <span className="text-sm font-semibold" style={{ color: '#34d399' }}>{fmt(u.totalPaid)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="glass-card p-5 rounded-2xl">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <UserPlus className="w-4 h-4" style={{ color: '#a78bfa' }} /> Топ рефереры
+              <InfoTooltip text="Пользователи которые пригласили больше всего оплативших клиентов. Учитываются только рефералы у которых есть хотя бы один платёж (paymentsCount > 0). 👥 — количество оплативших приглашённых." />
+            </h3>
+            {(!overview.customers.topReferrers || overview.customers.topReferrers.length === 0) ? (
+              <div className="text-xs py-6 text-center" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
+            ) : (
+              <div className="space-y-1.5">
+                {overview.customers.topReferrers.map((r, i) => (
+                  <a
+                    key={r.id}
+                    href={`/admin/users/${r.id}`}
+                    className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-white/[0.05] transition-colors"
+                    style={{ background: 'var(--surface-1)' }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold w-5" style={{ color: 'var(--text-tertiary)' }}>#{i + 1}</span>
+                      <span className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                        {r.telegramName ? `@${r.telegramName}` : (r.email || '—')}
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold whitespace-nowrap" style={{ color: '#a78bfa' }}>
+                      {r.referralCount}{typeof r.totalCount === 'number' ? ` / ${r.totalCount}` : ''} 👥
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* New customers chart row */}
+      {loading || !overview ? null : (
+        <div className="glass-card p-5 rounded-2xl">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <UserPlus className="w-4 h-4" style={{ color: '#60a5fa' }} /> Новые клиенты по дням
+            <InfoTooltip text="Количество новых регистраций по дням за выбранный период. Помогает оценить эффективность маркетинга во времени." />
+          </h3>
+          <MiniLineChart data={overview.customers.newByDay.map(r => ({ date: r.date, value: r.count }))} color="#60a5fa" label="Новых" />
+        </div>
+      )}
 
       {/* Partners block */}
       {buh?.partnersSummary && buh.partnersSummary.length > 0 && (
@@ -450,6 +808,7 @@ export default function AdminDashboardPage() {
       <div className="glass-card p-4 md:p-5 rounded-2xl">
         <div className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
           <Activity className="w-5 h-5" style={{ color: '#60a5fa' }} /> Последние события
+          <InfoTooltip text="Лента активности за последние 7 дней: крупные оплаты клиентов (≥100 ₽), ручные доходы/расходы от админов, инкассация (дивиденды/возвраты), новые рекламные кампании. Клик на событие → карточка сущности." />
         </div>
         {loading ? (
           <div className="space-y-2">
@@ -468,14 +827,18 @@ export default function AdminDashboardPage() {
                 style={{ background: 'var(--glass-bg)' }}>
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{
                   background: e.type === 'payment' ? 'rgba(52,211,153,0.15)'
-                    : e.type === 'user' ? 'rgba(96,165,250,0.15)'
-                    : e.type === 'expiring' ? 'rgba(251,191,36,0.15)'
-                    : 'rgba(248,113,113,0.15)',
+                    : e.type === 'admin_income' ? 'rgba(52,211,153,0.15)'
+                    : e.type === 'admin_expense' ? 'rgba(248,113,113,0.15)'
+                    : e.type === 'inkas' ? 'rgba(251,191,36,0.15)'
+                    : e.type === 'campaign' ? 'rgba(96,165,250,0.15)'
+                    : 'rgba(167,139,250,0.15)',
                 }}>
                   {e.type === 'payment' ? <CreditCard className="w-4 h-4" style={{ color: '#34d399' }} />
-                    : e.type === 'user' ? <UserPlus className="w-4 h-4" style={{ color: '#60a5fa' }} />
-                    : e.type === 'expiring' ? <AlertTriangle className="w-4 h-4" style={{ color: '#fbbf24' }} />
-                    : <ArrowDownCircle className="w-4 h-4" style={{ color: '#f87171' }} />}
+                    : e.type === 'admin_income' ? <DollarSign className="w-4 h-4" style={{ color: '#34d399' }} />
+                    : e.type === 'admin_expense' ? <ArrowDownCircle className="w-4 h-4" style={{ color: '#f87171' }} />
+                    : e.type === 'inkas' ? <Handshake className="w-4 h-4" style={{ color: '#fbbf24' }} />
+                    : e.type === 'campaign' ? <Megaphone className="w-4 h-4" style={{ color: '#60a5fa' }} />
+                    : <Activity className="w-4 h-4" style={{ color: '#a78bfa' }} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{e.title}</div>
@@ -562,6 +925,67 @@ export default function AdminDashboardPage() {
                   Открыть партнёров →
                 </a>
               </>
+            ) : popup.type === 'admin_income' || popup.type === 'admin_expense' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
+                    {popup.type === 'admin_income' ? 'Доход' : 'Расход'}
+                  </h3>
+                  <button onClick={() => setPopup(null)} className="p-1 rounded hover:bg-white/[0.05]" style={{ color: 'var(--text-tertiary)' }}>✕</button>
+                </div>
+                <PopupRow
+                  label="Сумма"
+                  value={`${popup.type === 'admin_expense' ? '−' : '+'}${fmt(Number(popup.data.amount ?? 0))}`}
+                  color={popup.type === 'admin_expense' ? '#f87171' : '#34d399'}
+                />
+                <PopupRow label="Категория" value={popup.data.category?.name || '—'} />
+                <PopupRow label="Описание" value={popup.data.description || '—'} />
+                <PopupRow label="Дата" value={popup.data.date ? new Date(popup.data.date).toLocaleString('ru-RU') : '—'} />
+                <PopupRow label="Источник" value={popup.data.source || '—'} />
+                <PopupRow
+                  label="Создал"
+                  value={popup.data.createdBy?.email || popup.data.createdBy?.telegramName || '—'}
+                />
+                {popup.data.customer && (
+                  <PopupRow
+                    label="Клиент"
+                    value={popup.data.customer.email || popup.data.customer.telegramName || '—'}
+                  />
+                )}
+                {popup.data.receiptUrl && (
+                  <a href={popup.data.receiptUrl} target="_blank" rel="noreferrer"
+                    className="block text-center text-sm py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                    style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                    Открыть чек ↗
+                  </a>
+                )}
+                <a href="/admin/transactions"
+                  className="block text-center text-sm mt-2 py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                  Открыть транзакции →
+                </a>
+              </>
+            ) : popup.type === 'inkas' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Инкассация</h3>
+                  <button onClick={() => setPopup(null)} className="p-1 rounded hover:bg-white/[0.05]" style={{ color: 'var(--text-tertiary)' }}>✕</button>
+                </div>
+                <PopupRow label="Тип" value={popup.data.type || '—'} />
+                <PopupRow
+                  label="Сумма"
+                  value={fmt(Number(popup.data.amount ?? 0))}
+                  color={popup.data.type === 'DIVIDEND' ? '#f87171' : '#34d399'}
+                />
+                <PopupRow label="Партнёр" value={popup.data.partner?.name || '—'} />
+                <PopupRow label="Дата" value={popup.data.date ? new Date(popup.data.date).toLocaleString('ru-RU') : '—'} />
+                <PopupRow label="Описание" value={popup.data.description || '—'} />
+                <a href="/admin/inkas"
+                  className="block text-center text-sm mt-2 py-2 rounded-lg transition-colors hover:bg-white/[0.05]"
+                  style={{ color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                  Открыть инкассации →
+                </a>
+              </>
             ) : null}
           </div>
         </div>
@@ -628,23 +1052,61 @@ export default function AdminDashboardPage() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────
+// Info tooltip — shows ? icon with hover hint
+function InfoTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen(v => !v)}
+        className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold cursor-help flex-shrink-0"
+        style={{ background: 'var(--glass-bg)', color: 'var(--text-tertiary)', border: '1px solid var(--glass-border)' }}
+        aria-label="Подсказка"
+      >
+        ?
+      </button>
+      {open && (
+        <span
+          className="absolute left-0 top-full mt-1 z-50 rounded-lg px-3 py-2 text-[11px] leading-snug w-64 pointer-events-none"
+          style={{
+            background: 'var(--surface-0)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--glass-border)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            whiteSpace: 'normal',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function KpiCard({
-  icon, iconBg, label, value, sub, subLabel, valueColor,
+  icon, iconBg, label, value, sub, subLabel, valueColor, big, tooltip,
 }: {
   icon: React.ReactNode; iconBg?: string; label: string; value: string
   sub?: { label: string; positive: boolean }
   subLabel?: string
   valueColor?: string
+  big?: boolean
+  tooltip?: string
 }) {
   return (
-    <div className="glass-card p-4 rounded-2xl">
+    <div className={`glass-card ${big ? 'p-5' : 'p-4'} rounded-2xl`}>
       <div className="flex items-center gap-2 mb-2">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: iconBg || 'rgba(96,165,250,0.15)' }}>
+        <div className={`${big ? 'w-9 h-9' : 'w-7 h-7'} rounded-lg flex items-center justify-center`}
+          style={{ background: iconBg || 'rgba(96,165,250,0.15)' }}>
           {icon}
         </div>
         <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        {tooltip && <InfoTooltip text={tooltip} />}
       </div>
-      <div className="text-xl md:text-2xl font-bold" style={{ color: valueColor || 'var(--text-primary)' }}>
+      <div className={`${big ? 'text-2xl md:text-3xl' : 'text-xl md:text-2xl'} font-bold`}
+        style={{ color: valueColor || 'var(--text-primary)' }}>
         {value}
       </div>
       {sub && (

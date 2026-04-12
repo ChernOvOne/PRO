@@ -1,12 +1,43 @@
 import type { FastifyInstance } from 'fastify'
 import QRCode    from 'qrcode'
 import { z }     from 'zod'
+import axios     from 'axios'
 import { prisma }    from '../db'
 import { remnawave } from '../services/remnawave'
 import { balanceService }  from '../services/balance'
 import { paymentService }  from '../services/payment'
 import { config }    from '../config'
 import { logger }    from '../utils/logger'
+
+// Lightweight geo lookup used to backfill User.geoInfo (lat/lon/country/city) on
+// dashboard visits. In-memory cache to avoid hammering the public API.
+// Skips VPN/proxy/hosting IPs so the map shows real user locations.
+const _geoCache = new Map<string, { data: any; ts: number }>()
+async function lookupGeo(ip: string | null): Promise<any | null> {
+  if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('10.') || ip.startsWith('172.') || ip.startsWith('192.168.')) return null
+  const cached = _geoCache.get(ip)
+  if (cached && Date.now() - cached.ts < 3600_000) return cached.data
+  try {
+    // Request extra fields: proxy, hosting to detect VPN/datacenter IPs
+    const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,regionName,isp,lat,lon,query,proxy,hosting,mobile`, { timeout: 3000 })
+    if (res.data?.status === 'success') {
+      // Skip VPN / proxy / datacenter IPs — these are not real user locations
+      if (res.data.proxy === true || res.data.hosting === true) {
+        _geoCache.set(ip, { data: null, ts: Date.now() })
+        return null
+      }
+      const geo = {
+        ip: res.data.query, country: res.data.country, city: res.data.city,
+        region: res.data.regionName, isp: res.data.isp,
+        lat: res.data.lat, lon: res.data.lon,
+        mobile: res.data.mobile,
+      }
+      _geoCache.set(ip, { data: geo, ts: Date.now() })
+      return geo
+    }
+  } catch {}
+  return null
+}
 
 /** REMNAWAVE username: only letters, numbers, underscores, dashes */
 function toRmUsername(user: { email?: string | null; telegramId?: string | null; id: string }): string {
@@ -29,8 +60,18 @@ export async function userRoutes(app: FastifyInstance) {
   app.get('/dashboard', auth, async (req, reply) => {
     const userId = (req.user as any).sub
 
-    // Update last IP on each dashboard visit
-    prisma.user.update({ where: { id: userId }, data: { lastIp: getClientIp(req) } }).catch(() => {})
+    // Update last IP on each dashboard visit + lookup geo (fire-and-forget)
+    {
+      const ip = getClientIp(req)
+      prisma.user.update({ where: { id: userId }, data: { lastIp: ip } }).catch(() => {})
+      if (ip) {
+        lookupGeo(ip).then(geo => {
+          if (geo) {
+            prisma.user.update({ where: { id: userId }, data: { geoInfo: geo } }).catch(() => {})
+          }
+        }).catch(() => {})
+      }
+    }
 
     const user = await prisma.user.findUnique({
       where:   { id: userId },

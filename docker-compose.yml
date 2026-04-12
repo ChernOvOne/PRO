@@ -77,6 +77,8 @@ services:
       args:
         - NEXT_PUBLIC_TG_BOT_NAME=${TELEGRAM_BOT_NAME}
         - NEXT_PUBLIC_API_URL=/api
+        - NEXT_PUBLIC_MAPTILER_KEY=${MAPTILER_KEY}
+        - NEXT_PUBLIC_YANDEX_KEY=${YANDEX_MAPS_KEY}
     container_name: hideyou_frontend
     restart: unless-stopped
     env_file: .env
@@ -86,6 +88,8 @@ services:
       NEXT_PUBLIC_API_URL: /api
       INTERNAL_API_URL: http://backend:4000
       NEXT_PUBLIC_TG_BOT_NAME: ${TELEGRAM_BOT_NAME}
+      NEXT_PUBLIC_MAPTILER_KEY: ${MAPTILER_KEY}
+      NEXT_PUBLIC_YANDEX_KEY: ${YANDEX_MAPS_KEY}
     depends_on:
       - backend
     networks:

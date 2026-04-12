@@ -46,6 +46,7 @@ const HINTS: Record<string, string> = {
   date_format: 'Формат дат в интерфейсе и отчётах.',
   maintenance_mode: 'Включает страницу «Технические работы» для всех кроме админов.',
   maintenance_text: 'Текст который увидят пользователи при включённом режиме обслуживания.',
+  maptiler_key: 'API ключ для карты пользователей. Получите бесплатно на cloud.maptiler.com → Account → API keys (100k запросов в месяц бесплатно). После изменения нужен перезапуск сервисов.',
 
   // Domains
   domain: 'Основной домен проекта. Используется для генерации ссылок. Для изменения также обновите DNS и nginx.',
@@ -190,6 +191,7 @@ const TABS: TabDef[] = [
       ]},
       { key: 'maintenance_mode', label: 'Режим обслуживания', type: 'toggle' },
       { key: 'maintenance_text', label: 'Текст обслуживания', type: 'textarea', placeholder: 'Ведутся технические работы...' },
+      { key: 'maptiler_key', label: 'MapTiler API Key', type: 'password', placeholder: 'ffGUM...', envKey: 'MAPTILER_KEY' },
     ],
   },
   {

@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, Trash2, Bell,
   RefreshCw, Ban, UserX, Calendar, Smartphone,
   Globe, FileText, DollarSign, ChevronRight, ChevronDown,
-  Wallet, Tag, Gift, Star, Filter, Edit2, X,
+  Wallet, Tag, Gift, Star, Filter, Edit2, X, UserPlus, Search,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -38,6 +38,19 @@ export default function AdminUserDetail() {
   const [activityFilter, setActivityFilter] = useState<string>('all')
   const [activities, setActivities]   = useState<any[]>([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
+
+  // Referrals modal
+  const [showReferralsModal, setShowReferralsModal] = useState(false)
+  const [referrals, setReferrals] = useState<any[]>([])
+  const [referralsTotal, setReferralsTotal] = useState(0)
+  const [referralsPage, setReferralsPage] = useState(1)
+  const [referralsFilter, setReferralsFilter] = useState<'all' | 'paid'>('all')
+  const [referralsLoading, setReferralsLoading] = useState(false)
+
+  // Referrer (inviter) modal
+  const [showReferrerModal, setShowReferrerModal] = useState(false)
+  const [referrerSearch, setReferrerSearch] = useState('')
+  const [referrerSearchResults, setReferrerSearchResults] = useState<any[]>([])
 
   // Form state
   const [extendDays, setExtendDays]     = useState(30)
@@ -88,6 +101,53 @@ export default function AdminUserDetail() {
   }
 
   useEffect(() => { load() }, [id])
+
+  const loadReferrals = async (pg = 1, filter: 'all' | 'paid' = referralsFilter) => {
+    setReferralsLoading(true)
+    try {
+      const res = await fetch(`/api/admin/users/${id}/referrals?page=${pg}&limit=20&filter=${filter}`, { credentials: 'include' })
+      const data = await res.json()
+      setReferrals(data.items || [])
+      setReferralsTotal(data.total || 0)
+      setReferralsPage(pg)
+    } catch {
+      toast.error('Ошибка загрузки рефералов')
+    } finally {
+      setReferralsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (showReferralsModal) loadReferrals(1, referralsFilter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReferralsModal, referralsFilter])
+
+  const searchReferrers = async (q: string) => {
+    if (!q || q.length < 2) { setReferrerSearchResults([]); return }
+    try {
+      const res = await fetch(`/api/admin/users?search=${encodeURIComponent(q)}&limit=10`, { credentials: 'include' })
+      const data = await res.json()
+      setReferrerSearchResults((data.users || []).filter((u: any) => u.id !== id))
+    } catch {}
+  }
+
+  const updateReferrer = async (refId: string | null) => {
+    try {
+      const res = await fetch(`/api/admin/users/${id}/referrer`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referrerId: refId }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(refId ? 'Пригласитель назначен' : 'Пригласитель убран')
+      setShowReferrerModal(false)
+      setReferrerSearch('')
+      setReferrerSearchResults([])
+      load()
+    } catch {
+      toast.error('Ошибка')
+    }
+  }
 
   const copyText = (text: string, key: string) => {
     navigator.clipboard.writeText(text)
@@ -303,7 +363,6 @@ export default function AdminUserDetail() {
               {user.rmData?.onlineAt && <p>Онлайн: {new Date(user.rmData.onlineAt).toLocaleString('ru')}</p>}
               {user.rmData?.subLastOpenedAt && <p>Последнее открытие подписки: {new Date(user.rmData.subLastOpenedAt).toLocaleString('ru')}</p>}
               {user.rmData?.subLastUserAgent && <p>Приложение: {user.rmData.subLastUserAgent}</p>}
-              <p>Рефералов: {user._count?.referrals || user.referrals?.length || 0}</p>
               <p>Платежей: {user._count?.payments || user.payments?.length || 0}</p>
               <p>Баланс: {Number(user.balance || 0).toFixed(2)} ₽</p>
               <p>Бонусные дни: {user.bonusDays ?? 0}</p>
@@ -343,24 +402,42 @@ export default function AdminUserDetail() {
           </div>
 
           {/* Referrals */}
-          {user.referrals?.length > 0 && (
-            <div className="glass-card space-y-2">
-              <h3 className="font-medium text-sm flex items-center gap-2">
-                <Users className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
-                Рефералы ({user.referrals.length})
+          <div className="glass-card p-4 rounded-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <UserPlus className="w-4 h-4" style={{ color: '#a78bfa' }} />
+                Рефералы
               </h3>
-              {user.referrals.map((ref: any) => (
-                <button key={ref.id}
-                        onClick={() => router.push(`/admin/users/${ref.id}`)}
-                        className="w-full flex items-center gap-2 p-2 rounded-lg text-left text-sm hover:bg-white/[0.03] transition-all">
-                  <span style={{ color: 'var(--text-primary)' }}>
-                    {ref.telegramName || ref.email?.split('@')[0] || ref.id.slice(0, 8)}
-                  </span>
-                  <ChevronRight className="w-3 h-3 ml-auto" style={{ color: 'var(--text-tertiary)' }} />
-                </button>
-              ))}
+              <button
+                onClick={() => setShowReferralsModal(true)}
+                className="text-xs px-2 py-1 rounded-lg"
+                style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.2)' }}
+              >
+                Подробнее →
+              </button>
             </div>
-          )}
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Всего</div>
+                <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {user.referralsCount ?? 0}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Оплатили</div>
+                <div className="text-2xl font-bold" style={{ color: '#34d399' }}>
+                  {user.paidReferralsCount ?? 0}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowReferrerModal(true)}
+              className="w-full text-xs px-2 py-1.5 rounded-lg"
+              style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
+            >
+              {user.referredById ? 'Изменить пригласителя' : 'Назначить пригласителя'}
+            </button>
+          </div>
         </div>
 
         {/* Right column — details */}
@@ -945,6 +1022,174 @@ export default function AdminUserDetail() {
             </button>
           </div>
         </ModalOverlay>
+      )}
+
+      {/* Referrals list modal */}
+      {showReferralsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowReferralsModal(false)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-2xl p-5 space-y-4 max-h-[85vh] flex flex-col"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                Рефералы ({referralsTotal})
+              </h3>
+              <button onClick={() => setShowReferralsModal(false)} className="p-1 rounded hover:bg-white/5">
+                <X className="w-5 h-5" style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+            </div>
+
+            <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)', width: 'fit-content' }}>
+              {([
+                { value: 'all' as const, label: 'Все' },
+                { value: 'paid' as const, label: 'Оплатившие' },
+              ]).map(t => (
+                <button
+                  key={t.value}
+                  onClick={() => { setReferralsFilter(t.value); setReferralsPage(1) }}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium"
+                  style={{
+                    background: referralsFilter === t.value ? 'var(--accent-1)' : 'transparent',
+                    color: referralsFilter === t.value ? '#fff' : 'var(--text-secondary)',
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1.5">
+              {referralsLoading ? (
+                <div className="text-center py-8 text-sm" style={{ color: 'var(--text-tertiary)' }}>Загрузка...</div>
+              ) : referrals.length === 0 ? (
+                <div className="text-center py-8 text-sm" style={{ color: 'var(--text-tertiary)' }}>Нет рефералов</div>
+              ) : (
+                referrals.map(r => (
+                  <a
+                    key={r.id}
+                    href={`/admin/users/${r.id}`}
+                    className="flex items-center justify-between p-3 rounded-xl hover:bg-white/[0.05] transition-colors"
+                    style={{ background: 'var(--surface-2)' }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {r.telegramName ? `@${r.telegramName}` : (r.email || r.id.slice(0, 8))}
+                      </div>
+                      <div className="text-xs flex items-center gap-2 mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        <span>Рег: {new Date(r.createdAt).toLocaleDateString('ru-RU')}</span>
+                        {r.lastPaymentAt && (
+                          <span>· Последняя оплата: {new Date(r.lastPaymentAt).toLocaleDateString('ru-RU')}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right ml-3">
+                      <div className="text-sm font-semibold" style={{ color: r.paymentsCount > 0 ? '#34d399' : 'var(--text-tertiary)' }}>
+                        {Number(r.totalPaid || 0).toLocaleString('ru-RU')} ₽
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {r.paymentsCount} оплат
+                      </div>
+                    </div>
+                  </a>
+                ))
+              )}
+            </div>
+
+            {referralsTotal > 20 && (
+              <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Страница {referralsPage} из {Math.ceil(referralsTotal / 20)}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => referralsPage > 1 && loadReferrals(referralsPage - 1)}
+                    disabled={referralsPage <= 1}
+                    className="px-3 py-1 rounded-lg text-xs"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', opacity: referralsPage <= 1 ? 0.5 : 1 }}
+                  >
+                    Назад
+                  </button>
+                  <button
+                    onClick={() => referralsPage < Math.ceil(referralsTotal / 20) && loadReferrals(referralsPage + 1)}
+                    disabled={referralsPage >= Math.ceil(referralsTotal / 20)}
+                    className="px-3 py-1 rounded-lg text-xs"
+                    style={{ background: 'var(--accent-1)', color: '#fff', opacity: referralsPage >= Math.ceil(referralsTotal / 20) ? 0.5 : 1 }}
+                  >
+                    Вперёд
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Referrer (inviter) modal */}
+      {showReferrerModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowReferrerModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-5 space-y-4"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                Пригласитель
+              </h3>
+              <button onClick={() => setShowReferrerModal(false)} className="p-1">
+                <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={referrerSearch}
+              onChange={e => { setReferrerSearch(e.target.value); searchReferrers(e.target.value) }}
+              placeholder="Email, Username или ID..."
+              className="glass-input w-full text-sm"
+            />
+            <div className="space-y-1 max-h-[40vh] overflow-y-auto">
+              {referrerSearchResults.map((u: any) => (
+                <button
+                  key={u.id}
+                  onClick={() => updateReferrer(u.id)}
+                  className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-white/[0.05] text-left"
+                  style={{ background: 'var(--surface-2)' }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                      {u.telegramName ? `@${u.telegramName}` : (u.email || u.id.slice(0, 8))}
+                    </div>
+                    {u.email && u.telegramName && (
+                      <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{u.email}</div>
+                    )}
+                  </div>
+                </button>
+              ))}
+              {referrerSearch.length >= 2 && referrerSearchResults.length === 0 && (
+                <div className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Ничего не найдено</div>
+              )}
+            </div>
+            {user.referredById && (
+              <button
+                onClick={() => updateReferrer(null)}
+                className="w-full py-2 rounded-xl text-sm"
+                style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.15)' }}
+              >
+                Убрать пригласителя
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

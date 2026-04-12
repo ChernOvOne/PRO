@@ -51,6 +51,10 @@ export async function adminInfrastructureRoutes(app: FastifyInstance) {
         nextPaymentDate:  z.string().optional(),
         notifyDaysBefore: z.number().int().min(0).optional(),
         notes:            z.string().optional(),
+        type:             z.string().optional(),
+        metadata:         z.any().optional(),
+        periodicity:      z.string().optional(),
+        autoRenew:        z.boolean().optional(),
       })
       .parse(req.body)
 
@@ -69,6 +73,10 @@ export async function adminInfrastructureRoutes(app: FastifyInstance) {
           : undefined,
         notifyDaysBefore: body.notifyDaysBefore,
         notes:            body.notes,
+        type:             body.type ?? 'vpn_server',
+        metadata:         body.metadata ?? undefined,
+        periodicity:      body.periodicity ?? 'monthly',
+        autoRenew:        body.autoRenew ?? false,
       },
       include: { recurringPayments: true },
     })
@@ -91,6 +99,10 @@ export async function adminInfrastructureRoutes(app: FastifyInstance) {
         nextPaymentDate:  z.string().optional(),
         notifyDaysBefore: z.number().int().min(0).optional(),
         notes:            z.string().optional(),
+        type:             z.string().optional(),
+        metadata:         z.any().optional(),
+        periodicity:      z.string().optional(),
+        autoRenew:        z.boolean().optional(),
       })
       .parse(req.body)
 

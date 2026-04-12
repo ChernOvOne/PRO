@@ -32,6 +32,7 @@ const DB_TO_ENV: Record<string, string> = {
   'currency': 'CURRENCY',
   'currency_symbol': 'CURRENCY_SYMBOL',
   'timezone': 'TIMEZONE',
+  'maptiler_key': 'MAPTILER_KEY',
 }
 
 function updateEnvFile(updates: Record<string, string>) {
@@ -275,6 +276,7 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
       DOMAIN: show(process.env.DOMAIN),
       JWT_EXPIRES_IN: show(process.env.JWT_EXPIRES_IN),
       NODE_ENV: show(process.env.NODE_ENV),
+      MAPTILER_KEY: mask(process.env.MAPTILER_KEY),
     }
   })
 

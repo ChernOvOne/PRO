@@ -1527,6 +1527,29 @@ bot.on('poll_answer', async (ctx) => {
       create: { key, value: JSON.stringify(results) },
       update: { value: JSON.stringify(results) },
     })
+
+    // Also track in BroadcastRecipient if this poll belongs to a broadcast
+    try {
+      const telegramId = String(pa.user.id)
+      const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } })
+      if (user) {
+        const broadcast = await prisma.broadcast.findFirst({
+          where: { tgPollId: pa.poll_id },
+          select: { id: true },
+        })
+        if (broadcast) {
+          await prisma.broadcastRecipient.update({
+            where: { broadcastId_userId: { broadcastId: broadcast.id, userId: user.id } },
+            data: {
+              pollOptionIdx: pa.option_ids[0],
+              pollVotedAt: new Date(),
+            },
+          }).catch(() => {})
+        }
+      }
+    } catch (e) {
+      logger.warn(`Broadcast poll vote tracking failed: ${e}`)
+    }
   } catch (err) {
     logger.warn('Failed to track poll answer:', err)
   }
@@ -1758,9 +1781,44 @@ bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
     trackClick(buttonId).catch(() => {})
 
     const button = await prisma.botButton.findUnique({ where: { id: buttonId } })
+    const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
+
+    // Track broadcast button clicks: find recent broadcast recipient and mark click
+    if (user) {
+      try {
+        const recent = await prisma.broadcastRecipient.findFirst({
+          where: {
+            userId: user.id,
+            tgStatus: 'sent',
+            tgSentAt: { gte: new Date(Date.now() - 7 * 86400_000) },
+            clickedAt: null,
+          },
+          orderBy: { tgSentAt: 'desc' },
+          include: {
+            broadcast: { select: { tgButtons: true } },
+          },
+        })
+        if (recent) {
+          const btns = Array.isArray(recent.broadcast.tgButtons) ? recent.broadcast.tgButtons as any[] : []
+          const clickedBtn = btns.find((b: any) => b && b.botBlockId === buttonId)
+          if (clickedBtn) {
+            await prisma.broadcastRecipient.update({
+              where: { id: recent.id },
+              data: {
+                clickedButton: clickedBtn.label,
+                clickedBlockId: buttonId,
+                clickedAt: new Date(),
+              },
+            }).catch(() => {})
+          }
+        }
+      } catch (e) {
+        logger.warn(`Broadcast click tracking failed: ${e}`)
+      }
+    }
+
     if (button) {
       // Log incoming callback
-      const user = await prisma.user.findUnique({ where: { telegramId: chatId }, select: { id: true } })
       logIncoming(chatId, user?.id ?? null, `Действие: ${button.label}`, `blk:${buttonId}`)
 
       if (button.nextBlockId && user) {

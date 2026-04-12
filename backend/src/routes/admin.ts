@@ -22,7 +22,7 @@ async function getGeoInfo(ip: string | null): Promise<any> {
   if (cached && Date.now() - cached.ts < 3600_000) return cached.data
 
   try {
-    const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,regionName,isp,query`, { timeout: 3000 })
+    const res = await axios.get(`http://ip-api.com/json/${ip}?fields=status,country,city,regionName,isp,lat,lon,query`, { timeout: 3000 })
     if (res.data?.status === 'success') {
       const geo = {
         ip:      res.data.query,
@@ -30,6 +30,8 @@ async function getGeoInfo(ip: string | null): Promise<any> {
         city:    res.data.city,
         region:  res.data.regionName,
         isp:     res.data.isp,
+        lat:     res.data.lat,
+        lon:     res.data.lon,
       }
       geoCache.set(ip, { data: geo, ts: Date.now() })
       return geo
@@ -72,6 +74,211 @@ const InstructionSchema = z.object({
   sortOrder:  z.number().int().default(0),
   isActive:   z.boolean().default(true),
 })
+
+// ─────────────────────────────────────────────────────────
+//  Shared: build Prisma where clause for /users listing
+//  Used by /users, /segments/:id/count and /segments/:id/users
+// ─────────────────────────────────────────────────────────
+export async function buildUsersWhere(q: Record<string, any>): Promise<any> {
+  const where: any = {}
+  const search: string = q.search || ''
+  if (search) {
+    where.OR = [
+      { email:        { contains: search, mode: 'insensitive' } },
+      { telegramName: { contains: search, mode: 'insensitive' } },
+      { telegramId:   { contains: search } },
+    ]
+  }
+  if (q.status) where.subStatus = q.status
+  if (q.utm) where.customerSource = { contains: q.utm, mode: 'insensitive' }
+  if (q.is_active === 'yes') where.isActive = true
+  if (q.is_active === 'no') where.isActive = false
+  if (q.role) where.role = q.role
+  if (q.has_email === 'yes') where.email = { not: null }
+  if (q.has_email === 'no') where.email = null
+  if (q.has_telegram === 'yes') where.telegramId = { not: null }
+  if (q.has_telegram === 'no') where.telegramId = null
+  if (q.has_leadteh === 'yes') where.leadtehId = { not: null }
+  if (q.has_leadteh === 'no') where.leadtehId = null
+
+  // Payments filter
+  if (q.has_payments === 'yes') where.paymentsCount = { gt: 0 }
+  if (q.has_payments === 'no') where.paymentsCount = 0
+  if (q.payments_min) where.paymentsCount = { ...(where.paymentsCount || {}), gte: Number(q.payments_min) }
+  if (q.payments_max) where.paymentsCount = { ...(where.paymentsCount || {}), lte: Number(q.payments_max) }
+
+  if (q.paid_min) where.totalPaid = { ...(where.totalPaid || {}), gte: Number(q.paid_min) }
+  if (q.paid_max) where.totalPaid = { ...(where.totalPaid || {}), lte: Number(q.paid_max) }
+
+  // Referrals (count-based)
+  if (q.has_referrals === 'yes') where.referrals = { some: {} }
+  if (q.has_referrals === 'no') where.referrals = { none: {} }
+
+  // Date ranges
+  if (q.created_from || q.created_to) {
+    where.createdAt = {}
+    if (q.created_from) where.createdAt.gte = new Date(q.created_from)
+    if (q.created_to) where.createdAt.lte = new Date(q.created_to)
+  }
+
+  if (q.expires_from || q.expires_to) {
+    where.subExpireAt = {}
+    if (q.expires_from) where.subExpireAt.gte = new Date(q.expires_from)
+    if (q.expires_to) where.subExpireAt.lte = new Date(q.expires_to)
+  }
+
+  // Last login days - combines with search OR if already set
+  if (q.last_login_days) {
+    const days = Number(q.last_login_days)
+    const threshold = new Date(Date.now() - days * 86400000)
+    const lastLoginCond = [
+      { lastLoginAt: null },
+      { lastLoginAt: { lt: threshold } },
+    ]
+    if (where.OR) {
+      const existingOr = where.OR
+      delete where.OR
+      where.AND = [
+        { OR: existingOr },
+        { OR: lastLoginCond },
+      ]
+    } else {
+      where.OR = lastLoginCond
+    }
+  }
+
+  // Campaign filter: find utmCode by campaignId
+  if (q.campaignId) {
+    const camp = await prisma.buhAdCampaign.findUnique({ where: { id: q.campaignId } })
+    if (camp?.utmCode) {
+      where.customerSource = camp.utmCode
+    }
+  }
+
+  // ── Extended filters ─────────────────────────────────────
+  // search_id: точный/частичный поиск по id / telegramId / leadtehId
+  if (q.search_id) {
+    const sid = String(q.search_id).trim()
+    const sidOr = [
+      { id: sid },
+      { telegramId: sid },
+      { leadtehId: sid },
+      { id: { contains: sid, mode: 'insensitive' as const } },
+    ]
+    if (where.OR) {
+      const existingOr = where.OR
+      delete where.OR
+      where.AND = [...(where.AND || []), { OR: existingOr }, { OR: sidOr }]
+    } else {
+      where.OR = sidOr
+    }
+  }
+
+  // expires_in_days — истекает в ближайшие N дней
+  if (q.expires_in_days) {
+    const days = Number(q.expires_in_days)
+    const now = new Date()
+    const future = new Date(Date.now() + days * 86400000)
+    where.subExpireAt = { ...(where.subExpireAt || {}), gte: now, lte: future }
+  }
+
+  // expired_days_ago — истекло ровно N дней назад (±1 день)
+  if (q.expired_days_ago) {
+    const days = Number(q.expired_days_ago)
+    const from = new Date(Date.now() - (days + 1) * 86400000)
+    const to = new Date(Date.now() - days * 86400000)
+    where.subExpireAt = { ...(where.subExpireAt || {}), gte: from, lte: to }
+  }
+
+  // trial_used — использовал ли триал
+  if (q.trial_used === 'yes') {
+    where.AND = [...(where.AND || []), { OR: [{ subStatus: 'TRIAL' }, { paymentsCount: { gt: 0 } }] }]
+  }
+  if (q.trial_used === 'no') {
+    where.AND = [...(where.AND || []), { subStatus: { not: 'TRIAL' } }, { paymentsCount: 0 }]
+  }
+
+  // balance range
+  if (q.balance_min || q.balance_max) {
+    where.balance = where.balance || {}
+    if (q.balance_min) where.balance.gte = Number(q.balance_min)
+    if (q.balance_max) where.balance.lte = Number(q.balance_max)
+  }
+
+  // bonus days range
+  if (q.bonus_days_min || q.bonus_days_max) {
+    where.bonusDays = where.bonusDays || {}
+    if (q.bonus_days_min) where.bonusDays.gte = Number(q.bonus_days_min)
+    if (q.bonus_days_max) where.bonusDays.lte = Number(q.bonus_days_max)
+  }
+
+  // paid_recent_days — давно не платил
+  if (q.paid_recent_days) {
+    const days = Number(q.paid_recent_days)
+    const threshold = new Date(Date.now() - days * 86400000)
+    where.AND = [
+      ...(where.AND || []),
+      { OR: [{ lastPaymentAt: null }, { lastPaymentAt: { lt: threshold } }] },
+    ]
+  }
+
+  // no_utm — органика
+  if (q.no_utm === 'yes') {
+    where.customerSource = null
+  }
+
+  // utm_without_campaign — есть source, но нет соответствующей кампании
+  if (q.utm_without_campaign === 'yes') {
+    const camps = await prisma.buhAdCampaign.findMany({ select: { utmCode: true } })
+    const codes = camps.map(c => c.utmCode).filter(Boolean) as string[]
+    where.customerSource = { not: null, notIn: codes }
+  }
+
+  // has_referrer
+  if (q.has_referrer === 'yes') where.referredById = { not: null }
+  if (q.has_referrer === 'no') where.referredById = null
+
+  // referrer_id — все, кого пригласил указанный пользователь
+  if (q.referrer_id) where.referredById = q.referrer_id
+
+  // referrals_paid_min — пользователи, у которых ≥ N оплативших рефералов
+  if (q.referrals_paid_min) {
+    const minPaid = Number(q.referrals_paid_min)
+    where.referrals = { ...(where.referrals || {}), some: { paymentsCount: { gt: 0 } } }
+    // exact "≥ N" filter handled in-memory after fetch (см. ниже)
+    ;(where as any).__refsPaidMin = minPaid
+  }
+
+  // registered_days_ago — годовщина (±1 день)
+  if (q.registered_days_ago) {
+    const days = Number(q.registered_days_ago)
+    const from = new Date(Date.now() - (days + 1) * 86400000)
+    const to = new Date(Date.now() - Math.max(days - 1, 0) * 86400000)
+    where.createdAt = { ...(where.createdAt || {}), gte: from, lte: to }
+  }
+
+  // registered_within_days — за последние N дней
+  if (q.registered_within_days) {
+    const days = Number(q.registered_within_days)
+    where.createdAt = { ...(where.createdAt || {}), gte: new Date(Date.now() - days * 86400000) }
+  }
+
+  // active_within_days — заходил в ЛК за последние N дней
+  if (q.active_within_days) {
+    const days = Number(q.active_within_days)
+    where.lastLoginAt = { ...(where.lastLoginAt || {}), gte: new Date(Date.now() - days * 86400000) }
+  }
+
+  // country / city — JSON path filters on geoInfo
+  if (q.country) {
+    where.geoInfo = { path: ['country'], equals: q.country }
+  }
+  if (q.city) {
+    where.geoInfo = { path: ['city'], string_contains: q.city }
+  }
+
+  return where
+}
 
 export async function adminRoutes(app: FastifyInstance) {
   const admin = { preHandler: [app.adminOnly] }
@@ -168,39 +375,174 @@ export async function adminRoutes(app: FastifyInstance) {
   //  USERS
   // ─────────────────────────────────────────────────────────
   app.get('/users', admin, async (req) => {
-    const { page = '1', limit = '50', search = '', status = '', utm = '' } =
-      req.query as Record<string, string>
+    const q = req.query as {
+      page?: string
+      limit?: string
+      search?: string
+      status?: string
+      utm?: string
+      campaignId?: string
+      has_payments?: string
+      payments_min?: string
+      payments_max?: string
+      paid_min?: string
+      paid_max?: string
+      has_referrals?: string
+      referrals_min?: string
+      created_from?: string
+      created_to?: string
+      expires_from?: string
+      expires_to?: string
+      last_login_days?: string
+      is_active?: string
+      role?: string
+      has_email?: string
+      has_telegram?: string
+      has_leadteh?: string
+      sort?: string
+      // Extended filters
+      search_id?: string
+      expires_in_days?: string
+      expired_days_ago?: string
+      trial_used?: string
+      balance_min?: string
+      balance_max?: string
+      bonus_days_min?: string
+      bonus_days_max?: string
+      avg_check_min?: string
+      avg_check_max?: string
+      paid_recent_days?: string
+      utm_without_campaign?: string
+      no_utm?: string
+      has_referrer?: string
+      referrer_id?: string
+      referrals_paid_min?: string
+      registered_days_ago?: string
+      registered_within_days?: string
+      active_within_days?: string
+      country?: string
+      city?: string
+    }
+
+    const page = q.page || '1'
+    const limit = q.limit || '50'
+    const search = q.search || ''
 
     const skip = (Number(page) - 1) * Number(limit)
-    const where: any = {}
-    if (search) {
-      where.OR = [
-        { email:        { contains: search, mode: 'insensitive' } },
-        { telegramName: { contains: search, mode: 'insensitive' } },
-        { telegramId:   { contains: search } },
-      ]
-    }
-    if (status) where.subStatus = status
-    if (utm) where.customerSource = { contains: utm, mode: 'insensitive' }
+    const where = await buildUsersWhere(q as Record<string, any>)
 
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip,
-        take:    Number(limit),
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true, email: true, telegramId: true, telegramName: true,
-          subStatus: true, subExpireAt: true, role: true, isActive: true,
-          createdAt: true, lastLoginAt: true, remnawaveUuid: true,
-          referralCode: true, customerSource: true,
-          _count: { select: { referrals: true, payments: true } },
-        },
-      }),
-      prisma.user.count({ where }),
-    ])
+    // Strip in-memory hint flag before passing to Prisma
+    const refsPaidMin: number | null = (where as any).__refsPaidMin ?? null
+    if (refsPaidMin !== null) delete (where as any).__refsPaidMin
+
+    let orderBy: any = { createdAt: 'desc' }
+    if (q.sort === 'created_asc') orderBy = { createdAt: 'asc' }
+    if (q.sort === 'paid_desc') orderBy = { totalPaid: 'desc' }
+    if (q.sort === 'paid_asc') orderBy = { totalPaid: 'asc' }
+    if (q.sort === 'payments_desc') orderBy = { paymentsCount: 'desc' }
+    if (q.sort === 'last_login_desc') orderBy = { lastLoginAt: 'desc' }
+
+    // If we need to apply post-filters in memory (avg_check / refs_paid_min),
+    // fetch a wider window and slice client-side. Otherwise normal pagination.
+    const needsPostFilter = !!(q.avg_check_min || q.avg_check_max || refsPaidMin !== null)
+
+    const baseSelect = {
+      id: true, email: true, telegramId: true, telegramName: true,
+      subStatus: true, subExpireAt: true, role: true, isActive: true,
+      createdAt: true, lastLoginAt: true, remnawaveUuid: true,
+      referralCode: true, customerSource: true,
+      totalPaid: true, paymentsCount: true, lastPaymentAt: true, leadtehId: true,
+      balance: true, bonusDays: true, lastIp: true, geoInfo: true,
+      referredById: true,
+      _count: { select: { referrals: true, payments: true } },
+    } as const
+
+    let users: any[]
+    let total: number
+
+    if (needsPostFilter) {
+      // Fetch up to a reasonable cap, filter, then paginate
+      const all = await prisma.user.findMany({
+        where, orderBy, select: baseSelect, take: 5000,
+      })
+      let filtered = all
+      if (q.avg_check_min || q.avg_check_max) {
+        const min = Number(q.avg_check_min || 0)
+        const max = Number(q.avg_check_max || Infinity)
+        filtered = filtered.filter(u => {
+          const avg = u.paymentsCount > 0 ? Number(u.totalPaid) / u.paymentsCount : 0
+          return avg >= min && avg <= max
+        })
+      }
+      if (refsPaidMin !== null) {
+        // _count.referrals is total; we need a per-row count of paid refs.
+        // Fetch paid referral counts for these candidate users in one query.
+        const ids = filtered.map(u => u.id)
+        const grouped = await prisma.user.groupBy({
+          by: ['referredById'],
+          where: { referredById: { in: ids }, paymentsCount: { gt: 0 } },
+          _count: { _all: true },
+        })
+        const paidMap = new Map<string, number>()
+        for (const g of grouped) if (g.referredById) paidMap.set(g.referredById, g._count._all)
+        filtered = filtered.filter(u => (paidMap.get(u.id) || 0) >= refsPaidMin)
+      }
+      total = filtered.length
+      users = filtered.slice(skip, skip + Number(limit))
+    } else {
+      const [u, t] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          skip,
+          take:    Number(limit),
+          orderBy,
+          select: baseSelect,
+        }),
+        prisma.user.count({ where }),
+      ])
+      users = u
+      total = t
+    }
 
     return { users, total, page: Number(page), limit: Number(limit) }
+  })
+
+  // ── Geo stats: aggregated city counts for the map ────────
+  app.get('/users/geo-stats', admin, async () => {
+    const users = await prisma.user.findMany({
+      where: { geoInfo: { not: null } as any } as any,
+      select: { id: true, geoInfo: true },
+    })
+
+    const cityMap: Record<string, { city: string; country: string; lat: number; lon: number; count: number }> = {}
+    for (const u of users) {
+      const g = (u as any).geoInfo as any
+      if (!g || !g.city || typeof g.lat !== 'number' || typeof g.lon !== 'number') continue
+      const key = `${g.country || ''}__${g.city}`
+      if (!cityMap[key]) {
+        cityMap[key] = { city: g.city, country: g.country || '', lat: g.lat, lon: g.lon, count: 0 }
+      }
+      cityMap[key].count += 1
+    }
+
+    return {
+      cities: Object.values(cityMap).sort((a, b) => b.count - a.count),
+      total:  users.length,
+    }
+  })
+
+  // ── Unique countries list (for filter dropdown) ──────────
+  app.get('/users/countries', admin, async () => {
+    const users = await prisma.user.findMany({
+      where: { geoInfo: { not: null } as any } as any,
+      select: { geoInfo: true },
+    })
+    const countries = new Set<string>()
+    for (const u of users) {
+      const g = (u as any).geoInfo as any
+      if (g?.country) countries.add(g.country)
+    }
+    return Array.from(countries).sort()
   })
 
   app.get('/users/:id', admin, async (req, reply) => {
@@ -210,10 +552,15 @@ export async function adminRoutes(app: FastifyInstance) {
       include: {
         payments:     { orderBy: { createdAt: 'desc' }, take: 20 },
         bonusHistory: { orderBy: { appliedAt: 'desc' } },
-        referrals:    { select: { id: true, email: true, telegramName: true } },
       },
     })
     if (!user) return reply.status(404).send({ error: 'User not found' })
+
+    // Lightweight referral counts (do not load full list here)
+    const [totalReferrals, paidReferrals] = await Promise.all([
+      prisma.user.count({ where: { referredById: id } }),
+      prisma.user.count({ where: { referredById: id, paymentsCount: { gt: 0 } } }),
+    ])
 
     const { passwordHash, ...safe } = user as any
 
@@ -245,10 +592,62 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    // GeoIP lookup for last IP
-    const geoInfo = await getGeoInfo(user.lastIp).catch(() => null)
+    // GeoIP lookup for last IP — prefer persisted, fallback to live + persist
+    let geoInfo: any = (user as any).geoInfo ?? null
+    if (!geoInfo && user.lastIp) {
+      geoInfo = await getGeoInfo(user.lastIp).catch(() => null)
+      if (geoInfo) {
+        prisma.user.update({ where: { id: user.id }, data: { geoInfo } as any }).catch(() => {})
+      }
+    }
 
-    return { ...safe, rmData, geoInfo }
+    return { ...safe, rmData, geoInfo, referralsCount: totalReferrals, paidReferralsCount: paidReferrals }
+  })
+
+  // ── User referrals list (paginated) ─────────────────────────
+  app.get('/users/:id/referrals', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    const q = req.query as { page?: string; limit?: string; filter?: 'all' | 'paid' }
+    const page = Math.max(1, Number(q.page) || 1)
+    const limit = Math.min(100, Number(q.limit) || 20)
+    const skip = (page - 1) * limit
+
+    const where: any = { referredById: id }
+    if (q.filter === 'paid') where.paymentsCount = { gt: 0 }
+
+    const [items, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip, take: limit,
+        select: {
+          id: true, email: true, telegramName: true, telegramId: true,
+          subStatus: true, createdAt: true,
+          totalPaid: true, paymentsCount: true, lastPaymentAt: true,
+        },
+      }),
+      prisma.user.count({ where }),
+    ])
+
+    return { items, total, page, limit }
+  })
+
+  // ── Change referrer (inviter) for a user ────────────────────
+  app.put('/users/:id/referrer', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { referrerId?: string | null }
+
+    // Prevent self-referral
+    if (body.referrerId === id) {
+      return reply.status(400).send({ error: 'Cannot refer self' })
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { referredById: body.referrerId || null },
+      select: { id: true, referredById: true },
+    })
+    return { ok: true, user }
   })
 
   // ── User activity log (admin view) ─────────────────────────
@@ -893,5 +1292,75 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     return { users, total: users.length }
+  })
+
+  // ─────────────────────────────────────────────────────────
+  //  USER SEGMENTS (saved filter lists)
+  // ─────────────────────────────────────────────────────────
+  app.get('/segments', admin, async () => {
+    return prisma.userSegment.findMany({ orderBy: { createdAt: 'desc' } })
+  })
+
+  app.post('/segments', admin, async (req) => {
+    const body = z.object({
+      name:        z.string().min(1),
+      description: z.string().optional().nullable(),
+      filters:     z.any(),
+      color:       z.string().optional().nullable(),
+    }).parse(req.body)
+    const userId = (req.user as any)?.sub ?? null
+    return prisma.userSegment.create({
+      data: {
+        name:        body.name,
+        description: body.description ?? null,
+        filters:     body.filters ?? {},
+        color:       body.color ?? '#06b6d4',
+        createdById: userId,
+      },
+    })
+  })
+
+  app.put('/segments/:id', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    const body = z.object({
+      name:        z.string().optional(),
+      description: z.string().nullable().optional(),
+      filters:     z.any().optional(),
+      color:       z.string().nullable().optional(),
+    }).parse(req.body)
+    return prisma.userSegment.update({ where: { id }, data: body as any })
+  })
+
+  app.delete('/segments/:id', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    await prisma.userSegment.delete({ where: { id } })
+    return { ok: true }
+  })
+
+  app.get('/segments/:id/count', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    const seg = await prisma.userSegment.findUnique({ where: { id } })
+    if (!seg) return { count: 0 }
+    const filters = (seg.filters as Record<string, any>) || {}
+    const where = await buildUsersWhere(filters)
+    // Strip in-memory hint flag before passing to Prisma
+    if ((where as any).__refsPaidMin !== undefined) delete (where as any).__refsPaidMin
+    const count = await prisma.user.count({ where })
+    return { count }
+  })
+
+  app.get('/segments/:id/users', admin, async (req) => {
+    const { id } = req.params as { id: string }
+    const seg = await prisma.userSegment.findUnique({ where: { id } })
+    if (!seg) return { users: [] }
+    const filters = (seg.filters as Record<string, any>) || {}
+    const where = await buildUsersWhere(filters)
+    if ((where as any).__refsPaidMin !== undefined) delete (where as any).__refsPaidMin
+    const users = await prisma.user.findMany({
+      where,
+      select: { id: true, telegramId: true, email: true },
+      take: 10000,
+    })
+    return { users }
   })
 }

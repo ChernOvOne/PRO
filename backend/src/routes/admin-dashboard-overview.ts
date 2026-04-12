@@ -4,6 +4,11 @@ import { remnawave } from '../services/remnawave'
 
 type Days = 1 | 7 | 30 | 365
 
+// In-memory store of dismissed alerts (MVP).
+// Key is `${alertKey}`, value = dismissedAt. Admin can press "Просмотрено"
+// to hide a given (alert, value) combination until the value changes.
+const dismissedAlerts = new Map<string, Date>()
+
 function parseDays(raw: any): Days {
   const n = Number(raw)
   if (n === 1 || n === 7 || n === 30 || n === 365) return n as Days
@@ -275,6 +280,100 @@ async function collectOverview(days: Days) {
     ? Math.round((newCustomersPaid / newCustomers) * 10000) / 100
     : 0
 
+  // ── Top referrers (users who invited the most paying customers) ──
+  let topReferrers: Array<{
+    id: string
+    email: string | null
+    telegramName: string | null
+    referralCount: number
+    totalCount: number
+  }> = []
+  try {
+    const topReferrersRaw = await prisma.$queryRaw<Array<{
+      id: string
+      email: string | null
+      telegram_name: string | null
+      total_refs: bigint
+      paid_refs: bigint
+    }>>`
+      SELECT
+        u.id, u.email, u.telegram_name,
+        COUNT(r.id)::bigint as total_refs,
+        COUNT(CASE WHEN r.payments_count > 0 THEN 1 END)::bigint as paid_refs
+      FROM users u
+      INNER JOIN users r ON r.referred_by_id = u.id
+      GROUP BY u.id, u.email, u.telegram_name
+      HAVING COUNT(CASE WHEN r.payments_count > 0 THEN 1 END) > 0
+      ORDER BY paid_refs DESC, total_refs DESC
+      LIMIT 5
+    `
+    topReferrers = topReferrersRaw.map(r => ({
+      id: r.id,
+      email: r.email,
+      telegramName: r.telegram_name,
+      referralCount: Number(r.paid_refs),
+      totalCount: Number(r.total_refs),
+    }))
+  } catch { topReferrers = [] }
+
+  // ── Alerts ──
+  // 1) Pending payments older than 1 hour
+  const hourAgo = new Date(Date.now() - 3600_000)
+  const pendingOld = await prisma.payment.count({
+    where: { status: 'PENDING', createdAt: { lt: hourAgo } },
+  })
+
+  // 2) Revenue drop: yesterday vs avg of last 7 days (ending yesterday)
+  const yesterdayStart = new Date(now)
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+  yesterdayStart.setHours(0, 0, 0, 0)
+  const yesterdayEnd = new Date(yesterdayStart)
+  yesterdayEnd.setDate(yesterdayEnd.getDate() + 1)
+  const weekStart = new Date(yesterdayStart)
+  weekStart.setDate(weekStart.getDate() - 7)
+  const [yesterdayRevAgg, weekRevAgg] = await Promise.all([
+    prisma.payment.aggregate({
+      where: { status: 'PAID', confirmedAt: { gte: yesterdayStart, lt: yesterdayEnd } },
+      _sum: { amount: true },
+    }),
+    prisma.payment.aggregate({
+      where: { status: 'PAID', confirmedAt: { gte: weekStart, lt: yesterdayStart } },
+      _sum: { amount: true },
+    }),
+  ])
+  const avgDayRev = Number(weekRevAgg._sum.amount ?? 0) / 7
+  const yesterdayRevNum = Number(yesterdayRevAgg._sum.amount ?? 0)
+  const revenueDropPct = avgDayRev > 0
+    ? Math.max(0, Math.round(((avgDayRev - yesterdayRevNum) / avgDayRev) * 100))
+    : 0
+
+  // 3) Unprocessed webhook payments (no linked transaction yet)
+  const unprocessedWebhooks = await prisma.buhWebhookPayment.count({
+    where: { transactionId: null },
+  }).catch(() => 0)
+
+  // 4) Campaigns in loss (ROI < 0 within current period)
+  const lossCampaigns = enrichedCampaigns.filter(c => c.roi < 0).length
+
+  // 5) Traffic running out — users with >80% used, capped list
+  let trafficEnding = 0
+  try {
+    const rmAllStats = await remnawave.getSystemStats().catch(() => null) as any
+    // We don't have per-user traffic here cheaply; use coarse approximation
+    // from REMNAWAVE if available. Otherwise fallback to 0.
+    if (rmAllStats?.users?.trafficWarning) {
+      trafficEnding = Number(rmAllStats.users.trafficWarning) || 0
+    }
+  } catch {}
+
+  // ── MRR (revenue over the last 30 days) ──
+  const mrrStart = new Date(Date.now() - 30 * 86400000)
+  const mrrAgg = await prisma.payment.aggregate({
+    where: { status: 'PAID', confirmedAt: { gte: mrrStart } },
+    _sum: { amount: true },
+  })
+  const mrr = Number(mrrAgg._sum.amount ?? 0)
+
   // ── VPN stats from REMNAWAVE ──
   const rmStats = await remnawave.getSystemStats().catch(() => null)
   const nodesBlock = rmStats?.nodes ?? {}
@@ -288,11 +387,55 @@ async function collectOverview(days: Days) {
     activeSubs: Number(usersBlock.activeCount ?? usersBlock.active ?? 0) || 0,
   }
 
+  // Infrastructure payments due in the next 7 days
+  const infra7d = new Date(Date.now() + 7 * 86400_000)
+  const infraDueSoon = await prisma.buhVpnServer.count({
+    where: {
+      isActive: true,
+      nextPaymentDate: { gte: new Date(), lte: infra7d },
+    },
+  }).catch(() => 0)
+
+  // Infrastructure items already overdue
+  const infraOverdue = await prisma.buhVpnServer.count({
+    where: {
+      isActive: true,
+      nextPaymentDate: { lt: new Date() },
+    },
+  }).catch(() => 0)
+
+  // Count unique users who blocked the bot (across all broadcasts)
+  const blockedUsersCount = await prisma.broadcastRecipient.findMany({
+    where: { botBlocked: true },
+    select: { userId: true },
+    distinct: ['userId'],
+  }).then(r => r.length).catch(() => 0)
+
+  // Apply dismissals: if an alert with the same value has been dismissed,
+  // we zero it out so the frontend hides it.
+  const alertsRaw = {
+    pendingPayments: pendingOld,
+    revenueDropPct,
+    unprocessedWebhooks,
+    lossCampaigns,
+    trafficEnding,
+    infraDueSoon,
+    infraOverdue,
+    botBlockedUsers: blockedUsersCount,
+  }
+  const alerts = { ...alertsRaw }
+  const keyFor = (k: keyof typeof alertsRaw) => `${k}_${alertsRaw[k]}`
+  ;(Object.keys(alertsRaw) as Array<keyof typeof alertsRaw>).forEach(k => {
+    if (dismissedAlerts.has(keyFor(k))) (alerts as any)[k] = 0
+  })
+
   return {
     period: { days, from: from.toISOString(), to: to.toISOString() },
+    alerts,
     kpi: {
       revenue,
       revenuePrev,
+      mrr,
       newCustomers,
       newCustomersPaid,
       profit,
@@ -319,6 +462,7 @@ async function collectOverview(days: Days) {
         totalPaid: Number(u.totalPaid),
         paymentsCount: u.paymentsCount,
       })),
+      topReferrers,
       conversionRate,
       active: activeCount,
       expired: expiredCount,
@@ -334,12 +478,10 @@ async function collectEvents(limit: number) {
   const weekAgo = new Date(now)
   weekAgo.setDate(weekAgo.getDate() - 7)
 
-  const expiringSoon = new Date(now)
-  expiringSoon.setDate(expiringSoon.getDate() + 3)
-
-  const [payments, users, expenses, expiring] = await Promise.all([
+  const [payments, manualTransactions, inkasRecords, adCampaigns] = await Promise.all([
+    // Only crowded payments from clients (>= 100 ₽)
     prisma.payment.findMany({
-      where: { status: 'PAID', confirmedAt: { gte: weekAgo } },
+      where: { status: 'PAID', confirmedAt: { gte: weekAgo }, amount: { gte: 100 } },
       orderBy: { confirmedAt: 'desc' },
       take: limit,
       select: {
@@ -347,23 +489,37 @@ async function collectEvents(limit: number) {
         user: { select: { id: true, email: true, telegramName: true } },
       },
     }),
-    prisma.user.findMany({
+    // Admin actions — manual income/expense from BuhTransaction (source = 'web' or 'bot')
+    prisma.buhTransaction.findMany({
+      where: {
+        date: { gte: weekAgo },
+        source: { in: ['web', 'bot', 'manual'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true, type: true, amount: true, description: true, date: true, createdAt: true,
+        createdBy: { select: { id: true, email: true, telegramName: true } },
+        category: { select: { name: true } },
+      },
+    }),
+    // Inkas (dividends / investments / returns)
+    prisma.buhInkasRecord.findMany({
+      where: { date: { gte: weekAgo } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true, type: true, amount: true, date: true, description: true, createdAt: true,
+        partner: { select: { name: true } },
+        createdBy: { select: { id: true, email: true, telegramName: true } },
+      },
+    }),
+    // New ad campaigns
+    prisma.buhAdCampaign.findMany({
       where: { createdAt: { gte: weekAgo } },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      select: { id: true, email: true, telegramName: true, createdAt: true },
-    }),
-    prisma.buhTransaction.findMany({
-      where: { type: 'EXPENSE', amount: { gt: 1000 }, date: { gte: weekAgo } },
-      orderBy: { date: 'desc' },
-      take: limit,
-      select: { id: true, amount: true, description: true, date: true },
-    }),
-    prisma.user.findMany({
-      where: { subExpireAt: { gte: now, lte: expiringSoon } },
-      orderBy: { subExpireAt: 'asc' },
-      take: limit,
-      select: { id: true, email: true, telegramName: true, subExpireAt: true },
+      select: { id: true, channelName: true, amount: true, createdAt: true, format: true },
     }),
   ])
 
@@ -384,38 +540,50 @@ async function collectEvents(limit: number) {
       entityId: p.user?.id || p.id,
     })
   })
-  users.forEach(u => {
+  manualTransactions.forEach(t => {
+    const amount = Number(t.amount)
+    const admin = t.createdBy?.telegramName || t.createdBy?.email || 'Админ'
     events.push({
-      type: 'user',
-      icon: '🔵',
-      title: 'Новый пользователь',
-      subtitle: u.email || u.telegramName || '—',
-      time: u.createdAt.toISOString(),
-      entityId: u.id,
+      type: t.type === 'INCOME' ? 'admin_income' : 'admin_expense',
+      icon: t.type === 'INCOME' ? '💰' : '💸',
+      title: t.type === 'INCOME'
+        ? `Доход +${amount.toLocaleString('ru-RU')} ₽`
+        : `Расход −${amount.toLocaleString('ru-RU')} ₽`,
+      subtitle: `${admin} · ${t.category?.name || t.description || '—'}`,
+      time: (t.createdAt ?? t.date).toISOString(),
+      amount,
+      entityId: t.id,
     })
   })
-  expenses.forEach(e => {
+  inkasRecords.forEach(r => {
+    const amount = Number(r.amount)
+    const admin = r.createdBy?.telegramName || r.createdBy?.email || 'Админ'
+    const typeLabel = r.type === 'DIVIDEND' ? 'Дивиденды'
+      : r.type === 'INVESTMENT' ? 'Инвестиция'
+      : r.type === 'RETURN_INV' ? 'Возврат'
+      : 'Инкассация'
     events.push({
-      type: 'expense',
-      icon: '🔴',
-      title: `Расход ${Number(e.amount).toLocaleString('ru-RU')} ₽`,
-      subtitle: e.description || '—',
-      time: e.date.toISOString(),
-      amount: Number(e.amount),
-      entityId: e.id,
+      type: 'inkas',
+      icon: '🤝',
+      title: `${typeLabel} ${amount.toLocaleString('ru-RU')} ₽`,
+      subtitle: `${admin} · ${r.partner?.name || '—'}`,
+      time: (r.createdAt ?? r.date).toISOString(),
+      amount,
+      entityId: r.id,
     })
   })
-  expiring.forEach(u => {
+  adCampaigns.forEach(c => {
+    const amount = Number(c.amount || 0)
     events.push({
-      type: 'expiring',
-      icon: '🟡',
-      title: 'Истекает подписка',
-      subtitle: u.email || u.telegramName || '—',
-      time: (u.subExpireAt ?? new Date()).toISOString(),
-      entityId: u.id,
+      type: 'campaign',
+      icon: '📣',
+      title: `Новая кампания`,
+      subtitle: `${c.channelName}${c.format ? ' · ' + c.format : ''}${amount ? ' · ' + amount.toLocaleString('ru-RU') + ' ₽' : ''}`,
+      time: c.createdAt.toISOString(),
+      amount: amount || undefined,
+      entityId: c.id,
     })
   })
-
   events.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
   return events.slice(0, limit)
 }
@@ -428,6 +596,15 @@ export async function adminDashboardOverviewRoutes(app: FastifyInstance) {
     const q = req.query as { days?: string }
     const days = parseDays(q.days)
     return collectOverview(days)
+  })
+
+  app.post('/dismiss-alert', staff, async (req) => {
+    const body = (req.body ?? {}) as { alertKey?: string }
+    if (!body.alertKey || typeof body.alertKey !== 'string') {
+      return { ok: false, error: 'alertKey required' }
+    }
+    dismissedAlerts.set(body.alertKey, new Date())
+    return { ok: true }
   })
 
   app.get('/events', staff, async (req) => {
