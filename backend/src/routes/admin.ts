@@ -774,6 +774,7 @@ export async function adminRoutes(app: FastifyInstance) {
       page = '1', limit = '50', status = '', provider = '',
       search = '', userId = '', dateFrom = '', dateTo = '',
       purpose = '', type: paymentType = '',
+      userFilter = '', sortBy = 'date', sortDir = 'desc',
     } = req.query as Record<string, string>
 
     const skip  = (Number(page) - 1) * Number(limit)
@@ -783,40 +784,37 @@ export async function adminRoutes(app: FastifyInstance) {
     if (userId)   where.userId   = userId
     if (purpose)  where.purpose  = purpose
 
+    // User filter: with/without user
+    if (userFilter === 'with') where.userId = { not: null }
+    else if (userFilter === 'without') where.userId = null
+
     if (dateFrom || dateTo) {
       where.createdAt = {}
-      if (dateFrom) where.createdAt.gte = new Date(dateFrom)
-      if (dateTo)   where.createdAt.lte = new Date(dateTo)
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom + 'T00:00:00')
+      if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59')
     }
 
     if (search) {
       where.OR = [
         { id: { contains: search } },
+        { externalPaymentId: { contains: search } },
         { user: { email: { contains: search, mode: 'insensitive' } } },
         { user: { telegramName: { contains: search, mode: 'insensitive' } } },
         { user: { telegramId: { contains: search } } },
       ]
     }
 
-    // For special type filters (bonus_redeem, referral_redeem, promo_discount, real_payment)
-    // we need to filter via yukassaStatus JSON content
-    if (paymentType === 'bonus_redeem') {
-      where.yukassaStatus = { contains: '"_type":"bonus_redeem"' }
-    } else if (paymentType === 'referral_redeem') {
-      where.yukassaStatus = { contains: '"_type":"referral_redeem"' }
-    } else if (paymentType === 'promo_discount') {
-      where.yukassaStatus = { contains: '"promoCode"' }
-    } else if (paymentType === 'real_payment' && !provider) {
-      // Real payments: provider is YUKASSA or CRYPTOPAY (not BALANCE/MANUAL)
-      where.provider = { in: ['YUKASSA', 'CRYPTOPAY'] }
-    }
+    // Sorting
+    const orderBy: any = sortBy === 'amount'
+      ? { amount: sortDir === 'asc' ? 'asc' : 'desc' }
+      : { createdAt: sortDir === 'asc' ? 'asc' : 'desc' }
 
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
         where,
         skip,
         take:    Number(limit),
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         include: {
           user:   { select: { id: true, email: true, telegramName: true, telegramId: true, customerSource: true } },
           tariff: { select: { name: true } },
@@ -831,6 +829,174 @@ export async function adminRoutes(app: FastifyInstance) {
     }))
 
     return { payments: enriched, total }
+  })
+
+  // ── Refund payment via YuKassa API ──────────────────────
+  app.post('/payments/:id/refund', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { amount } = (req.body || {}) as { amount?: number }
+
+    const payment = await prisma.payment.findUnique({ where: { id }, include: { user: true, tariff: true } })
+    if (!payment) return reply.status(404).send({ error: 'Платёж не найден' })
+    if (payment.status !== 'PAID') return reply.status(400).send({ error: 'Возврат возможен только для оплаченных платежей' })
+    if (!payment.yukassaPaymentId) return reply.status(400).send({ error: 'Нет ID платежа ЮKassa — возврат невозможен' })
+
+    try {
+      const { paymentService } = await import('../services/payment')
+      const { remnawave } = await import('../services/remnawave')
+      const gross = payment.amount + Number(payment.commission || 0)
+      const refundAmount = amount || gross
+
+      const refund = await paymentService.yukassa.createRefund(
+        payment.yukassaPaymentId,
+        refundAmount,
+      )
+
+      const refundAmt = parseFloat(refund.amount.value)
+      const isFullRefund = refundAmt >= gross - 0.01
+
+      await prisma.payment.update({
+        where: { id },
+        data: {
+          status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND',
+          refundAmount: refundAmt,
+          refundedAt: new Date(),
+        },
+      })
+
+      // Disable subscription on full refund
+      if (isFullRefund && payment.user && payment.purpose === 'SUBSCRIPTION') {
+        // Rollback local sub expire by tariff days
+        const daysToRollback = payment.tariff?.durationDays || 0
+        if (payment.user.subExpireAt && daysToRollback > 0) {
+          const newExpire = new Date(payment.user.subExpireAt)
+          newExpire.setDate(newExpire.getDate() - daysToRollback)
+          const now = new Date()
+          await prisma.user.update({
+            where: { id: payment.user.id },
+            data: {
+              subExpireAt: newExpire,
+              subStatus: newExpire <= now ? 'EXPIRED' : 'ACTIVE',
+              totalPaid: { decrement: payment.amount },
+              paymentsCount: { decrement: 1 },
+            },
+          })
+        }
+
+        // Disable in REMNAWAVE
+        if (payment.user.remnawaveUuid) {
+          try {
+            const rmUser = await remnawave.getUserByUuid(payment.user.remnawaveUuid)
+            const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
+            const newExpire = new Date(currentExpire)
+            newExpire.setDate(newExpire.getDate() - daysToRollback)
+            const now = new Date()
+
+            if (newExpire <= now) {
+              // Fully disable
+              await remnawave.updateUser({
+                uuid: payment.user.remnawaveUuid,
+                status: 'DISABLED',
+                expireAt: newExpire.toISOString(),
+              })
+            } else {
+              // Just shorten
+              await remnawave.updateUser({
+                uuid: payment.user.remnawaveUuid,
+                expireAt: newExpire.toISOString(),
+              })
+            }
+          } catch (e: any) {
+            logger.warn(`Failed to rollback REMNAWAVE for user ${payment.user.id}: ${e.message}`)
+          }
+        }
+      }
+
+      logger.info(`Refund created for payment ${id}: amount=${refundAmt}, full=${isFullRefund}`)
+      return { ok: true, refundId: refund.id, amount: refundAmt, status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND' }
+    } catch (err: any) {
+      logger.error(`Refund failed for payment ${id}: ${err?.message}`)
+      const msg = err?.response?.data?.description || err?.message || 'Ошибка возврата'
+      return reply.status(400).send({ error: msg })
+    }
+  })
+
+  // ── Payment totals (gross, net, commission, refunds) ────
+  // Supports same filters as /payments for period-aware stats
+  app.get('/payments/totals', admin, async (req) => {
+    const { dateFrom = '', dateTo = '', status: fStatus = '', provider: fProvider = '', userFilter = '' } = req.query as Record<string, string>
+
+    // Base filters (non-date)
+    const baseWhere: any = {}
+    if (fStatus) baseWhere.status = fStatus
+    if (fProvider) baseWhere.provider = fProvider
+    if (userFilter === 'with') baseWhere.userId = { not: null }
+    else if (userFilter === 'without') baseWhere.userId = null
+
+    // Date filters
+    const dateFilter: any = {}
+    if (dateFrom) dateFilter.gte = new Date(dateFrom + 'T00:00:00')
+    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59')
+    const hasDate = dateFrom || dateTo
+
+    // Оборот = платежи по дате создания (когда деньги пришли)
+    const oborotWhere = {
+      ...baseWhere,
+      status: { in: ['PAID', 'REFUNDED', 'PARTIAL_REFUND'] },
+      ...(hasDate ? { createdAt: dateFilter } : {}),
+    }
+    const paidWhere = { ...baseWhere, status: 'PAID', ...(hasDate ? { createdAt: dateFilter } : {}) }
+
+    // Возвраты = по дате возврата (когда деньги ушли обратно клиенту)
+    const refundDateWhere = hasDate ? {
+      OR: [
+        { refundedAt: dateFilter },
+        { refundedAt: null, createdAt: dateFilter },
+      ],
+    } : {}
+    const refundedWhere = { ...baseWhere, status: 'REFUNDED' as const, ...refundDateWhere }
+    const partialWhere = { ...baseWhere, status: 'PARTIAL_REFUND' as const, ...refundDateWhere }
+
+    const [oborotAgg, paidOnlyAgg, refundAgg, partialAgg, paidCount, refundedCount, partialCount, totalCount] = await Promise.all([
+      prisma.payment.aggregate({ where: oborotWhere, _sum: { amount: true, commission: true } }),
+      prisma.payment.aggregate({ where: paidWhere, _sum: { amount: true, commission: true } }),
+      prisma.payment.aggregate({ where: refundedWhere, _sum: { refundAmount: true } }),
+      prisma.payment.aggregate({ where: partialWhere, _sum: { refundAmount: true } }),
+      prisma.payment.count({ where: paidWhere }),
+      prisma.payment.count({ where: refundedWhere }),
+      prisma.payment.count({ where: partialWhere }),
+      prisma.payment.count({ where: oborotWhere }),
+    ])
+
+    // Оборот по createdAt (gross)
+    const oborotNet = Number(oborotAgg._sum.amount ?? 0)
+    const oborotComm = Number(oborotAgg._sum.commission ?? 0)
+    const oborot = oborotNet + oborotComm
+
+    const refundFull = Number(refundAgg._sum.refundAmount ?? 0)
+    const refundPartial = Number(partialAgg._sum.refundAmount ?? 0)
+    const totalRefunds = refundFull + refundPartial
+
+    // Выручка = оборот − возвраты
+    const revenue = oborot - totalRefunds
+
+    const commissionPct = oborot > 0 ? (oborotComm / oborot * 100) : 0
+
+    // К зачислению = выручка − комиссия
+    const credited = revenue - oborotComm
+
+    return {
+      oborot,
+      revenue,
+      commission: oborotComm,
+      commissionPct: +commissionPct.toFixed(2),
+      totalRefunds,
+      credited,
+      refundedCount,
+      partialRefundCount: partialCount,
+      paidCount,
+      totalCount,
+    }
   })
 
   // ─────────────────────────────────────────────────────────

@@ -8,6 +8,36 @@ import { notifications } from './notifications'
 import { balanceService }    from './balance'
 import type { Tariff, User } from '@prisma/client'
 
+// ── ЮKassa types ─────────────────────────────────────────────
+interface YukassaAmount {
+  value: string
+  currency: string
+}
+
+interface YukassaPaymentFull {
+  id: string
+  status: 'pending' | 'waiting_for_capture' | 'succeeded' | 'canceled'
+  paid: boolean
+  amount: YukassaAmount
+  income_amount?: YukassaAmount
+  refunded_amount?: YukassaAmount
+  description?: string
+  metadata?: Record<string, string>
+  created_at: string
+  captured_at?: string
+  payment_method?: { type: string; card?: { last4: string } }
+  refundable?: boolean
+}
+
+interface YukassaRefund {
+  id: string
+  payment_id: string
+  status: 'succeeded' | 'canceled'
+  amount: YukassaAmount
+  created_at: string
+  description?: string
+}
+
 // ── ЮKassa ───────────────────────────────────────────────────
 class YukassaService {
   private readonly BASE_URL = 'https://api.yookassa.ru/v3'
@@ -53,7 +83,85 @@ class YukassaService {
     const res = await axios.get(`${this.BASE_URL}/payments/${yukassaId}`, {
       headers: { Authorization: `Basic ${this.auth}` },
     })
-    return res.data as { id: string; status: string; paid: boolean }
+    return res.data
+  }
+
+  async getPaymentFull(yukassaId: string): Promise<YukassaPaymentFull> {
+    const res = await axios.get(`${this.BASE_URL}/payments/${yukassaId}`, {
+      headers: { Authorization: `Basic ${this.auth}` },
+    })
+    return res.data as YukassaPaymentFull
+  }
+
+  /**
+   * List payments from YuKassa API with pagination.
+   * Returns up to 100 payments per request.
+   */
+  async listPayments(params: {
+    createdAtGte?: string  // ISO date
+    createdAtLte?: string
+    status?: string
+    cursor?: string
+    limit?: number
+  }): Promise<{ items: YukassaPaymentFull[]; nextCursor?: string }> {
+    const query: Record<string, string> = {}
+    if (params.createdAtGte) query['created_at.gte'] = params.createdAtGte
+    if (params.createdAtLte) query['created_at.lte'] = params.createdAtLte
+    if (params.status) query.status = params.status
+    if (params.cursor) query.cursor = params.cursor
+    query.limit = String(params.limit || 100)
+
+    const qs = new URLSearchParams(query).toString()
+    const res = await axios.get(`${this.BASE_URL}/payments?${qs}`, {
+      headers: { Authorization: `Basic ${this.auth}` },
+    })
+
+    const data = res.data as { type: string; items: YukassaPaymentFull[]; next_cursor?: string }
+    return { items: data.items || [], nextCursor: data.next_cursor }
+  }
+
+  /**
+   * List refunds from YuKassa API.
+   */
+  async listRefunds(params: {
+    createdAtGte?: string
+    createdAtLte?: string
+    paymentId?: string
+    cursor?: string
+    limit?: number
+  }): Promise<{ items: YukassaRefund[]; nextCursor?: string }> {
+    const query: Record<string, string> = {}
+    if (params.createdAtGte) query['created_at.gte'] = params.createdAtGte
+    if (params.createdAtLte) query['created_at.lte'] = params.createdAtLte
+    if (params.paymentId) query.payment_id = params.paymentId
+    if (params.cursor) query.cursor = params.cursor
+    query.limit = String(params.limit || 100)
+
+    const qs = new URLSearchParams(query).toString()
+    const res = await axios.get(`${this.BASE_URL}/refunds?${qs}`, {
+      headers: { Authorization: `Basic ${this.auth}` },
+    })
+
+    const data = res.data as { type: string; items: YukassaRefund[]; next_cursor?: string }
+    return { items: data.items || [], nextCursor: data.next_cursor }
+  }
+
+  /**
+   * Create a refund via YuKassa API
+   */
+  async createRefund(yukassaPaymentId: string, amount: number): Promise<{ id: string; status: string; amount: YukassaAmount }> {
+    const body: any = {
+      payment_id: yukassaPaymentId,
+      amount: { value: amount.toFixed(2), currency: 'RUB' },
+    }
+    const res = await axios.post(`${this.BASE_URL}/refunds`, body, {
+      headers: {
+        Authorization: `Basic ${this.auth}`,
+        'Content-Type': 'application/json',
+        'Idempotence-Key': randomUUID(),
+      },
+    })
+    return res.data
   }
 
   verifyWebhookIp(ip: string): boolean {
@@ -227,12 +335,37 @@ export class PaymentService {
     }
 
     // Update payment status
+    const updateData: any = { status: 'PAID', confirmedAt: new Date() }
+
+    // Fetch commission from YuKassa API if available
+    if (payment.provider === 'YUKASSA' && payment.yukassaPaymentId) {
+      try {
+        const ypFull = await this.yukassa.getPaymentFull(payment.yukassaPaymentId)
+        if (ypFull.income_amount) {
+          const gross = parseFloat(ypFull.amount.value)
+          const net = parseFloat(ypFull.income_amount.value)
+          const commission = Math.max(0, +(gross - net).toFixed(2))
+          if (commission > 0) {
+            updateData.commission = commission
+            updateData.amount = net
+          }
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to fetch YuKassa commission for ${orderId}: ${e.message}`)
+      }
+    }
+
     await prisma.payment.update({
       where: { id: orderId },
-      data:  { status: 'PAID', confirmedAt: new Date() },
+      data: updateData,
     })
 
     const { user, tariff } = payment
+
+    if (!user) {
+      logger.info(`Payment ${orderId} confirmed but no user linked, skipping subscription activation`)
+      return
+    }
 
     // Override tariff values from payment metadata (variants/configurator)
     let meta: any = null
@@ -304,59 +437,70 @@ export class PaymentService {
 
     if (!remnawaveUuid) {
       // Create user in REMNAWAVE on first purchase
-      const rmUser = await remnawave.createUser({
-        username:             user.email ? user.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_') : user.telegramId ? `tg_${user.telegramId}` : `user_${user.id.slice(0, 8)}`,
-        email:                user.email ?? undefined,
-        telegramId:           user.telegramId ? parseInt(user.telegramId, 10) : null,
-        expireAt:             newExpireDate.toISOString(),
-        trafficLimitBytes,
-        trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
-        hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
-        tag:                  tariff.remnawaveTag ?? undefined,
-        activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
-      })
-      remnawaveUuid = rmUser.uuid
+      try {
+        const rmUser = await remnawave.createUser({
+          username:             user.email ? user.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_') : user.telegramId ? `tg_${user.telegramId}` : `user_${user.id.slice(0, 8)}`,
+          email:                user.email ?? undefined,
+          telegramId:           user.telegramId ? parseInt(user.telegramId, 10) : null,
+          expireAt:             newExpireDate.toISOString(),
+          trafficLimitBytes,
+          trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+          hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
+          tag:                  tariff.remnawaveTag ?? undefined,
+          activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
+        })
+        remnawaveUuid = rmUser.uuid
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data:  {
-          remnawaveUuid,
-          subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
-        },
-      })
+        await prisma.user.update({
+          where: { id: user.id },
+          data:  {
+            remnawaveUuid,
+            subLink: remnawave.getSubscriptionUrl(rmUser.uuid),
+          },
+        })
+      } catch (err: any) {
+        logger.error(`REMNAWAVE createUser failed for ${user.id}: ${err?.message}. Proceeding with local DB update only.`)
+      }
     } else {
       // Extend existing subscription + apply tariff settings
-      const rmUser = await remnawave.getUserByUuid(remnawaveUuid)
-      const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
-      const base = currentExpire > new Date() ? currentExpire : new Date()
-      base.setDate(base.getDate() + effectiveDays)
+      // Wrap in try/catch — if REMNAWAVE is down, still update local DB
+      try {
+        const rmUser = await remnawave.getUserByUuid(remnawaveUuid)
+        const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
+        const base = currentExpire > new Date() ? currentExpire : new Date()
+        base.setDate(base.getDate() + effectiveDays)
 
-      await remnawave.updateUser({
-        uuid:                 remnawaveUuid,
-        status:               'ACTIVE',
-        expireAt:             base.toISOString(),
-        trafficLimitBytes,
-        trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
-        hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
-        tag:                  tariff.remnawaveTag ?? undefined,
-        activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
-      })
+        await remnawave.updateUser({
+          uuid:                 remnawaveUuid,
+          status:               'ACTIVE',
+          expireAt:             base.toISOString(),
+          trafficLimitBytes,
+          trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+          hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
+          tag:                  tariff.remnawaveTag ?? undefined,
+          activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
+        })
 
-      // Reset traffic after payment
-      await remnawave.resetTrafficAction(remnawaveUuid).catch(err =>
-        logger.warn(`Failed to reset traffic for ${remnawaveUuid}:`, err)
-      )
+        // Reset traffic after payment
+        await remnawave.resetTrafficAction(remnawaveUuid).catch(err =>
+          logger.warn(`Failed to reset traffic for ${remnawaveUuid}:`, err)
+        )
+      } catch (err: any) {
+        logger.error(`REMNAWAVE update failed for ${remnawaveUuid}: ${err?.message}. Proceeding with local DB update only.`)
+      }
     }
 
-    // Update local subscription status
-    const newExpireAt = new Date()
-    newExpireAt.setDate(newExpireAt.getDate() + effectiveDays)
+    // Update local subscription status — extend from current expireAt if still active
+    const now = new Date()
+    const currentLocalExpire = user.subExpireAt ? new Date(user.subExpireAt) : now
+    const baseLocal = currentLocalExpire > now ? new Date(currentLocalExpire) : new Date(now)
+    baseLocal.setDate(baseLocal.getDate() + effectiveDays)
 
     await prisma.user.update({
       where: { id: user.id },
       data:  {
         subStatus:   'ACTIVE',
-        subExpireAt: newExpireAt,
+        subExpireAt: baseLocal,
         remnawaveUuid,
       },
     })
@@ -396,7 +540,7 @@ export class PaymentService {
     }
 
     // Send payment confirmation notifications (Telegram + Email)
-    await notifications.paymentConfirmed(user.id, tariff.name, newExpireAt).catch(err =>
+    await notifications.paymentConfirmed(user.id, tariff.name, baseLocal).catch(err =>
       logger.warn('Payment notification failed:', err)
     )
 

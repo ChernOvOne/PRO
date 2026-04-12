@@ -38,13 +38,24 @@ function fillDailySeries(
 }
 
 // ── Collect all overview data (shared by /overview and /export) ──
-async function collectOverview(days: Days) {
+async function collectOverview(days: Days, customFrom?: string, customTo?: string) {
   const now = new Date()
-  const to = new Date(now)
-  to.setHours(23, 59, 59, 999)
-  const from = new Date(now)
-  from.setDate(from.getDate() - (days - 1))
-  from.setHours(0, 0, 0, 0)
+  let to: Date
+  let from: Date
+
+  if (customFrom && customTo) {
+    from = new Date(customFrom)
+    from.setHours(0, 0, 0, 0)
+    to = new Date(customTo)
+    to.setHours(23, 59, 59, 999)
+    days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000)) as Days
+  } else {
+    to = new Date(now)
+    to.setHours(23, 59, 59, 999)
+    from = new Date(now)
+    from.setDate(from.getDate() - (days - 1))
+    from.setHours(0, 0, 0, 0)
+  }
 
   const prevTo = new Date(from.getTime() - 1)
   const prevFrom = new Date(prevTo)
@@ -75,7 +86,7 @@ async function collectOverview(days: Days) {
       _sum: { amount: true },
     }),
     prisma.buhTransaction.aggregate({
-      where: { type: 'EXPENSE', date: { gte: from, lte: to } },
+      where: { type: 'EXPENSE', date: { gte: from, lte: to }, NOT: { source: 'investment' } },
       _sum: { amount: true },
     }),
     prisma.buhTransaction.aggregate({
@@ -83,7 +94,7 @@ async function collectOverview(days: Days) {
       _sum: { amount: true },
     }),
     prisma.buhTransaction.aggregate({
-      where: { type: 'EXPENSE', date: { gte: prevFrom, lte: prevTo } },
+      where: { type: 'EXPENSE', date: { gte: prevFrom, lte: prevTo }, NOT: { source: 'investment' } },
       _sum: { amount: true },
     }),
   ])
@@ -105,7 +116,7 @@ async function collectOverview(days: Days) {
   const expenseByDayRows = await prisma.$queryRaw<Array<{ date: Date; total: number }>>`
     SELECT date, COALESCE(SUM(amount), 0)::numeric AS total
     FROM buh_transactions
-    WHERE type = 'EXPENSE' AND date >= ${from} AND date <= ${to}
+    WHERE type = 'EXPENSE' AND source IS DISTINCT FROM 'investment' AND date >= ${from} AND date <= ${to}
     GROUP BY date ORDER BY date ASC
   `
   const incomeSeries = fillDailySeries(from, days, incomeByDayRows.map(r => ({
@@ -166,7 +177,7 @@ async function collectOverview(days: Days) {
     : []
   const revenueByUser: Record<string, number> = {}
   campaignPayments.forEach(p => {
-    revenueByUser[p.userId] = (revenueByUser[p.userId] || 0) + Number(p.amount)
+    if (p.userId) revenueByUser[p.userId] = (revenueByUser[p.userId] || 0) + Number(p.amount)
   })
 
   const clicksMap = Object.fromEntries((clicksBy as any[]).map(x => [x.utmCode, x._count._all]))
@@ -593,9 +604,9 @@ export async function adminDashboardOverviewRoutes(app: FastifyInstance) {
   const staff = { preHandler: [app.requireStaff] }
 
   app.get('/overview', staff, async (req) => {
-    const q = req.query as { days?: string }
+    const q = req.query as { days?: string; dateFrom?: string; dateTo?: string }
     const days = parseDays(q.days)
-    return collectOverview(days)
+    return collectOverview(days, q.dateFrom, q.dateTo)
   })
 
   app.post('/dismiss-alert', staff, async (req) => {

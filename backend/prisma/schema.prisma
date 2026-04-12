@@ -159,8 +159,8 @@ model Tariff {
 // ── Payments ─────────────────────────────────────────────────
 model Payment {
   id              String        @id @default(uuid())
-  userId          String        @map("user_id")
-  user            User          @relation(fields: [userId], references: [id])
+  userId          String?       @map("user_id")
+  user            User?         @relation(fields: [userId], references: [id])
   tariffId        String        @map("tariff_id")
   tariff          Tariff        @relation(fields: [tariffId], references: [id])
 
@@ -181,6 +181,8 @@ model Payment {
   cryptoAmount     String?      @map("crypto_amount")
 
   confirmedAt     DateTime?     @map("confirmed_at")
+  refundAmount    Decimal?      @map("refund_amount") @db.Decimal(10, 2)
+  refundedAt      DateTime?     @map("refunded_at")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
@@ -823,9 +825,10 @@ model BuhTransaction {
   createdBy   User?               @relation("BuhTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
   customerId  String?             @map("customer_id")
   customer    User?               @relation("BuhTransactionCustomer", fields: [customerId], references: [id], onDelete: SetNull)
-  source      String?             @default("web") // web | bot | webhook | system
-  createdAt   DateTime            @default(now()) @map("created_at")
-  updatedAt   DateTime            @updatedAt @map("updated_at")
+  source        String?             @default("web") // web | bot | webhook | system | import | investment
+  externalHash  String?             @unique @map("external_hash")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
 
   adCampaign  BuhAdCampaign?      @relation("AdCampaignTransaction")
   webhookPayment BuhWebhookPayment? @relation("WebhookPaymentTransaction")
@@ -1292,6 +1295,7 @@ enum PaymentStatus {
   PAID
   FAILED
   REFUNDED
+  PARTIAL_REFUND
   EXPIRED
 }
 

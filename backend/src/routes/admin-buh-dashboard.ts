@@ -98,7 +98,7 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
           _sum: { amount: true },
         }),
         prisma.buhTransaction.aggregate({
-          where: { type: 'EXPENSE', date: { gte: from, lte: to } },
+          where: { type: 'EXPENSE', date: { gte: from, lte: to }, NOT: { source: 'investment' } },
           _sum: { amount: true },
         }),
         prisma.$queryRaw<Array<{ day: Date; total: number }>>`
@@ -162,7 +162,7 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
         _sum: { amount: true },
       }),
       prisma.buhTransaction.aggregate({
-        where: { type: 'EXPENSE' },
+        where: { type: 'EXPENSE', NOT: { source: 'investment' } },
         _sum: { amount: true },
       }),
       prisma.buhInkasRecord.aggregate({
@@ -179,6 +179,7 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
         FROM buh_transactions t
         LEFT JOIN buh_categories c ON c.id = t.category_id
         WHERE t.type = 'EXPENSE'
+          AND (t.source IS DISTINCT FROM 'investment')
           AND t.date >= ${monthStart}
           AND t.date <= ${monthEnd}
         GROUP BY c.name, c.color

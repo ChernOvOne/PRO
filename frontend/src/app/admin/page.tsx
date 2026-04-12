@@ -103,6 +103,9 @@ function ltvCacColor(v: number | null): string {
 // ── Page ─────────────────────────────────────────────────────────
 export default function AdminDashboardPage() {
   const [days, setDays] = useState<Days>(30)
+  const [customRange, setCustomRange] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [overview, setOverview] = useState<Overview | null>(null)
   const [events, setEvents] = useState<EventItem[]>([])
   const [buh, setBuh] = useState<BuhDashboard | null>(null)
@@ -145,7 +148,7 @@ export default function AdminDashboardPage() {
     let cancelled = false
     setLoading(true)
     Promise.all([
-      adminApi.dashboardOverview(days),
+      adminApi.dashboardOverview(days, customRange ? dateFrom : undefined, customRange ? dateTo : undefined),
       adminApi.dashboardEvents(20),
       adminApi.buhDashboard().catch(() => null),
     ])
@@ -158,7 +161,7 @@ export default function AdminDashboardPage() {
       .catch((e: any) => toast.error(e?.message || 'Ошибка загрузки'))
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [days])
+  }, [days, customRange, dateFrom, dateTo])
 
   useEffect(() => {
     const cleanup = loadData()
@@ -218,21 +221,50 @@ export default function AdminDashboardPage() {
         className="sticky top-0 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 flex items-center justify-between flex-wrap gap-3"
         style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--glass-border)' }}
       >
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           {([1, 7, 30, 365] as Days[]).map(d => (
             <button
               key={d}
-              onClick={() => setDays(d)}
+              onClick={() => { setDays(d); setCustomRange(false) }}
               className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
               style={{
-                background: days === d ? 'var(--accent-1)' : 'var(--glass-bg)',
-                color: days === d ? '#fff' : 'var(--text-secondary)',
+                background: !customRange && days === d ? 'var(--accent-1)' : 'var(--glass-bg)',
+                color: !customRange && days === d ? '#fff' : 'var(--text-secondary)',
                 border: '1px solid var(--glass-border)',
               }}
             >
               {({ 1: 'Сегодня', 7: '7 дней', 30: '30 дней', 365: 'Год' } as any)[d]}
             </button>
           ))}
+          <div className="h-5 w-px mx-1" style={{ background: 'var(--glass-border)' }} />
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4" style={{ color: customRange ? 'var(--accent-1)' : 'var(--text-tertiary)' }} />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => { setDateFrom(e.target.value); setCustomRange(true) }}
+              className="px-2 py-1 rounded-lg text-sm"
+              style={{
+                background: 'var(--glass-bg)',
+                color: 'var(--text-primary)',
+                border: `1px solid ${customRange ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                colorScheme: 'dark',
+              }}
+            />
+            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>—</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => { setDateTo(e.target.value); setCustomRange(true) }}
+              className="px-2 py-1 rounded-lg text-sm"
+              style={{
+                background: 'var(--glass-bg)',
+                color: 'var(--text-primary)',
+                border: `1px solid ${customRange ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                colorScheme: 'dark',
+              }}
+            />
+          </div>
         </div>
         <div className="flex gap-2">
           <button

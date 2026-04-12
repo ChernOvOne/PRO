@@ -10,46 +10,94 @@ export async function webhookRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     try {
       const body = req.body as any
+      const event = body.event as string
+      const obj = body.object || {}
 
-      // ЮKassa sends event type in top-level field
-      if (body.event !== 'payment.succeeded') {
+      // ── payment.succeeded ──────────────────────────────
+      if (event === 'payment.succeeded') {
+        const yukassaPaymentId = obj.id
+        const metadata = obj.metadata || {}
+        const orderId  = metadata.orderId
+
+        if (!orderId) {
+          logger.warn('ЮKassa webhook: no orderId in metadata', obj.id)
+          return reply.status(200).send({ ok: true })
+        }
+
+        const payment = await prisma.payment.findFirst({
+          where: {
+            OR: [
+              { id: orderId },
+              { yukassaPaymentId },
+            ],
+            provider: 'YUKASSA',
+          },
+        })
+
+        if (!payment) {
+          logger.warn(`ЮKassa webhook: payment not found orderId=${orderId}`)
+          return reply.status(200).send({ ok: true })
+        }
+
+        // Save commission from income_amount
+        if (obj.income_amount && obj.amount) {
+          const gross = parseFloat(obj.amount.value)
+          const net = parseFloat(obj.income_amount.value)
+          const commission = Math.max(0, +(gross - net).toFixed(2))
+          if (commission > 0) {
+            await prisma.payment.update({
+              where: { id: payment.id },
+              data: { commission },
+            })
+          }
+        }
+
+        if (payment.status !== 'PAID') {
+          await paymentService.confirmPayment(payment.id)
+          logger.info(`ЮKassa payment confirmed: ${payment.id}`)
+        }
+
         return reply.status(200).send({ ok: true })
       }
 
-      const yukassaPaymentId = body.object?.id
-      const metadata = body.object?.metadata || {}
-      const orderId  = metadata.orderId
+      // ── refund.succeeded ───────────────────────────────
+      if (event === 'refund.succeeded') {
+        const paymentYukassaId = obj.payment_id
+        const refundAmount = parseFloat(obj.amount?.value || '0')
 
-      if (!orderId) {
-        logger.warn('ЮKassa webhook: no orderId in metadata', body.object?.id)
+        if (!paymentYukassaId || refundAmount <= 0) {
+          return reply.status(200).send({ ok: true })
+        }
+
+        const payment = await prisma.payment.findFirst({
+          where: { yukassaPaymentId: paymentYukassaId, provider: 'YUKASSA' },
+        })
+
+        if (!payment) {
+          logger.warn(`ЮKassa refund webhook: payment not found yukassaId=${paymentYukassaId}`)
+          return reply.status(200).send({ ok: true })
+        }
+
+        const gross = payment.amount + Number(payment.commission || 0)
+        const isFullRefund = refundAmount >= gross - 0.01
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND',
+            refundAmount,
+            refundedAt: new Date(),
+          },
+        })
+
+        logger.info(`ЮKassa refund processed: ${payment.id}, amount=${refundAmount}, full=${isFullRefund}`)
         return reply.status(200).send({ ok: true })
       }
 
-      // Find payment by our orderId or by yukassa payment id
-      const payment = await prisma.payment.findFirst({
-        where: {
-          OR: [
-            { id: orderId },
-            { yukassaPaymentId },
-          ],
-          provider: 'YUKASSA',
-        },
-      })
-
-      if (!payment) {
-        logger.warn(`ЮKassa webhook: payment not found orderId=${orderId}`)
-        return reply.status(200).send({ ok: true })
-      }
-
-      if (payment.status !== 'PAID') {
-        await paymentService.confirmPayment(payment.id)
-        logger.info(`ЮKassa payment confirmed: ${payment.id}`)
-      }
-
+      // Other events — ignore
       return reply.status(200).send({ ok: true })
     } catch (err) {
       logger.error('ЮKassa webhook error:', err)
-      // Always return 200 to ЮKassa to prevent retries on our errors
       return reply.status(200).send({ ok: true })
     }
   })

@@ -177,8 +177,12 @@ export const paymentsApi = {
 export const adminApi = {
   stats:    () => apiFetch<AdminStats>('/admin/stats'),
 
-  dashboardOverview: (days: 1 | 7 | 30 | 365 = 30) =>
-    apiFetch<any>(`/admin/dashboard/overview?days=${days}`),
+  dashboardOverview: (days: 1 | 7 | 30 | 365 = 30, dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams({ days: String(days) })
+    if (dateFrom) params.set('dateFrom', dateFrom)
+    if (dateTo) params.set('dateTo', dateTo)
+    return apiFetch<any>(`/admin/dashboard/overview?${params}`)
+  },
   dashboardEvents: (limit = 20) =>
     apiFetch<any>(`/admin/dashboard/events?limit=${limit}`),
 
@@ -281,6 +285,16 @@ export const adminApi = {
     return apiFetch<{ payments: AdminPayment[]; total: number }>(`/admin/payments?${q}`)
   },
 
+  paymentTotals: (params: Record<string, string> = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, v]))
+    return apiFetch<{
+      oborot: number; revenue: number; commission: number; commissionPct: number
+      totalRefunds: number; credited: number
+      refundedCount: number; partialRefundCount: number
+      paidCount: number; totalCount: number
+    }>(`/admin/payments/totals?${q}`)
+  },
+
   // Settings
   settings:       () => apiFetch<Record<string, string>>('/admin/settings'),
   updateSettings: (data: Record<string, string>) =>
@@ -353,6 +367,38 @@ export const adminApi = {
       body: JSON.stringify({ fileId, mapping }),
     }),
   importStats: () => apiFetch<{ usersWithLeadtehId: number; paymentsWithCommission: number; totalCommission: number }>('/admin/import/stats'),
+  accountingPreview: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/admin/import/accounting/preview', {
+      method: 'POST',
+      body: fd,
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error('Preview failed')
+    return res.json()
+  },
+  startAccountingImport: (fileId: string, options: Record<string, boolean>) =>
+    apiFetch<{ jobId: string }>('/admin/import/accounting/import', {
+      method: 'POST',
+      body: JSON.stringify({ fileId, options }),
+    }),
+  clearBuhData: () =>
+    apiFetch<{ ok: boolean }>('/admin/import/clear-buh', { method: 'POST' }),
+  clearUsers: () =>
+    apiFetch<{ ok: boolean; deleted: number }>('/admin/import/clear-users', { method: 'POST' }),
+  clearPayments: () =>
+    apiFetch<{ ok: boolean; deleted: number }>('/admin/import/clear-payments', { method: 'POST' }),
+  refundPayment: (id: string, amount?: number) =>
+    apiFetch<{ ok: boolean; refundId: string; amount: number; status: string }>(`/admin/payments/${id}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    }),
+  yukassaSync: (dateFrom?: string, dateTo?: string) =>
+    apiFetch<{ jobId: string }>('/admin/import/yukassa-sync', {
+      method: 'POST',
+      body: JSON.stringify({ dateFrom, dateTo }),
+    }),
 
   squads: () => apiFetch<{ squads: InternalSquad[]; total: number }>('/admin/squads'),
 

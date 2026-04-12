@@ -1036,6 +1036,14 @@ full_install() {
     [[ ! "$ans" =~ ^[нНnN]$ ]] && { detect_os; apt-get install -y -qq git 2>/dev/null || true; }
   }
 
+  # Установка московского часового пояса
+  step "Настройка часового пояса"
+  if timedatectl show 2>/dev/null | grep -q "Timezone=Europe/Moscow"; then
+    ok "Часовой пояс уже Europe/Moscow"
+  else
+    timedatectl set-timezone Europe/Moscow 2>/dev/null && ok "Часовой пояс установлен: Europe/Moscow (MSK)" || warn "Не удалось установить часовой пояс автоматически"
+  fi
+
   setup_env
   setup_ssl
   pull_images

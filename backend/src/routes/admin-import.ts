@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import ExcelJS from 'exceljs'
 import { logger } from '../utils/logger'
 import { prisma } from '../db'
+import { paymentService } from '../services/payment'
+import { config } from '../config'
 
 // ── Types ────────────────────────────────────────────────────
 interface ParsedFile {
@@ -14,7 +16,7 @@ interface ParsedFile {
 
 interface ImportJob {
   id: string
-  type: 'users' | 'payments'
+  type: 'users' | 'payments' | 'accounting'
   status: 'pending' | 'running' | 'done' | 'error'
   total: number
   processed: number
@@ -22,6 +24,7 @@ interface ImportJob {
   updated: number
   skipped: number
   errors: number
+  warnings: number
   errorMessages: string[]
   startedAt: Date
   finishedAt?: Date
@@ -30,6 +33,7 @@ interface ImportJob {
 // ── In-memory stores with TTL ────────────────────────────────
 const files = new Map<string, ParsedFile>()
 const jobs = new Map<string, ImportJob>()
+const accountingFiles = new Map<string, { buf: Buffer; createdAt: number }>()
 
 const FILE_TTL_MS = 30 * 60 * 1000 // 30 min
 const JOB_TTL_MS = 60 * 60 * 1000 // 1 hour
@@ -41,6 +45,9 @@ setInterval(() => {
   }
   for (const [k, v] of jobs.entries()) {
     if (v.finishedAt && now - v.finishedAt.getTime() > JOB_TTL_MS) jobs.delete(k)
+  }
+  for (const [k, v] of accountingFiles.entries()) {
+    if (now - v.createdAt > FILE_TTL_MS) accountingFiles.delete(k)
   }
 }, 5 * 60 * 1000).unref()
 
@@ -237,6 +244,7 @@ export async function adminImportRoutes(app: FastifyInstance) {
       updated: 0,
       skipped: 0,
       errors: 0,
+      warnings: 0,
       errorMessages: [],
       startedAt: new Date(),
     }
@@ -272,6 +280,7 @@ export async function adminImportRoutes(app: FastifyInstance) {
       updated: 0,
       skipped: 0,
       errors: 0,
+      warnings: 0,
       errorMessages: [],
       startedAt: new Date(),
     }
@@ -337,6 +346,158 @@ export async function adminImportRoutes(app: FastifyInstance) {
       logger.error('Import stats failed: ' + (err?.message || String(err)))
       return { usersWithLeadtehId: 0, paymentsWithCommission: 0, totalCommission: 0 }
     }
+  })
+
+  // ── 6. Upload accounting xlsx & preview ─────────────────
+  app.post('/accounting/preview', admin, async (req, reply) => {
+    try {
+      const data = await (req as any).file()
+      if (!data) return reply.status(400).send({ error: 'No file uploaded' })
+
+      const buf = await data.toBuffer()
+      const preview = await parseAccountingXlsx(buf)
+
+      // Store raw buffer for later import
+      const fileId = randomUUID()
+      accountingFiles.set(fileId, { buf, createdAt: Date.now() })
+
+      return { fileId, preview }
+    } catch (err: any) {
+      logger.error('Accounting preview failed: ' + (err?.message || String(err)))
+      return reply.status(500).send({ error: 'Preview failed: ' + (err?.message || '') })
+    }
+  })
+
+  // ── 7. Start accounting import ─────────────────────────
+  app.post('/accounting/import', admin, async (req, reply) => {
+    const { fileId, options } = req.body as {
+      fileId: string
+      options: Record<string, boolean>
+    }
+    const stored = accountingFiles.get(fileId)
+    if (!stored) return reply.status(404).send({ error: 'File not found or expired' })
+
+    const jobId = randomUUID()
+    const job: ImportJob = {
+      id: jobId,
+      type: 'accounting',
+      status: 'pending',
+      total: 0,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      warnings: 0,
+      errorMessages: [],
+      startedAt: new Date(),
+    }
+    jobs.set(jobId, job)
+
+    runAccountingImport(jobId, stored.buf, options).catch((err) => {
+      logger.error('Accounting import crashed: ' + (err?.message || String(err)))
+      updateJob(jobId, {
+        status: 'error',
+        errorMessages: [...(jobs.get(jobId)?.errorMessages || []), String(err?.message || err)],
+        finishedAt: new Date(),
+      })
+    })
+
+    return { jobId }
+  })
+
+  // ── 8. Clear buh data (admin only) ─────────────────────
+  app.post('/clear-buh', admin, async (_req, reply) => {
+    try {
+      await prisma.$transaction([
+        prisma.buhAdCampaign.deleteMany(),
+        prisma.buhInkasRecord.deleteMany(),
+        prisma.buhTransaction.deleteMany(),
+        prisma.buhRecurringPayment.deleteMany(),
+        prisma.buhVpnServer.deleteMany(),
+        prisma.buhMonthlyStats.deleteMany(),
+        prisma.buhPartner.deleteMany(),
+      ])
+      return { ok: true, message: 'All buh data cleared' }
+    } catch (err: any) {
+      return reply.status(500).send({ error: err?.message || 'Clear failed' })
+    }
+  })
+
+  // ── 9. Clear users (except admins) ─────────────────────
+  app.post('/clear-users', admin, async (_req, reply) => {
+    try {
+      const nonAdminIds = (await prisma.user.findMany({
+        where: { role: { not: 'ADMIN' } },
+        select: { id: true },
+      })).map((u) => u.id)
+
+      if (nonAdminIds.length === 0) return { ok: true, deleted: 0 }
+
+      // Detach payments from users (set userId=null instead of deleting)
+      await prisma.payment.updateMany({
+        where: { userId: { in: nonAdminIds } },
+        data: { userId: null },
+      })
+
+      const deleted = await prisma.user.deleteMany({
+        where: { id: { in: nonAdminIds } },
+      })
+      return { ok: true, deleted: deleted.count }
+    } catch (err: any) {
+      return reply.status(500).send({ error: err?.message || 'Clear failed' })
+    }
+  })
+
+  // ── 10. Clear payments ─────────────────────────────────
+  app.post('/clear-payments', admin, async (_req, reply) => {
+    try {
+      const deleted = await prisma.payment.deleteMany()
+      // Reset user payment counters
+      await prisma.user.updateMany({
+        data: { totalPaid: 0, paymentsCount: 0, lastPaymentAt: null },
+      })
+      return { ok: true, deleted: deleted.count }
+    } catch (err: any) {
+      return reply.status(500).send({ error: err?.message || 'Clear failed' })
+    }
+  })
+
+  // ── 11. Sync payments from YuKassa API ──────────────────
+  app.post('/yukassa-sync', admin, async (req, reply) => {
+    if (!config.yukassa.enabled) {
+      return reply.status(400).send({ error: 'ЮKassa не настроена (YUKASSA_SHOP_ID / YUKASSA_SECRET_KEY)' })
+    }
+
+    const { dateFrom, dateTo } = (req.body || {}) as { dateFrom?: string; dateTo?: string }
+
+    const jobId = randomUUID()
+    const job: ImportJob = {
+      id: jobId,
+      type: 'payments',
+      status: 'pending',
+      total: 0,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      warnings: 0,
+      errorMessages: [],
+      startedAt: new Date(),
+    }
+    jobs.set(jobId, job)
+
+    runYukassaSync(jobId, dateFrom, dateTo).catch((err) => {
+      logger.error('YuKassa sync crashed: ' + (err?.message || String(err)))
+      updateJob(jobId, {
+        status: 'error',
+        errorMessages: [...(jobs.get(jobId)?.errorMessages || []), String(err?.message || err)],
+        finishedAt: new Date(),
+      })
+    })
+
+    return { jobId }
   })
 
   // ── Legacy endpoints (preserved for compatibility) ──────
@@ -547,11 +708,17 @@ async function runPaymentImport(
   for (let i = 0; i < file.rows.length; i++) {
     const row = file.rows[i]
     try {
-      // Status must be explicitly "Оплачен" / "paid" / "succeeded".
-      // Empty/missing status → skip (safety: we don't import rows without confirmed status).
-      const status = (getField(row, 'status') || '').toLowerCase().trim()
-      const isPaid = status === 'оплачен' || status === 'succeeded' || status === 'paid'
-      if (!isPaid) {
+      // Determine payment status
+      const statusRaw = (getField(row, 'status') || '').toLowerCase().trim()
+      let paymentStatus: 'PAID' | 'REFUNDED' | 'PARTIAL_REFUND' | null = null
+      if (statusRaw === 'оплачен' || statusRaw === 'succeeded' || statusRaw === 'paid' || statusRaw === 'success') {
+        paymentStatus = 'PAID'
+      } else if (statusRaw === 'возвращен' || statusRaw === 'refunded') {
+        paymentStatus = 'REFUNDED'
+      } else if (statusRaw === 'частично возвращен' || statusRaw === 'partial_refund') {
+        paymentStatus = 'PARTIAL_REFUND'
+      }
+      if (!paymentStatus) {
         job.skipped += 1
         job.processed += 1
         continue
@@ -559,18 +726,14 @@ async function runPaymentImport(
 
       const description = getField(row, 'description')
       const m = description.match(idRegex)
-      if (!m) {
-        job.skipped += 1
-        job.processed += 1
-        continue
-      }
-      const leadtehId = m[1]
+      const leadtehId = m ? m[1] : null
 
-      const user = await prisma.user.findUnique({ where: { leadtehId } })
+      let user: any = null
+      if (leadtehId) {
+        user = await prisma.user.findUnique({ where: { leadtehId } })
+      }
       if (!user) {
-        job.skipped += 1
-        job.processed += 1
-        continue
+        job.warnings += 1
       }
 
       const externalPaymentId = getField(row, 'externalPaymentId')
@@ -585,13 +748,15 @@ async function runPaymentImport(
 
       const grossAmount = parseNumber(getField(row, 'grossAmount'))
       const amount = parseNumber(getField(row, 'amount'))
-      if (!amount || amount <= 0) {
+      if (!grossAmount || grossAmount <= 0) {
         job.skipped += 1
         job.processed += 1
         continue
       }
-      const commission = Math.max(0, +(grossAmount - amount).toFixed(2))
-      // Require valid date — if can't parse, skip (don't fall back to now)
+      const netAmount = amount > 0 ? amount : grossAmount
+      const commission = Math.max(0, +(grossAmount - netAmount).toFixed(2))
+
+      // Require valid date
       const createdAtRaw = getField(row, 'createdAt')
       const createdAt = parseRussianDate(createdAtRaw)
       if (!createdAt) {
@@ -600,30 +765,40 @@ async function runPaymentImport(
         continue
       }
 
+      // Refund data
+      const refundAmountRaw = parseNumber(getField(row, 'refundAmount'))
+      const refundAmount = refundAmountRaw > 0 ? refundAmountRaw : (paymentStatus === 'REFUNDED' ? grossAmount : null)
+      const refundDateRaw = getField(row, 'refundDate')
+      const refundedAt = refundDateRaw ? parseRussianDate(refundDateRaw) : null
+
       await prisma.$transaction(async (tx) => {
         await tx.payment.create({
           data: {
-            userId: user.id,
+            userId: user?.id ?? null,
             tariffId: defaultTariff.id,
             provider: 'YUKASSA',
             providerOrderId: externalPaymentId || null,
             externalPaymentId: externalPaymentId || null,
-            amount,
+            amount: netAmount,
             commission,
             currency: 'RUB',
-            status: 'PAID',
+            status: paymentStatus!,
             createdAt,
-            confirmedAt: createdAt,
+            confirmedAt: paymentStatus === 'PAID' ? createdAt : null,
+            refundAmount: refundAmount ?? null,
+            refundedAt: refundedAt ?? null,
           },
         })
-        await tx.user.update({
-          where: { id: user.id },
-          data: {
-            totalPaid: { increment: amount },
-            paymentsCount: { increment: 1 },
-            lastPaymentAt: createdAt,
-          },
-        })
+        if (user && paymentStatus === 'PAID') {
+          await tx.user.update({
+            where: { id: user.id },
+            data: {
+              totalPaid: { increment: netAmount },
+              paymentsCount: { increment: 1 },
+              lastPaymentAt: createdAt,
+            },
+          })
+        }
       })
 
       job.created += 1
@@ -638,6 +813,950 @@ async function runPaymentImport(
 
   updateJob(jobId, { status: 'done', finishedAt: new Date() })
   logger.info(
-    `Payment import done: created=${job.created} skipped=${job.skipped} errors=${job.errors}`,
+    `Payment import done: created=${job.created} skipped=${job.skipped} warnings=${job.warnings} errors=${job.errors}`,
+  )
+}
+
+// ── Accounting xlsx helpers ─────────────────────────────────
+
+function md5(str: string): string {
+  return createHash('md5').update(str).digest('hex')
+}
+
+function cellVal(row: ExcelJS.Row, col: number): any {
+  const cell = row.getCell(col)
+  if (!cell || cell.value == null) return null
+  const v = cell.value
+  if (typeof v === 'object' && v !== null) {
+    if ('result' in v) return (v as any).result
+    if ('text' in v) return (v as any).text
+    if ('hyperlink' in v) return (v as any).text || (v as any).hyperlink
+  }
+  return v
+}
+
+function cellStr(row: ExcelJS.Row, col: number): string {
+  const v = cellVal(row, col)
+  return v != null ? String(v).trim() : ''
+}
+
+function cellNum(row: ExcelJS.Row, col: number): number {
+  const v = cellVal(row, col)
+  if (v == null || v === '') return 0
+  const n = parseFloat(String(v).replace(',', '.').replace(/\s/g, ''))
+  return isNaN(n) ? 0 : n
+}
+
+function cellDate(row: ExcelJS.Row, col: number): Date | null {
+  const v = cellVal(row, col)
+  if (!v) return null
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v
+  const d = new Date(String(v))
+  return isNaN(d.getTime()) ? null : d
+}
+
+interface AccountingPreview {
+  expenses: { count: number; totalAmount: number }
+  investments: { count: number; totalAmount: number }
+  inkas: { count: number; totalAmount: number }
+  ads: { count: number; totalAmount: number }
+  servers: { count: number }
+  stats: { count: number }
+}
+
+async function parseAccountingXlsx(buf: Buffer): Promise<AccountingPreview> {
+  const wb = new ExcelJS.Workbook()
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+  await wb.xlsx.load(ab as any)
+
+  const result: AccountingPreview = {
+    expenses: { count: 0, totalAmount: 0 },
+    investments: { count: 0, totalAmount: 0 },
+    inkas: { count: 0, totalAmount: 0 },
+    ads: { count: 0, totalAmount: 0 },
+    servers: { count: 0 },
+    stats: { count: 0 },
+  }
+
+  const wsExpenses = wb.getWorksheet('Расходы со счёта')
+  if (wsExpenses) {
+    wsExpenses.eachRow((row, num) => {
+      if (num <= 1) return
+      const date = cellDate(row, 1)
+      const amount = cellNum(row, 3)
+      if (date && amount > 0) {
+        result.expenses.count++
+        result.expenses.totalAmount += amount
+      }
+    })
+  }
+
+  const wsInv = wb.getWorksheet('Инвестиции')
+  if (wsInv) {
+    wsInv.eachRow((row, num) => {
+      if (num <= 1) return
+      const date = cellDate(row, 1)
+      const amount = cellNum(row, 3)
+      if (date && amount > 0) {
+        result.investments.count++
+        result.investments.totalAmount += amount
+      }
+    })
+  }
+
+  const wsInkas = wb.getWorksheet('Инкас')
+  if (wsInkas) {
+    wsInkas.eachRow((row, num) => {
+      if (num <= 1) return
+      const month = cellStr(row, 1)
+      const type = cellStr(row, 2)
+      const amount = cellNum(row, 3)
+      if (month && type && amount > 0) {
+        result.inkas.count++
+        result.inkas.totalAmount += amount
+      }
+    })
+  }
+
+  const wsAds = wb.getWorksheet('Реклама')
+  if (wsAds) {
+    wsAds.eachRow((row, num) => {
+      if (num <= 1) return
+      const amount = cellNum(row, 3)
+      const name = cellStr(row, 4)
+      if (name) {
+        result.ads.count++
+        result.ads.totalAmount += amount
+      }
+    })
+  }
+
+  const wsPayments = wb.getWorksheet('Оплаты')
+  if (wsPayments) {
+    wsPayments.eachRow((row, num) => {
+      if (num <= 1) return
+      const name = cellStr(row, 2)
+      if (name && !name.startsWith('ИТОГО')) result.servers.count++
+    })
+  }
+
+  const wsStats = wb.getWorksheet('Статистика')
+  if (wsStats) {
+    wsStats.eachRow((row, num) => {
+      if (num <= 1) return
+      const revenue = cellNum(row, 2)
+      if (revenue > 0) result.stats.count++
+    })
+  }
+
+  return result
+}
+
+// ── Category auto-map for accounting import ─────────────────
+
+const CATEGORY_MAP: Record<string, string[]> = {
+  'Серверы':   ['серверов', 'сервер', '4vps', 'fornex', 'procloud', 'cloud4box', 'yandex', 'adminvps', 'beget', 'hip-hosting', 'regru'],
+  'Реклама':   ['реклама'],
+  'Подписки':  ['подписка', 'премиум', 'claude', 'яндекс 360'],
+  'LeadTex':   ['leadtex'],
+  'ФНС':       ['фнс', 'налог'],
+  '��озыгрыш':  ['розыгрыш'],
+  'СКАМ':      ['скам'],
+}
+
+function detectCategory(description: string): string {
+  const lower = description.toLowerCase()
+  for (const [cat, keywords] of Object.entries(CATEGORY_MAP)) {
+    if (keywords.some((kw) => lower.includes(kw))) return cat
+  }
+  return 'Прочее'
+}
+
+// ── Month name mapping ──────────────────────────────────────
+
+const MONTH_NAMES: Record<string, number> = {
+  'ЯНВАРЬ': 1, 'ФЕВРАЛЬ': 2, 'МАРТ': 3, 'АПРЕЛЬ': 4,
+  'МАЙ': 5, 'ИЮНЬ': 6, 'ИЮЛЬ': 7, 'АВГУСТ': 8,
+  'СЕНТЯБРЬ': 9, 'ОКТЯБРЬ': 10, 'НОЯБРЬ': 11, 'ДЕКАБРЬ': 12,
+}
+
+const STAT_MONTH_NAMES: Record<string, number> = {
+  'Январь': 1, 'Февраль': 2, 'Март': 3, 'Апрель': 4,
+  'Май': 5, 'Июнь': 6, 'Июль': 7, 'Август': 8,
+  'Сентябрь': 9, 'Октябрь': 10, 'Ноябрь': 11, 'Декабрь': 12,
+}
+
+// ── Partner name mapping ────────────────────────────────────
+
+function extractPartnerName(typeStr: string): { partnerName: string; inkasType: string } | null {
+  const upper = typeStr.toUpperCase().trim()
+  if (upper.startsWith('ВОЗВРИНВ')) {
+    const name = typeStr.replace(/ВОЗВРИНВ/i, '').trim()
+    return { partnerName: name, inkasType: 'RETURN_INV' }
+  }
+  if (upper.startsWith('ДВД')) {
+    const name = typeStr.replace(/ДВД/i, '').trim()
+    return { partnerName: name, inkasType: 'DIVIDEND' }
+  }
+  if (upper.startsWith('ВИНВ')) {
+    const name = typeStr.replace(/ВИНВ/i, '').trim()
+    return { partnerName: name, inkasType: 'INVESTMENT' }
+  }
+  return null
+}
+
+// ── Main accounting import worker ───────────────────────────
+
+async function runAccountingImport(
+  jobId: string,
+  buf: Buffer,
+  options: Record<string, boolean>,
+) {
+  updateJob(jobId, { status: 'running' })
+  const job = jobs.get(jobId)!
+
+  const wb = new ExcelJS.Workbook()
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+  await wb.xlsx.load(ab as any)
+
+  // Pre-load categories (create if missing)
+  const categoryCache = new Map<string, string>()
+  const existingCats = await prisma.buhCategory.findMany()
+  for (const c of existingCats) categoryCache.set(c.name, c.id)
+
+  async function ensureCategory(name: string, color?: string): Promise<string> {
+    if (categoryCache.has(name)) return categoryCache.get(name)!
+    const cat = await prisma.buhCategory.create({
+      data: { name, color: color || '#6B7280', icon: '📁', isActive: true },
+    })
+    categoryCache.set(name, cat.id)
+    return cat.id
+  }
+
+  // Pre-load partners
+  const partnerCache = new Map<string, string>()
+  const existingPartners = await prisma.buhPartner.findMany()
+  for (const p of existingPartners) partnerCache.set(p.name, p.id)
+
+  async function ensurePartner(name: string): Promise<string> {
+    if (partnerCache.has(name)) return partnerCache.get(name)!
+    const initials = name.split(' ').map((w) => w[0] || '').join('').toUpperCase().slice(0, 2) || name.slice(0, 2).toUpperCase()
+    const colors = ['#534AB7', '#E75A5A', '#3B82F6', '#10B981', '#F59E0B']
+    const color = colors[partnerCache.size % colors.length]
+    const p = await prisma.buhPartner.create({
+      data: { name, roleLabel: 'Партнёр', avatarColor: color, initials, isActive: true },
+    })
+    partnerCache.set(name, p.id)
+    return p.id
+  }
+
+  // Count total rows for progress
+  let totalRows = 0
+  if (options.expenses) {
+    const ws = wb.getWorksheet('Расходы со счёта')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  if (options.investments) {
+    const ws = wb.getWorksheet('Инвестиции')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  if (options.inkas) {
+    const ws = wb.getWorksheet('Инкас')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  if (options.ads) {
+    const ws = wb.getWorksheet('Реклама')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  if (options.servers) {
+    const ws = wb.getWorksheet('Оплаты')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  if (options.stats) {
+    const ws = wb.getWorksheet('Статистика')
+    if (ws) ws.eachRow((_, n) => { if (n > 1) totalRows++ })
+  }
+  job.total = totalRows
+
+  // Build investment lookup (date+amount → true) for ads budget detection
+  const investmentLookup = new Set<string>()
+  const wsInvForLookup = wb.getWorksheet('Инвестиции')
+  if (wsInvForLookup) {
+    wsInvForLookup.eachRow((row, num) => {
+      if (num <= 1) return
+      const date = cellDate(row, 1)
+      const amount = cellNum(row, 3)
+      const type = cellStr(row, 2)
+      if (date && amount > 0 && type.toLowerCase().includes('реклам')) {
+        const key = `${date.toISOString().slice(0, 10)}_${amount}`
+        investmentLookup.add(key)
+      }
+    })
+  }
+
+  // ── Import: Расходы со счёта ──────────────────────────────
+  if (options.expenses) {
+    const ws = wb.getWorksheet('Расходы со счёта')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      for (const row of rows) {
+        try {
+          const date = cellDate(row, 1)
+          const description = cellStr(row, 2)
+          const amount = cellNum(row, 3)
+          const receiptUrl = cellStr(row, 4)
+
+          if (!date || amount <= 0 || !description) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const catName = detectCategory(description)
+          const categoryId = await ensureCategory(catName)
+          const hash = md5(`${date.toISOString().slice(0, 10)}_EXPENSE_${amount}_${description}`)
+
+          await prisma.buhTransaction.upsert({
+            where: { externalHash: hash },
+            create: {
+              type: 'EXPENSE',
+              amount,
+              date,
+              categoryId,
+              description,
+              receiptUrl: receiptUrl || null,
+              isHistorical: true,
+              source: 'import',
+              externalHash: hash,
+            },
+            update: {
+              amount,
+              categoryId,
+              description,
+              receiptUrl: receiptUrl || null,
+            },
+          })
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Расходы: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  // ── Import: Инвестиции ────────────────────────────────────
+  if (options.investments) {
+    const ws = wb.getWorksheet('Инвестиции')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      for (const row of rows) {
+        try {
+          const date = cellDate(row, 1)
+          const description = cellStr(row, 2)
+          const amount = cellNum(row, 3)
+          const receiptUrl = cellStr(row, 4)
+
+          if (!date || amount <= 0 || !description) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const catName = detectCategory(description)
+          const categoryId = await ensureCategory(catName)
+          const hash = md5(`${date.toISOString().slice(0, 10)}_INV_${amount}_${description}`)
+
+          await prisma.buhTransaction.upsert({
+            where: { externalHash: hash },
+            create: {
+              type: 'EXPENSE',
+              amount,
+              date,
+              categoryId,
+              description,
+              receiptUrl: receiptUrl || null,
+              isHistorical: true,
+              source: 'investment',
+              externalHash: hash,
+            },
+            update: {
+              amount,
+              categoryId,
+              description,
+              receiptUrl: receiptUrl || null,
+            },
+          })
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Инвестиции: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  // ── Import: Инкас ─────────────────────────────────────────
+  if (options.inkas) {
+    const ws = wb.getWorksheet('Инкас')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      for (const row of rows) {
+        try {
+          const monthStr = cellStr(row, 1).toUpperCase()
+          const typeStr = cellStr(row, 2)
+          const amount = cellNum(row, 3)
+
+          if (!monthStr || !typeStr || amount <= 0) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const parsed = extractPartnerName(typeStr)
+          if (!parsed) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const partnerId = await ensurePartner(parsed.partnerName)
+          const monthNum = MONTH_NAMES[monthStr]
+          if (!monthNum) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // Determine year: Aug-Dec = 2025, Jan+ = 2026
+          const year = monthNum >= 8 ? 2025 : 2026
+          const date = new Date(year, monthNum - 1, 15) // mid-month
+
+          const monthLabel = `${monthStr.charAt(0)}${monthStr.slice(1).toLowerCase()} ${year}`
+
+          // Dedup by partner + month + type + amount
+          const dedupKey = `${partnerId}_${monthLabel}_${parsed.inkasType}_${amount}`
+          const existing = await prisma.buhInkasRecord.findFirst({
+            where: { partnerId, monthLabel, type: parsed.inkasType as any, amount },
+          })
+
+          if (existing) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          await prisma.buhInkasRecord.create({
+            data: {
+              partnerId,
+              type: parsed.inkasType as any,
+              amount,
+              date,
+              monthLabel,
+              description: typeStr,
+            },
+          })
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Инкас: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  // ── Import: Реклама ───────────────────────────────────────
+  if (options.ads) {
+    const ws = wb.getWorksheet('Реклама')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      let lastDate: Date | null = null
+      let adIndex = 0
+
+      for (const row of rows) {
+        try {
+          const dateVal = cellDate(row, 1)
+          if (dateVal) lastDate = dateVal
+          const date = lastDate
+          const format = cellStr(row, 2)
+          const amount = cellNum(row, 3)
+          const channelName = cellStr(row, 4)
+          const subscribersStr = cellStr(row, 5)
+          const channelUrl = cellStr(row, 6)
+          const screenshotUrl = cellStr(row, 7)
+
+          if (!channelName) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          if (!date) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // Parse subscribers (can be ">2000", "1841", etc)
+          const subsParsed = parseInt(subscribersStr.replace(/[^\d]/g, ''), 10)
+          const subscribers = isNaN(subsParsed) ? null : subsParsed
+
+          // Detect budget source
+          const dateKey = date.toISOString().slice(0, 10)
+          const lookupKey = `${dateKey}_${amount}`
+          const budgetSource = amount > 0 && investmentLookup.has(lookupKey) ? 'investment' : amount > 0 ? 'account' : 'stats_only'
+
+          // Unique UTM code for historical campaigns
+          const utmCode = `hist-${dateKey}-${adIndex++}`
+
+          // Dedup by channel + date + amount
+          const existing = await prisma.buhAdCampaign.findFirst({
+            where: { channelName, date, amount },
+          })
+
+          if (existing) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // Create ad campaign
+          const campaign = await prisma.buhAdCampaign.create({
+            data: {
+              date,
+              channelName,
+              channelUrl: channelUrl || null,
+              format: format || null,
+              amount: amount || 0,
+              subscribersGained: subscribers,
+              screenshotUrl: screenshotUrl || null,
+              budgetSource,
+              utmCode,
+              targetType: 'bot',
+            },
+          })
+
+          // If budgetSource = 'account', create linked expense transaction
+          if (budgetSource === 'account' && amount > 0) {
+            const catId = await ensureCategory('Реклама', '#E75A5A')
+            const hash = md5(`${dateKey}_AD_EXPENSE_${amount}_${channelName}`)
+            await prisma.buhTransaction.upsert({
+              where: { externalHash: hash },
+              create: {
+                type: 'EXPENSE',
+                amount,
+                date,
+                categoryId: catId,
+                description: `Реклама: ${channelName}`,
+                isHistorical: true,
+                source: 'import',
+                externalHash: hash,
+              },
+              update: {
+                amount,
+                description: `Реклама: ${channelName}`,
+              },
+            })
+            // Link transaction to campaign
+            const tx = await prisma.buhTransaction.findUnique({ where: { externalHash: hash } })
+            if (tx) {
+              await prisma.buhAdCampaign.update({
+                where: { id: campaign.id },
+                data: { transactionId: tx.id },
+              })
+            }
+          }
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Реклама: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  // ── Import: Оплаты (серверы) ──────────────────────────────
+  if (options.servers) {
+    const ws = wb.getWorksheet('Оплаты')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      for (const row of rows) {
+        try {
+          const paymentDay = cellNum(row, 1)
+          const provider = cellStr(row, 2)
+          const amount = cellNum(row, 3)
+          const comment = cellStr(row, 4)
+
+          if (!provider || amount <= 0 || provider.startsWith('ИТОГО')) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const serverName = `${provider} — ${comment || 'Сервер'}`
+
+          // Dedup by name
+          let server = await prisma.buhVpnServer.findFirst({ where: { name: serverName } })
+          if (!server) {
+            const now = new Date()
+            const nextPayment = new Date(now.getFullYear(), now.getMonth(), paymentDay)
+            if (nextPayment < now) nextPayment.setMonth(nextPayment.getMonth() + 1)
+
+            server = await prisma.buhVpnServer.create({
+              data: {
+                name: serverName,
+                provider,
+                purpose: comment || null,
+                monthlyCost: amount,
+                paymentDay: paymentDay || 1,
+                nextPaymentDate: nextPayment,
+                status: 'ACTIVE',
+                isActive: true,
+              },
+            })
+            job.created++
+          } else {
+            job.skipped++
+          }
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Серверы: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  // ── Import: Статистика ────────────────────────────────────
+  if (options.stats) {
+    const ws = wb.getWorksheet('Статистика')
+    if (ws) {
+      const rows: ExcelJS.Row[] = []
+      ws.eachRow((row, num) => { if (num > 1) rows.push(row) })
+
+      for (const row of rows) {
+        try {
+          const monthName = cellStr(row, 1)
+          const revenue = cellNum(row, 2)
+          if (!monthName || revenue <= 0) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          const monthNum = STAT_MONTH_NAMES[monthName]
+          if (!monthNum) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // Year: Aug-Dec = 2025, Jan+ = 2026
+          const year = monthNum >= 8 ? 2025 : 2026
+
+          await prisma.buhMonthlyStats.upsert({
+            where: { year_month: { year, month: monthNum } },
+            create: {
+              year,
+              month: monthNum,
+              avgCheck: cellNum(row, 5) || null,
+              totalPayments: cellNum(row, 6) || null,
+              totalRefunds: cellNum(row, 7) || null,
+              onlineCount: cellNum(row, 10) || null,
+              onlineWeekly: cellNum(row, 11) || null,
+              pdpInChannel: cellNum(row, 12) || null,
+              tagPaid: cellNum(row, 9) || null,
+            },
+            update: {
+              avgCheck: cellNum(row, 5) || null,
+              totalPayments: cellNum(row, 6) || null,
+              totalRefunds: cellNum(row, 7) || null,
+              onlineCount: cellNum(row, 10) || null,
+              onlineWeekly: cellNum(row, 11) || null,
+              pdpInChannel: cellNum(row, 12) || null,
+              tagPaid: cellNum(row, 9) || null,
+            },
+          })
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Статистика: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+    }
+  }
+
+  updateJob(jobId, { status: 'done', finishedAt: new Date() })
+  logger.info(
+    `Accounting import done: created=${job.created} updated=${job.updated} skipped=${job.skipped} errors=${job.errors}`,
+  )
+}
+
+// ── YuKassa API sync ────────────────────────────────────────
+
+async function runYukassaSync(jobId: string, dateFrom?: string, dateTo?: string) {
+  updateJob(jobId, { status: 'running' })
+  const job = jobs.get(jobId)!
+
+  const idRegex = /\[ID(\d+)\]/
+
+  // Default: last 7 days if no date range
+  const now = new Date()
+  const from = dateFrom || new Date(now.getTime() - 7 * 86400000).toISOString()
+  const to = dateTo || now.toISOString()
+
+  // Find default tariff
+  const defaultTariff = await prisma.tariff.findFirst({ orderBy: { createdAt: 'asc' } })
+  if (!defaultTariff) {
+    updateJob(jobId, { status: 'error', finishedAt: new Date(), errorMessages: ['Нет тарифов в БД'] })
+    return
+  }
+
+  try {
+    // ── Sync payments ────────────────────────────────────
+    let cursor: string | undefined
+    let totalFetched = 0
+
+    do {
+      const res = await paymentService.yukassa.listPayments({
+        createdAtGte: from,
+        createdAtLte: to,
+        cursor,
+        limit: 100,
+      })
+
+      totalFetched += res.items.length
+      job.total = totalFetched
+
+      for (const yp of res.items) {
+        try {
+          // Only process:
+          // - succeeded with paid=true → real payment
+          // - canceled with refunded_amount > 0 → refund
+          // Skip everything else (expired, not paid, etc.)
+          const isPaid = yp.status === 'succeeded' && (yp as any).paid === true
+          const isRefund = yp.status === 'canceled' && yp.refunded_amount && parseFloat(yp.refunded_amount.value) > 0
+          if (!isPaid && !isRefund) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // Skip if already exists
+          const existing = await prisma.payment.findFirst({
+            where: { OR: [{ yukassaPaymentId: yp.id }, { externalPaymentId: yp.id }] },
+          })
+
+          if (existing) {
+            // Update commission if missing
+            if (yp.income_amount && (!existing.commission || Number(existing.commission) === 0)) {
+              const gross = parseFloat(yp.amount.value)
+              const net = parseFloat(yp.income_amount.value)
+              const commission = Math.max(0, +(gross - net).toFixed(2))
+              if (commission > 0) {
+                await prisma.payment.update({
+                  where: { id: existing.id },
+                  data: { commission },
+                })
+                job.updated++
+              }
+            }
+
+            // Update refund if payment was refunded
+            if (yp.status === 'canceled' && yp.refunded_amount) {
+              const refundAmount = parseFloat(yp.refunded_amount.value)
+              if (refundAmount > 0 && existing.status === 'PAID') {
+                const gross = parseFloat(yp.amount.value)
+                const isFullRefund = refundAmount >= gross - 0.01
+                await prisma.payment.update({
+                  where: { id: existing.id },
+                  data: {
+                    status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND',
+                    refundAmount,
+                    refundedAt: new Date(yp.captured_at || yp.created_at),
+                  },
+                })
+                job.updated++
+              }
+            }
+
+            job.skipped++
+            job.processed++
+            continue
+          }
+
+          // New payment — create
+          const gross = parseFloat(yp.amount.value)
+          // Skip test/garbage payments with unrealistic amounts
+          if (gross >= 100000) {
+            job.skipped++
+            job.processed++
+            continue
+          }
+          let net: number
+          let commission: number
+          if (yp.income_amount) {
+            net = parseFloat(yp.income_amount.value)
+            commission = Math.max(0, +(gross - net).toFixed(2))
+          } else {
+            // Estimate commission at 3.5% when income_amount not available
+            commission = +(gross * 0.035).toFixed(2)
+            net = +(gross - commission).toFixed(2)
+          }
+          const createdAt = new Date(yp.created_at)
+
+          // Try to find user from description
+          const desc = yp.description || ''
+          const m = desc.match(idRegex)
+          const leadtehId = m ? m[1] : null
+          let userId: string | null = null
+          if (leadtehId) {
+            const user = await prisma.user.findUnique({ where: { leadtehId }, select: { id: true } })
+            userId = user?.id ?? null
+          }
+          if (!userId) job.warnings++
+
+          // Determine status
+          let status: 'PAID' | 'REFUNDED' | 'PARTIAL_REFUND' = 'PAID'
+          let refundAmount: number | null = null
+          let refundedAt: Date | null = null
+
+          if (yp.status === 'canceled' && yp.refunded_amount) {
+            const ra = parseFloat(yp.refunded_amount.value)
+            if (ra > 0) {
+              refundAmount = ra
+              status = ra >= gross - 0.01 ? 'REFUNDED' : 'PARTIAL_REFUND'
+              refundedAt = new Date(yp.captured_at || yp.created_at)
+            }
+          }
+
+          await prisma.payment.create({
+            data: {
+              userId,
+              tariffId: defaultTariff.id,
+              provider: 'YUKASSA',
+              yukassaPaymentId: yp.id,
+              externalPaymentId: yp.id,
+              amount: net,
+              commission,
+              currency: yp.amount.currency,
+              status,
+              createdAt,
+              confirmedAt: yp.status === 'succeeded' ? createdAt : null,
+              refundAmount,
+              refundedAt,
+            },
+          })
+
+          // Update user counters for paid
+          if (userId && status === 'PAID') {
+            await prisma.user.update({
+              where: { id: userId },
+              data: {
+                totalPaid: { increment: net },
+                paymentsCount: { increment: 1 },
+                lastPaymentAt: createdAt,
+              },
+            })
+          }
+
+          job.created++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Payment ${yp.id}: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+        job.processed++
+      }
+
+      cursor = res.nextCursor
+    } while (cursor)
+
+    // ── Sync refunds (catch refunds made after payment sync) ──
+    let refundCursor: string | undefined
+    do {
+      const res = await paymentService.yukassa.listRefunds({
+        createdAtGte: from,
+        createdAtLte: to,
+        cursor: refundCursor,
+        limit: 100,
+      })
+
+      for (const ref of res.items) {
+        try {
+          if (ref.status !== 'succeeded') continue
+
+          const payment = await prisma.payment.findFirst({
+            where: { OR: [{ yukassaPaymentId: ref.payment_id }, { externalPaymentId: ref.payment_id }] },
+          })
+
+          if (!payment) continue
+          if (payment.status === 'REFUNDED') continue // already processed
+
+          const refundAmt = parseFloat(ref.amount.value)
+          const gross = payment.amount + Number(payment.commission || 0)
+          const isFullRefund = refundAmt >= gross - 0.01
+
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND',
+              refundAmount: refundAmt,
+              refundedAt: new Date(ref.created_at),
+            },
+          })
+          job.updated++
+        } catch (err: any) {
+          job.errors++
+          if (job.errorMessages.length < 20) {
+            job.errorMessages.push(`Refund ${ref.id}: ${String(err?.message || err).slice(0, 200)}`)
+          }
+        }
+      }
+
+      refundCursor = res.nextCursor
+    } while (refundCursor)
+
+  } catch (err: any) {
+    job.errors++
+    job.errorMessages.push(`API error: ${String(err?.message || err).slice(0, 300)}`)
+  }
+
+  updateJob(jobId, { status: 'done', finishedAt: new Date() })
+  logger.info(
+    `YuKassa sync done: created=${job.created} updated=${job.updated} skipped=${job.skipped} warnings=${job.warnings} errors=${job.errors}`,
   )
 }

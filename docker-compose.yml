@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: hideyou
       POSTGRES_USER: hideyou
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Europe/Moscow
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -48,6 +49,7 @@ services:
       DATABASE_URL: postgresql://hideyou:${POSTGRES_PASSWORD}@postgres:5432/hideyou
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       NODE_ENV: production
+      TZ: Europe/Moscow
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +92,7 @@ services:
       NEXT_PUBLIC_TG_BOT_NAME: ${TELEGRAM_BOT_NAME}
       NEXT_PUBLIC_MAPTILER_KEY: ${MAPTILER_KEY}
       NEXT_PUBLIC_YANDEX_KEY: ${YANDEX_MAPS_KEY}
+      TZ: Europe/Moscow
     depends_on:
       - backend
     networks:
@@ -113,6 +116,7 @@ services:
       DATABASE_URL: postgresql://hideyou:${POSTGRES_PASSWORD}@postgres:5432/hideyou
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       NODE_ENV: production
+      TZ: Europe/Moscow
     depends_on:
       postgres:
         condition: service_healthy

@@ -85,7 +85,7 @@ export async function adminAdsRoutes(app: FastifyInstance) {
         })
       : []
     const revenueByUser: Record<string, number> = {}
-    payments.forEach(p => { revenueByUser[p.userId] = (revenueByUser[p.userId] || 0) + Number(p.amount) })
+    payments.forEach(p => { if (p.userId) revenueByUser[p.userId] = (revenueByUser[p.userId] || 0) + Number(p.amount) })
 
     const clicksMap = Object.fromEntries(clicksByCode.map(x => [x.utmCode, x._count._all]))
     const leadsMap = Object.fromEntries(leadsByCode.map(x => [x.utmCode, x._count._all]))
