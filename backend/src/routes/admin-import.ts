@@ -500,6 +500,188 @@ export async function adminImportRoutes(app: FastifyInstance) {
     return { jobId }
   })
 
+  // ── 12. Full DB export (JSON dump of all tables) ────────
+  app.get('/db/export/json', admin, async (_req, reply) => {
+    try {
+      const [
+        users, sessions, tariffs, payments, referralBonuses, news, notifications,
+        notificationReads, telegramProxies, adminNotes, giftSubscriptions, balanceTransactions,
+        emailVerifications, instructionPlatforms, instructionApps, instructionSteps,
+        settings, importRecords, promoCodes, promoUsages, botMessages, broadcasts,
+        broadcastRecipients, funnels, funnelSteps, funnelNodes, funnelLogs,
+        buhCategories, buhAutoTagRules, buhTransactions, buhPartners, buhInkasRecords,
+        buhVpnServers, buhAdCampaigns, buhRecurringPayments, buhMonthlyStats, buhMilestones,
+        buhAuditLogs, buhNotificationChannels, buhUtmClicks, buhUtmLeads,
+        buhWebhookApiKeys, buhWebhookPayments,
+        botBlockGroups, botBlocks, botButtons, botTriggers, botBlockStats,
+        userTags, userVariables, userSegments,
+      ] = await Promise.all([
+        prisma.user.findMany(),
+        prisma.session.findMany(),
+        prisma.tariff.findMany(),
+        prisma.payment.findMany(),
+        prisma.referralBonus.findMany(),
+        prisma.news.findMany(),
+        prisma.notification.findMany(),
+        prisma.notificationRead.findMany(),
+        prisma.telegramProxy.findMany(),
+        prisma.adminNote.findMany(),
+        prisma.giftSubscription.findMany(),
+        prisma.balanceTransaction.findMany(),
+        prisma.emailVerification.findMany(),
+        prisma.instructionPlatform.findMany(),
+        prisma.instructionApp.findMany(),
+        prisma.instructionStep.findMany(),
+        prisma.setting.findMany(),
+        prisma.importRecord.findMany(),
+        prisma.promoCode.findMany(),
+        prisma.promoUsage.findMany(),
+        prisma.botMessage.findMany(),
+        prisma.broadcast.findMany(),
+        prisma.broadcastRecipient.findMany(),
+        prisma.funnel.findMany(),
+        prisma.funnelStep.findMany(),
+        prisma.funnelNode.findMany(),
+        prisma.funnelLog.findMany(),
+        prisma.buhCategory.findMany(),
+        prisma.buhAutoTagRule.findMany(),
+        prisma.buhTransaction.findMany(),
+        prisma.buhPartner.findMany(),
+        prisma.buhInkasRecord.findMany(),
+        prisma.buhVpnServer.findMany(),
+        prisma.buhAdCampaign.findMany(),
+        prisma.buhRecurringPayment.findMany(),
+        prisma.buhMonthlyStats.findMany(),
+        prisma.buhMilestone.findMany(),
+        prisma.buhAuditLog.findMany(),
+        prisma.buhNotificationChannel.findMany(),
+        prisma.buhUtmClick.findMany(),
+        prisma.buhUtmLead.findMany(),
+        prisma.buhWebhookApiKey.findMany(),
+        prisma.buhWebhookPayment.findMany(),
+        prisma.botBlockGroup.findMany(),
+        prisma.botBlock.findMany(),
+        prisma.botButton.findMany(),
+        prisma.botTrigger.findMany(),
+        prisma.botBlockStat.findMany(),
+        prisma.userTag.findMany(),
+        prisma.userVariable.findMany(),
+        prisma.userSegment.findMany(),
+      ])
+
+      const dump = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        tables: {
+          User: users,
+          Session: sessions,
+          Tariff: tariffs,
+          Payment: payments,
+          ReferralBonus: referralBonuses,
+          News: news,
+          Notification: notifications,
+          NotificationRead: notificationReads,
+          TelegramProxy: telegramProxies,
+          AdminNote: adminNotes,
+          GiftSubscription: giftSubscriptions,
+          BalanceTransaction: balanceTransactions,
+          EmailVerification: emailVerifications,
+          InstructionPlatform: instructionPlatforms,
+          InstructionApp: instructionApps,
+          InstructionStep: instructionSteps,
+          Setting: settings,
+          ImportRecord: importRecords,
+          PromoCode: promoCodes,
+          PromoUsage: promoUsages,
+          BotMessage: botMessages,
+          Broadcast: broadcasts,
+          BroadcastRecipient: broadcastRecipients,
+          Funnel: funnels,
+          FunnelStep: funnelSteps,
+          FunnelNode: funnelNodes,
+          FunnelLog: funnelLogs,
+          BuhCategory: buhCategories,
+          BuhAutoTagRule: buhAutoTagRules,
+          BuhTransaction: buhTransactions,
+          BuhPartner: buhPartners,
+          BuhInkasRecord: buhInkasRecords,
+          BuhVpnServer: buhVpnServers,
+          BuhAdCampaign: buhAdCampaigns,
+          BuhRecurringPayment: buhRecurringPayments,
+          BuhMonthlyStats: buhMonthlyStats,
+          BuhMilestone: buhMilestones,
+          BuhAuditLog: buhAuditLogs,
+          BuhNotificationChannel: buhNotificationChannels,
+          BuhUtmClick: buhUtmClicks,
+          BuhUtmLead: buhUtmLeads,
+          BuhWebhookApiKey: buhWebhookApiKeys,
+          BuhWebhookPayment: buhWebhookPayments,
+          BotBlockGroup: botBlockGroups,
+          BotBlock: botBlocks,
+          BotButton: botButtons,
+          BotTrigger: botTriggers,
+          BotBlockStat: botBlockStats,
+          UserTag: userTags,
+          UserVariable: userVariables,
+          UserSegment: userSegments,
+        },
+      }
+
+      reply.header('Content-Type', 'application/json')
+      reply.header('Content-Disposition', `attachment; filename="lkhy-full-dump-${Date.now()}.json"`)
+      return dump
+    } catch (err: any) {
+      logger.error('DB export failed: ' + (err?.message || String(err)))
+      return reply.status(500).send({ error: 'Export failed: ' + (err?.message || '') })
+    }
+  })
+
+  // ── 13. Restore DB from JSON dump ────────────────────────
+  app.post('/db/restore', admin, async (req, reply) => {
+    try {
+      const data = await (req as any).file()
+      if (!data) return reply.status(400).send({ error: 'No file uploaded' })
+
+      const buf = await data.toBuffer()
+      const dump = JSON.parse(buf.toString('utf-8'))
+
+      if (!dump.version || !dump.tables) {
+        return reply.status(400).send({ error: 'Invalid dump file format' })
+      }
+
+      const jobId = randomUUID()
+      const job: ImportJob = {
+        id: jobId,
+        type: 'accounting',
+        status: 'pending',
+        total: 0,
+        processed: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: 0,
+        warnings: 0,
+        errorMessages: [],
+        startedAt: new Date(),
+      }
+      jobs.set(jobId, job)
+
+      runDbRestore(jobId, dump).catch((err) => {
+        logger.error('DB restore crashed: ' + (err?.message || String(err)))
+        updateJob(jobId, {
+          status: 'error',
+          errorMessages: [...(jobs.get(jobId)?.errorMessages || []), String(err?.message || err)],
+          finishedAt: new Date(),
+        })
+      })
+
+      return { jobId }
+    } catch (err: any) {
+      logger.error('DB restore upload failed: ' + (err?.message || String(err)))
+      return reply.status(500).send({ error: 'Restore failed: ' + (err?.message || '') })
+    }
+  })
+
   // ── Legacy endpoints (preserved for compatibility) ──────
   app.get('/status', admin, async () => {
     try {
@@ -1758,5 +1940,113 @@ async function runYukassaSync(jobId: string, dateFrom?: string, dateTo?: string)
   updateJob(jobId, { status: 'done', finishedAt: new Date() })
   logger.info(
     `YuKassa sync done: created=${job.created} updated=${job.updated} skipped=${job.skipped} warnings=${job.warnings} errors=${job.errors}`,
+  )
+}
+
+// ── DB Restore from JSON dump ────────────────────────────────
+
+async function runDbRestore(jobId: string, dump: any) {
+  updateJob(jobId, { status: 'running' })
+  const job = jobs.get(jobId)!
+
+  const tables = dump.tables || {}
+
+  // Restore order matters due to foreign keys.
+  // Independent first, then dependent.
+  const restoreOrder: Array<{ name: string; model: any }> = [
+    // Level 0: no FK dependencies
+    { name: 'Tariff', model: prisma.tariff },
+    { name: 'Setting', model: prisma.setting },
+    { name: 'TelegramProxy', model: prisma.telegramProxy },
+    { name: 'InstructionPlatform', model: prisma.instructionPlatform },
+    { name: 'News', model: prisma.news },
+    { name: 'BuhCategory', model: prisma.buhCategory },
+    { name: 'BuhPartner', model: prisma.buhPartner },
+    { name: 'BuhVpnServer', model: prisma.buhVpnServer },
+    { name: 'BuhMonthlyStats', model: prisma.buhMonthlyStats },
+    { name: 'BuhMilestone', model: prisma.buhMilestone },
+    { name: 'BuhNotificationChannel', model: prisma.buhNotificationChannel },
+    { name: 'BuhWebhookApiKey', model: prisma.buhWebhookApiKey },
+    { name: 'PromoCode', model: prisma.promoCode },
+
+    // Level 1: depends on Level 0
+    { name: 'InstructionApp', model: prisma.instructionApp },
+    { name: 'BuhAutoTagRule', model: prisma.buhAutoTagRule },
+    { name: 'BuhRecurringPayment', model: prisma.buhRecurringPayment },
+    { name: 'Funnel', model: prisma.funnel },
+
+    // Level 2: Users (depends on Tariff via subscriptions)
+    { name: 'User', model: prisma.user },
+
+    // Level 3: User-dependent
+    { name: 'Session', model: prisma.session },
+    { name: 'EmailVerification', model: prisma.emailVerification },
+    { name: 'AdminNote', model: prisma.adminNote },
+    { name: 'Notification', model: prisma.notification },
+    { name: 'InstructionStep', model: prisma.instructionStep },
+    { name: 'BuhTransaction', model: prisma.buhTransaction },
+    { name: 'BuhInkasRecord', model: prisma.buhInkasRecord },
+    { name: 'BuhAdCampaign', model: prisma.buhAdCampaign },
+    { name: 'BuhAuditLog', model: prisma.buhAuditLog },
+    { name: 'BuhUtmClick', model: prisma.buhUtmClick },
+    { name: 'UserTag', model: prisma.userTag },
+    { name: 'UserVariable', model: prisma.userVariable },
+    { name: 'UserSegment', model: prisma.userSegment },
+    { name: 'PromoUsage', model: prisma.promoUsage },
+    { name: 'BotMessage', model: prisma.botMessage },
+    { name: 'FunnelStep', model: prisma.funnelStep },
+    { name: 'FunnelNode', model: prisma.funnelNode },
+    { name: 'FunnelLog', model: prisma.funnelLog },
+    { name: 'Broadcast', model: prisma.broadcast },
+    { name: 'ImportRecord', model: prisma.importRecord },
+
+    // Level 4: Payment-related
+    { name: 'Payment', model: prisma.payment },
+    { name: 'BuhUtmLead', model: prisma.buhUtmLead },
+    { name: 'BuhWebhookPayment', model: prisma.buhWebhookPayment },
+    { name: 'GiftSubscription', model: prisma.giftSubscription },
+    { name: 'BroadcastRecipient', model: prisma.broadcastRecipient },
+
+    // Level 5: depends on Payment
+    { name: 'ReferralBonus', model: prisma.referralBonus },
+    { name: 'BalanceTransaction', model: prisma.balanceTransaction },
+    { name: 'NotificationRead', model: prisma.notificationRead },
+
+    // Bot blocks
+    { name: 'BotBlockGroup', model: prisma.botBlockGroup },
+    { name: 'BotBlock', model: prisma.botBlock },
+    { name: 'BotButton', model: prisma.botButton },
+    { name: 'BotTrigger', model: prisma.botTrigger },
+    { name: 'BotBlockStat', model: prisma.botBlockStat },
+  ]
+
+  // Count total rows
+  job.total = restoreOrder.reduce((s, t) => s + (Array.isArray(tables[t.name]) ? tables[t.name].length : 0), 0)
+
+  for (const { name, model } of restoreOrder) {
+    const rows = tables[name]
+    if (!Array.isArray(rows) || rows.length === 0) continue
+
+    for (const row of rows) {
+      try {
+        await model.upsert({
+          where: { id: row.id },
+          create: row,
+          update: row,
+        })
+        job.created++
+      } catch (err: any) {
+        job.errors++
+        if (job.errorMessages.length < 30) {
+          job.errorMessages.push(`${name}[${row.id?.slice(0, 8)}]: ${String(err?.message || err).slice(0, 200)}`)
+        }
+      }
+      job.processed++
+    }
+  }
+
+  updateJob(jobId, { status: 'done', finishedAt: new Date() })
+  logger.info(
+    `DB restore done: created=${job.created} errors=${job.errors}`,
   )
 }

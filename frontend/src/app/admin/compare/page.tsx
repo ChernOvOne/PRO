@@ -46,6 +46,7 @@ interface Transaction {
   id: string
   type: 'INCOME' | 'EXPENSE'
   amount: number
+  source?: string | null
   category?: { id: string; name: string; color: string } | null
 }
 
@@ -110,15 +111,19 @@ function computeStats(items: Transaction[]): PeriodStats {
   const byCategory: PeriodStats['byCategory'] = {}
 
   for (const t of items) {
-    if (t.type === 'INCOME') income += t.amount
-    else expense += t.amount
+    const amount = Number(t.amount) || 0
+    // Exclude investment-sourced expenses — they're paid from investor money, not company
+    if (t.type === 'EXPENSE' && t.source === 'investment') continue
+
+    if (t.type === 'INCOME') income += amount
+    else expense += amount
 
     if (t.type === 'EXPENSE' && t.category) {
       const key = t.category.id
       if (!byCategory[key]) {
         byCategory[key] = { name: t.category.name, color: t.category.color, amount: 0 }
       }
-      byCategory[key].amount += t.amount
+      byCategory[key].amount += amount
     }
   }
 
@@ -163,12 +168,21 @@ export default function AdminComparePage() {
     }
     setLoading(true)
     try {
-      const [resA, resB] = await Promise.all([
+      const [resA, resB, totalsA, totalsB] = await Promise.all([
         adminApi.buhTransactions({ date_from: aFrom, date_to: aTo, limit: 10000 }),
         adminApi.buhTransactions({ date_from: bFrom, date_to: bTo, limit: 10000 }),
+        adminApi.paymentTotals({ dateFrom: aFrom, dateTo: aTo }),
+        adminApi.paymentTotals({ dateFrom: bFrom, dateTo: bTo }),
       ])
-      setStatsA(computeStats(resA.items ?? []))
-      setStatsB(computeStats(resB.items ?? []))
+      const statsA_ = computeStats(resA.items ?? [])
+      const statsB_ = computeStats(resB.items ?? [])
+      // Add real revenue from Payments to income
+      statsA_.income += Number(totalsA.revenue) || 0
+      statsA_.profit = statsA_.income - statsA_.expense
+      statsB_.income += Number(totalsB.revenue) || 0
+      statsB_.profit = statsB_.income - statsB_.expense
+      setStatsA(statsA_)
+      setStatsB(statsB_)
     } catch {
       toast.error('Ошибка загрузки данных')
     } finally {

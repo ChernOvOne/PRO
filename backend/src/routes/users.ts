@@ -930,6 +930,12 @@ export async function buildActivityLog(
       orderBy: { createdAt: 'desc' },
     })
     for (const tx of txns) {
+      // Skip PURCHASE transactions that are linked to a Payment —
+      // those are already shown as 'balance_purchase' Payment entries (avoid duplication)
+      if (tx.type === 'PURCHASE' && tx.paymentId) continue
+      // Also skip TOPUP entries from YuKassa payments — the Payment entry already shows them
+      if (tx.type === 'TOPUP' && tx.paymentId) continue
+
       entries.push({
         id:          tx.id,
         type:        'balance',

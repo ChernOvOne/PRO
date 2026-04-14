@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: hideyou
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Europe/Moscow
+      PGTZ: Europe/Moscow
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

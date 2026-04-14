@@ -33,6 +33,9 @@ const DB_TO_ENV: Record<string, string> = {
   'currency_symbol': 'CURRENCY_SYMBOL',
   'timezone': 'TIMEZONE',
   'maptiler_key': 'MAPTILER_KEY',
+  'ai_provider': 'AI_PROVIDER',
+  'ai_token': 'AI_API_KEY',
+  'ai_model': 'AI_MODEL',
 }
 
 function updateEnvFile(updates: Record<string, string>) {

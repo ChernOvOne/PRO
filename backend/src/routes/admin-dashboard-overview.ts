@@ -16,7 +16,12 @@ function parseDays(raw: any): Days {
 }
 
 function dateKey(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  // Use local timezone (container is on Europe/Moscow) instead of UTC
+  // to match Postgres DATE(... AT TIME ZONE 'Europe/Moscow') results
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function fillDailySeries(
@@ -63,19 +68,51 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
   prevFrom.setHours(0, 0, 0, 0)
 
   // ── KPI: revenue / profit / customers ──
+  // Use the same formula as /admin/payments/totals to keep numbers identical:
+  //   oborot   = sum(amount + commission) for PAID + REFUNDED + PARTIAL_REFUND by createdAt
+  //   refunds  = sum(refundAmount) for REFUNDED + PARTIAL_REFUND
+  //   revenue  = oborot − refunds − commission  (= "К зачислению" на странице платежей)
+  const provFilter = { in: ['YUKASSA', 'CRYPTOPAY'] as any }
+  const realStatuses = { in: ['PAID', 'REFUNDED', 'PARTIAL_REFUND'] as any }
+
+  // Refund date filter (refundedAt or fallback to createdAt for old refunds)
+  const refundDateWhereCur: any = {
+    OR: [
+      { refundedAt: { gte: from, lte: to } },
+      { refundedAt: null, createdAt: { gte: from, lte: to } },
+    ],
+  }
+  const refundDateWherePrev: any = {
+    OR: [
+      { refundedAt: { gte: prevFrom, lte: prevTo } },
+      { refundedAt: null, createdAt: { gte: prevFrom, lte: prevTo } },
+    ],
+  }
+
   const [
-    revenueAgg, revenuePrevAgg,
+    oborotAgg, oborotPrevAgg,
+    refundAgg, refundPrevAgg,
     newCustomers, newCustomersPaid,
     incomeAgg, expenseAgg,
     incomePrevAgg, expensePrevAgg,
   ] = await Promise.all([
+    // Oborot for current period
     prisma.payment.aggregate({
-      where: { status: 'PAID', confirmedAt: { gte: from, lte: to } },
-      _sum: { amount: true },
+      where: { status: realStatuses, provider: provFilter, createdAt: { gte: from, lte: to } },
+      _sum: { amount: true, commission: true },
     }),
     prisma.payment.aggregate({
-      where: { status: 'PAID', confirmedAt: { gte: prevFrom, lte: prevTo } },
-      _sum: { amount: true },
+      where: { status: realStatuses, provider: provFilter, createdAt: { gte: prevFrom, lte: prevTo } },
+      _sum: { amount: true, commission: true },
+    }),
+    // Refunds for current period (by refundedAt)
+    prisma.payment.aggregate({
+      where: { status: { in: ['REFUNDED', 'PARTIAL_REFUND'] }, provider: provFilter, ...refundDateWhereCur },
+      _sum: { refundAmount: true },
+    }),
+    prisma.payment.aggregate({
+      where: { status: { in: ['REFUNDED', 'PARTIAL_REFUND'] }, provider: provFilter, ...refundDateWherePrev },
+      _sum: { refundAmount: true },
     }),
     prisma.user.count({ where: { createdAt: { gte: from, lte: to } } }),
     prisma.user.count({
@@ -99,19 +136,32 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
     }),
   ])
 
-  const revenue = Number(revenueAgg._sum.amount ?? 0)
-  const revenuePrev = Number(revenuePrevAgg._sum.amount ?? 0)
-  const income = Number(incomeAgg._sum.amount ?? 0)
-  const expense = Number(expenseAgg._sum.amount ?? 0)
-  const profit = income - expense
-  const profitPrev = Number(incomePrevAgg._sum.amount ?? 0) - Number(expensePrevAgg._sum.amount ?? 0)
+  // Period: revenue = oborot − refunds − commission (matches "К зачислению" on payments page)
+  const oborotNet = Number(oborotAgg._sum?.amount ?? 0)
+  const oborotComm = Number(oborotAgg._sum?.commission ?? 0)
+  const oborot = oborotNet + oborotComm
+  const refunds = Number(refundAgg._sum?.refundAmount ?? 0)
+  const revenue = oborot - refunds - oborotComm  // = oborotNet - refunds
 
-  // ── Revenue chart (income vs expense by day) ──
+  const oborotNetPrev = Number(oborotPrevAgg._sum?.amount ?? 0)
+  const oborotCommPrev = Number(oborotPrevAgg._sum?.commission ?? 0)
+  const oborotPrev = oborotNetPrev + oborotCommPrev
+  const refundsPrev = Number(refundPrevAgg._sum?.refundAmount ?? 0)
+  const revenuePrev = oborotPrev - refundsPrev - oborotCommPrev
+
+  const manualIncome = Number(incomeAgg._sum.amount ?? 0)
+  const expense = Number(expenseAgg._sum.amount ?? 0)
+  const profit = revenue + manualIncome - expense
+  const profitPrev = revenuePrev + Number(incomePrevAgg._sum.amount ?? 0) - Number(expensePrevAgg._sum.amount ?? 0)
+
+  // ── Revenue chart (income from payments + expense by day) ──
+  // Use confirmed_at in Moscow timezone to match KPI revenue calculation
   const incomeByDayRows = await prisma.$queryRaw<Array<{ date: Date; total: number }>>`
-    SELECT date, COALESCE(SUM(amount), 0)::numeric AS total
-    FROM buh_transactions
-    WHERE type = 'INCOME' AND date >= ${from} AND date <= ${to}
-    GROUP BY date ORDER BY date ASC
+    SELECT DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') as date, COALESCE(SUM(amount), 0)::numeric AS total
+    FROM payments
+    WHERE status = 'PAID' AND provider IN ('YUKASSA', 'CRYPTOPAY')
+      AND confirmed_at IS NOT NULL AND confirmed_at >= ${from} AND confirmed_at <= ${to}
+    GROUP BY DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') ORDER BY date ASC
   `
   const expenseByDayRows = await prisma.$queryRaw<Array<{ date: Date; total: number }>>`
     SELECT date, COALESCE(SUM(amount), 0)::numeric AS total
@@ -134,8 +184,12 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
   }))
 
   // ── Marketing ──
+  // Exclude historical campaigns (imported from xlsx) — they don't have real UTM data
   const campaigns = await prisma.buhAdCampaign.findMany({
-    where: { date: { gte: from, lte: to } },
+    where: {
+      date: { gte: from, lte: to },
+      NOT: { utmCode: { startsWith: 'hist-' } },
+    },
     orderBy: { date: 'desc' },
   })
   const utmCodes = campaigns.map(c => c.utmCode)
@@ -380,7 +434,7 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
   // ── MRR (revenue over the last 30 days) ──
   const mrrStart = new Date(Date.now() - 30 * 86400000)
   const mrrAgg = await prisma.payment.aggregate({
-    where: { status: 'PAID', confirmedAt: { gte: mrrStart } },
+    where: { status: 'PAID', provider: { in: ['YUKASSA', 'CRYPTOPAY'] }, confirmedAt: { gte: mrrStart } },
     _sum: { amount: true },
   })
   const mrr = Number(mrrAgg._sum.amount ?? 0)
@@ -422,6 +476,19 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
     distinct: ['userId'],
   }).then(r => r.length).catch(() => 0)
 
+  // Support tickets alerts
+  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000)
+  const [openTickets, ticketsOverSla] = await Promise.all([
+    prisma.ticket.count({ where: { status: { in: ['OPEN', 'PENDING'] } } }).catch(() => 0),
+    prisma.ticket.count({
+      where: {
+        status: 'OPEN',
+        firstResponseAt: null,
+        createdAt: { lt: fifteenMinAgo },
+      },
+    }).catch(() => 0),
+  ])
+
   // Apply dismissals: if an alert with the same value has been dismissed,
   // we zero it out so the frontend hides it.
   const alertsRaw = {
@@ -433,6 +500,8 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
     infraDueSoon,
     infraOverdue,
     botBlockedUsers: blockedUsersCount,
+    openTickets,
+    ticketsOverSla,
   }
   const alerts = { ...alertsRaw }
   const keyFor = (k: keyof typeof alertsRaw) => `${k}_${alertsRaw[k]}`

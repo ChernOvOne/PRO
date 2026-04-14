@@ -90,6 +90,11 @@ model User {
   // ── Broadcast tracking ─────────────────────────────────
   broadcastRecipients BroadcastRecipient[]
 
+  // ── Support tickets ────────────────────────────────────
+  tickets            Ticket[]               @relation("TicketUser")
+  assignedTickets    Ticket[]               @relation("TicketAssignee")
+  ticketMessages     TicketMessage[]        @relation("TicketMessageAuthor")
+
   @@map("users")
 }
 
@@ -1403,4 +1408,115 @@ model UserSegment {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("user_segments")
+}
+
+// ── Support Tickets ──────────────────────────────────────────
+enum TicketStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  BILLING
+  TECH
+  REFUND
+  SUBSCRIPTION
+  OTHER
+}
+
+enum TicketMessageAuthor {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum TicketSource {
+  WEB
+  MINIAPP
+  ADMIN
+  BOT
+}
+
+model Ticket {
+  id              String         @id @default(uuid())
+  userId          String         @map("user_id")
+  user            User           @relation("TicketUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  subject         String
+  category        TicketCategory @default(OTHER)
+  status          TicketStatus   @default(OPEN)
+  priority        TicketPriority @default(NORMAL)
+
+  assignedToId    String?        @map("assigned_to_id")
+  assignedTo      User?          @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  source          TicketSource   @default(WEB)
+
+  firstResponseAt DateTime?      @map("first_response_at")
+  resolvedAt      DateTime?      @map("resolved_at")
+  closedAt        DateTime?      @map("closed_at")
+  lastMessageAt   DateTime       @default(now()) @map("last_message_at")
+
+  unreadByAdmin   Int            @default(0) @map("unread_by_admin")
+  unreadByUser    Int            @default(0) @map("unread_by_user")
+
+  rating          Int?
+  ratingComment   String?        @map("rating_comment") @db.Text
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  messages        TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([lastMessageAt])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id              String              @id @default(uuid())
+  ticketId        String              @map("ticket_id")
+  ticket          Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorType      TicketMessageAuthor @map("author_type")
+  authorId        String?             @map("author_id")
+  author          User?               @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  body            String              @db.Text
+  attachments     Json?
+  isInternal      Boolean             @default(false) @map("is_internal")
+  source          TicketSource        @default(WEB)
+
+  readByAdminAt   DateTime?           @map("read_by_admin_at")
+  readByUserAt    DateTime?           @map("read_by_user_at")
+
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("ticket_messages")
+}
+
+model TicketTemplate {
+  id          String          @id @default(uuid())
+  name        String
+  shortcut    String?         @unique
+  body        String          @db.Text
+  category    TicketCategory?
+  sortOrder   Int             @default(0) @map("sort_order")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@map("ticket_templates")
 }

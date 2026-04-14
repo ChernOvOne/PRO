@@ -42,6 +42,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }catch(e){}})();
           (function(){try{var u=new URLSearchParams(location.search);var utm=u.get('utm')||u.get('utm_source');if(utm)sessionStorage.setItem('utm_source',utm)}catch(e){}})()
         `}} />
+        {/* Preload Telegram Web App SDK if loaded inside Telegram (desktop, mobile, web) */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function(){
+            try {
+              var isTg = location.hash.indexOf('tgWebAppData') !== -1 ||
+                         location.search.indexOf('tgWebAppData') !== -1 ||
+                         navigator.userAgent.indexOf('Telegram') !== -1;
+              if (isTg) {
+                var s = document.createElement('script');
+                s.src = 'https://telegram.org/js/telegram-web-app.js';
+                s.async = false;
+                document.head.appendChild(s);
+              }
+            } catch(e) {}
+          })();
+        `}} />
       </head>
       <body className={`${inter.className} antialiased`}
             style={{ background: 'var(--surface-0)', color: 'var(--text-primary)' }}>

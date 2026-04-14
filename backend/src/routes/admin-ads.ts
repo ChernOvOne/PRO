@@ -94,17 +94,35 @@ export async function adminAdsRoutes(app: FastifyInstance) {
     return items.map((item) => {
       const amount = Number(item.amount)
       const subs = item.subscribersGained ?? 0
+      // Historical campaigns (imported from xlsx) don't have real UTM clicks/leads/conversions
+      // — their ROI/LTV/CAC can't be calculated, so we return null for them
+      const isHistorical = item.utmCode?.startsWith('hist-') ?? false
+
+      if (isHistorical) {
+        return {
+          ...item,
+          amount,
+          costPerSub: subs > 0 ? Math.round((amount / subs) * 100) / 100 : null,
+          clicks: 0,
+          leads: 0,
+          conversions: 0,
+          revenue: 0,
+          roi: null,
+          ltv: null,
+          cac: null,
+          ltvCacRatio: null,
+          isHistorical: true,
+        }
+      }
+
       const clicks = clicksMap[item.utmCode] || 0
       const leads = leadsMap[item.utmCode] || 0
       const conversions = convertedMap[item.utmCode] || 0
       const userIds = userIdsByCode[item.utmCode] || []
       const revenue = userIds.reduce((s, uid) => s + (revenueByUser[uid] || 0), 0)
       const roi = amount > 0 ? Math.round(((revenue - amount) / amount) * 100) : 0
-      // LTV = средний доход с одного оплатившего клиента
       const ltv = conversions > 0 ? Math.round((revenue / conversions) * 100) / 100 : 0
-      // CAC = стоимость привлечения одного оплатившего клиента
       const cac = conversions > 0 ? Math.round((amount / conversions) * 100) / 100 : null
-      // LTV/CAC ratio (≥3 — здоровый показатель)
       const ltvCacRatio = cac && cac > 0 ? Math.round((ltv / cac) * 100) / 100 : null
       return {
         ...item,
@@ -118,6 +136,7 @@ export async function adminAdsRoutes(app: FastifyInstance) {
         ltv,
         cac,
         ltvCacRatio,
+        isHistorical: false,
       }
     })
   })

@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Upload, Download, Users, CreditCard, Check, X, AlertCircle, Loader2,
-  FileSpreadsheet, Trash2,
+  FileSpreadsheet, Trash2, Database, HardDrive,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
 
 // ── Types ────────────────────────────────────────────────────
-type Tab = 'users' | 'payments' | 'accounting'
+type Tab = 'users' | 'payments' | 'accounting' | 'backup'
 
 interface UploadResult {
   fileId: string
@@ -104,6 +104,11 @@ export default function AdminUniversalImport() {
   const [clearing, setClearing] = useState(false)
   const [clearingUsers, setClearingUsers] = useState(false)
   const [clearingPayments, setClearingPayments] = useState(false)
+
+  // Backup state
+  const [exportingDb, setExportingDb] = useState(false)
+  const [restoringDb, setRestoringDb] = useState(false)
+  const backupFileRef = useRef<HTMLInputElement>(null)
   const accFileRef = useRef<HTMLInputElement>(null)
 
   const loadStats = async () => {
@@ -279,6 +284,17 @@ export default function AdminUniversalImport() {
         >
           <FileSpreadsheet className="w-4 h-4" />
           Учёт (xlsx)
+        </button>
+        <button
+          onClick={() => switchTab('backup')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all`}
+          style={{
+            background: tab === 'backup' ? 'var(--accent-1)' : 'transparent',
+            color: tab === 'backup' ? '#fff' : 'var(--text-secondary)',
+          }}
+        >
+          <Database className="w-4 h-4" />
+          Бэкап БД
         </button>
       </div>
 
@@ -457,6 +473,149 @@ export default function AdminUniversalImport() {
         </div>
       )}
 
+      {/* Backup DB tab */}
+      {tab === 'backup' && (
+        <div className="space-y-4">
+          <div className="glass-card rounded-2xl p-5 space-y-4">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <HardDrive className="w-4 h-4" />
+                Полный дамп базы данных
+              </h2>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Экспорт ВСЕХ таблиц: пользователи, платежи, транзакции, тарифы, настройки, воронки, рассылки, бот, реклама, история.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <div className="flex items-start gap-2" style={{ color: '#f87171' }}>
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <b>Внимание:</b> файл содержит хеши паролей и платёжные ID. Храните надёжно.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setExportingDb(true)
+                  try {
+                    const blob = await adminApi.exportDbJson()
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `lkhy-full-dump-${Date.now()}.json`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                    toast.success('Дамп скачан')
+                  } catch (err: any) {
+                    toast.error(err?.message || 'Ошибка экспорта')
+                  } finally {
+                    setExportingDb(false)
+                  }
+                }}
+                disabled={exportingDb}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                style={{ background: 'var(--accent-1)', color: '#fff' }}
+              >
+                {exportingDb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Скачать полный дамп (JSON)
+              </button>
+            </div>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5 space-y-4">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <Upload className="w-4 h-4" />
+                Восстановление из дампа
+              </h2>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Загрузите JSON-файл с дампом — данные будут восстановлены через upsert.
+                Существующие записи обновятся, новые — добавятся.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)' }}>
+              <div className="flex items-start gap-2" style={{ color: '#fbbf24' }}>
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <b>Важно:</b> восстановление может занять несколько минут для больших баз.
+                  Существующие данные с теми же ID будут перезаписаны.
+                </div>
+              </div>
+            </div>
+
+            <label className="block">
+              <div
+                className="flex items-center gap-3 px-4 py-4 rounded-xl cursor-pointer transition-all"
+                style={{ background: 'var(--surface-2)', border: '1px dashed var(--glass-border)' }}
+              >
+                {restoringDb ? (
+                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--accent-1)' }} />
+                ) : (
+                  <Upload className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {restoringDb ? 'Восстановление...' : 'Выберите JSON-файл дампа'}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                    Формат: lkhy-full-dump-*.json
+                  </p>
+                </div>
+              </div>
+              <input
+                ref={backupFileRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  if (!confirm(`Восстановить базу из ${file.name}? Это может перезаписать существующие данные.`)) {
+                    if (backupFileRef.current) backupFileRef.current.value = ''
+                    return
+                  }
+                  setRestoringDb(true)
+                  setJob(null)
+                  try {
+                    const { jobId } = await adminApi.restoreDbJson(file)
+                    const es = new EventSource(`/api/admin/import/jobs/${jobId}`, { withCredentials: true } as any)
+                    esRef.current = es
+                    es.onmessage = (ev) => {
+                      try {
+                        const j: ImportJob = JSON.parse(ev.data)
+                        setJob(j)
+                        if (j.status === 'done' || j.status === 'error') {
+                          es.close()
+                          setRestoringDb(false)
+                          if (j.status === 'done') {
+                            toast.success(`Готово: восстановлено ${j.created} записей`)
+                          } else {
+                            toast.error('Ошибка восстановления')
+                          }
+                        }
+                      } catch {}
+                    }
+                    es.onerror = () => { es.close(); setRestoringDb(false) }
+                  } catch (err: any) {
+                    toast.error(err?.message || 'Ошибка восстановления')
+                    setRestoringDb(false)
+                  } finally {
+                    if (backupFileRef.current) backupFileRef.current.value = ''
+                  }
+                }}
+                disabled={restoringDb}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
       {/* Clear data buttons for users/payments */}
       {tab === 'users' && (
         <div className="glass-card rounded-2xl p-5">
@@ -526,7 +685,7 @@ export default function AdminUniversalImport() {
       )}
 
       {/* Upload card (users/payments) */}
-      {tab !== 'accounting' && (<div className="glass-card rounded-2xl p-5 space-y-4">
+      {tab !== 'accounting' && tab !== 'backup' && (<div className="glass-card rounded-2xl p-5 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
             1. Загрузка файла
@@ -573,7 +732,7 @@ export default function AdminUniversalImport() {
       </div>)}
 
       {/* Preview & Mapping */}
-      {tab !== 'accounting' && upload && (
+      {tab !== 'accounting' && tab !== 'backup' && upload && (
         <>
           <div className="glass-card rounded-2xl p-5 space-y-3">
             <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>

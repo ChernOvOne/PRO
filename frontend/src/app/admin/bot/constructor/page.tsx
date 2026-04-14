@@ -2244,7 +2244,34 @@ export default function BotConstructorPage() {
                                          placeholder="Текст кнопки" className="w-full px-2 py-1 rounded text-[11px]"
                                          style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
                                   <div className="grid grid-cols-2 gap-1.5">
-                                    <select value={buttonForm.type} onChange={e => setButtonForm(p => ({ ...p, type: e.target.value }))}
+                                    <select value={buttonForm.type} onChange={e => {
+                                      const v = e.target.value
+                                      // Presets: auto-fill URL/label for quick actions
+                                      if (v === 'support') {
+                                        setButtonForm(p => ({
+                                          ...p,
+                                          type: 'webapp',
+                                          url: `${window.location.origin}/dashboard/support`,
+                                          label: p.label || '🎫 Поддержка',
+                                        }))
+                                      } else if (v === 'dashboard_webapp') {
+                                        setButtonForm(p => ({
+                                          ...p,
+                                          type: 'webapp',
+                                          url: `${window.location.origin}/dashboard`,
+                                          label: p.label || '📱 Личный кабинет',
+                                        }))
+                                      } else if (v === 'plans_webapp') {
+                                        setButtonForm(p => ({
+                                          ...p,
+                                          type: 'webapp',
+                                          url: `${window.location.origin}/dashboard/plans`,
+                                          label: p.label || '💳 Купить подписку',
+                                        }))
+                                      } else {
+                                        setButtonForm(p => ({ ...p, type: v }))
+                                      }
+                                    }}
                                             className="px-2 py-1 rounded text-[10px]"
                                             style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                                       <option value="block">Переход к блоку</option>
@@ -2252,6 +2279,11 @@ export default function BotConstructorPage() {
                                       <option value="webapp">Web-приложение</option>
                                       <option value="copy_text">Копировать текст</option>
                                       <option value="pay">Оплата</option>
+                                      <optgroup label="— Пресеты —">
+                                        <option value="support">🎫 Поддержка (Mini App)</option>
+                                        <option value="dashboard_webapp">📱 Личный кабинет</option>
+                                        <option value="plans_webapp">💳 Купить подписку</option>
+                                      </optgroup>
                                     </select>
                                     <select value={buttonForm.style} onChange={e => setButtonForm(p => ({ ...p, style: e.target.value }))}
                                             className="px-2 py-1 rounded text-[10px]"
@@ -2355,7 +2387,33 @@ export default function BotConstructorPage() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-[10px] mb-0.5 block" style={{ color: 'var(--text-tertiary)' }}>Тип кнопки</label>
-                            <select value={buttonForm.type} onChange={e => setButtonForm(p => ({ ...p, type: e.target.value }))}
+                            <select value={buttonForm.type} onChange={e => {
+                              const v = e.target.value
+                              if (v === 'support') {
+                                setButtonForm(p => ({
+                                  ...p,
+                                  type: 'webapp',
+                                  url: `${window.location.origin}/dashboard/support`,
+                                  label: p.label || '🎫 Поддержка',
+                                }))
+                              } else if (v === 'dashboard_webapp') {
+                                setButtonForm(p => ({
+                                  ...p,
+                                  type: 'webapp',
+                                  url: `${window.location.origin}/dashboard`,
+                                  label: p.label || '📱 Личный кабинет',
+                                }))
+                              } else if (v === 'plans_webapp') {
+                                setButtonForm(p => ({
+                                  ...p,
+                                  type: 'webapp',
+                                  url: `${window.location.origin}/dashboard/plans`,
+                                  label: p.label || '💳 Купить подписку',
+                                }))
+                              } else {
+                                setButtonForm(p => ({ ...p, type: v }))
+                              }
+                            }}
                                     className="w-full px-2 py-1.5 rounded text-[11px]"
                                     style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                               <option value="block">Переход к блоку</option>
@@ -2363,6 +2421,11 @@ export default function BotConstructorPage() {
                               <option value="webapp">Web-приложение</option>
                               <option value="copy_text">Копировать текст</option>
                               <option value="pay">Оплата</option>
+                              <optgroup label="— Пресеты —">
+                                <option value="support">🎫 Поддержка (Mini App)</option>
+                                <option value="dashboard_webapp">📱 Личный кабинет</option>
+                                <option value="plans_webapp">💳 Купить подписку</option>
+                              </optgroup>
                             </select>
                           </div>
                           <div>

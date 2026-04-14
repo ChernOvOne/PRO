@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   Shield, LayoutDashboard, CreditCard, BookOpen,
   Users, LogOut, Menu, X, Zap, Bell,
-  Wifi, Newspaper, Settings, Wallet, CheckCheck,
+  Wifi, Newspaper, Settings, Wallet, CheckCheck, LifeBuoy,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
@@ -24,13 +24,14 @@ const NAV = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Личный кабинет' },
   { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключить VPN' },
   { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
+  { href: '/dashboard/support',      icon: LifeBuoy,        label: 'Поддержка' },
   { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
 ]
 
 const MOBILE_NAV = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Главная' },
   { href: '/dashboard/instructions', icon: BookOpen,        label: 'Подключить' },
-  { href: '/dashboard/payments',     icon: Wallet,          label: 'Платежи' },
+  { href: '/dashboard/support',      icon: LifeBuoy,        label: 'Поддержка' },
   { href: '/dashboard/profile',      icon: Settings,        label: 'Профиль' },
 ]
 
@@ -39,6 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const [user, setUser]           = useState<User | null>(null)
   const [loading, setLoading]     = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [sideOpen, setSideOpen]   = useState(false)
   const [unread, setUnread]       = useState(0)
   const [bellOpen, setBellOpen]   = useState(false)
@@ -47,30 +49,98 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const bellRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(); return r.json() })
-      .then(setUser)
-      .catch(async () => {
-        // Try Telegram MiniApp auto-login before redirecting to /login
+    const authHeaders = (): Record<string, string> => {
+      try {
+        const t = localStorage.getItem('auth_token')
+        return t ? { Authorization: `Bearer ${t}` } : {}
+      } catch { return {} }
+    }
+
+    async function waitForTelegram(timeout = 2000): Promise<any> {
+      // Check if we're in Telegram context at all
+      const isTgContext =
+        location.hash.includes('tgWebAppData') ||
+        location.search.includes('tgWebAppData') ||
+        navigator.userAgent.includes('Telegram')
+      if (!isTgContext) return null
+
+      // Poll for SDK readiness
+      const start = Date.now()
+      while (Date.now() - start < timeout) {
         const tg = (window as any).Telegram?.WebApp
-        if (tg?.initData) {
-          try {
-            const res = await fetch('/api/auth/telegram-mini-app', {
-              method: 'POST', credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ initData: tg.initData }),
-            })
-            if (res.ok) {
-              const data = await res.json()
-              tg.expand?.()
-              setUser(data.user)
-              return
-            }
-          } catch {}
+        if (tg?.initData) return tg
+        await new Promise(r => setTimeout(r, 50))
+      }
+      return (window as any).Telegram?.WebApp || null
+    }
+
+    async function tmaAuth(): Promise<{ user: any | null; error: string | null }> {
+      const tg = await waitForTelegram()
+      if (!tg) return { user: null, error: null } // Not in TG context
+      if (!tg.initData) {
+        console.warn('[TMA Auth] Telegram SDK loaded but initData is empty')
+        return { user: null, error: 'Не удалось получить данные из Telegram (initData пустой). Попробуйте закрыть и заново открыть приложение.' }
+      }
+      try {
+        const res = await fetch('/api/auth/telegram-mini-app', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData: tg.initData }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          console.error('[TMA Auth] Failed:', res.status, err)
+          return { user: null, error: `Ошибка авторизации: ${err.error || res.status}` }
         }
-        router.push('/login')
-      })
-      .finally(() => setLoading(false))
+        const data = await res.json()
+        if (data?.token) {
+          try { localStorage.setItem('auth_token', data.token) } catch {}
+        }
+        tg.expand?.()
+        tg.ready?.()
+        return { user: data.user, error: null }
+      } catch (e: any) {
+        console.error('[TMA Auth] Network error:', e)
+        return { user: null, error: 'Ошибка сети при авторизации: ' + (e?.message || 'unknown') }
+      }
+    }
+
+    async function checkAuth() {
+      // 1. If inside Telegram Mini App — always do TMA auth first (reliable)
+      const { user: tgUser, error: tgErr } = await tmaAuth()
+      if (tgUser) {
+        setUser(tgUser)
+        setLoading(false)
+        return
+      }
+
+      // 2. Otherwise check existing session (cookie or Bearer)
+      try {
+        const res = await fetch('/api/auth/me', {
+          credentials: 'include',
+          headers: authHeaders(),
+        })
+        if (res.ok) {
+          setUser(await res.json())
+          setLoading(false)
+          return
+        }
+      } catch {}
+
+      // 3. Not logged in
+      // If we tried TMA auth and got an error — show it (don't redirect)
+      if (tgErr) {
+        setAuthError(tgErr)
+        setLoading(false)
+        return
+      }
+
+      router.push('/login')
+      setLoading(false)
+    }
+
+    checkAuth()
 
     fetch('/api/notifications/unread-count', { credentials: 'include' })
       .then(r => r.ok ? r.json() : { count: 0 })
@@ -126,6 +196,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                style={{ borderTopColor: 'var(--accent-1)', borderRightColor: 'var(--accent-2)', animation: 'spin 0.8s linear infinite' }} />
         </div>
         <style jsx>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  if (authError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--surface-1)' }}>
+        <div className="glass-card rounded-2xl p-6 max-w-md text-center space-y-4">
+          <div className="text-4xl">⚠️</div>
+          <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+            Не удалось авторизоваться
+          </h2>
+          <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+            {authError}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex-1 px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: 'var(--accent-1)', color: '#fff' }}
+            >
+              Перезагрузить
+            </button>
+            <button
+              onClick={() => { try { localStorage.removeItem('auth_token') } catch {}; router.push('/login') }}
+              className="flex-1 px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+            >
+              Войти вручную
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

@@ -1171,13 +1171,16 @@ function MiniStat({
 }
 
 // ── Charts ──
-function AreaChart({ data }: { data: Array<{ date: string; income: number; expense: number }> }) {
+function AreaChart({ data: rawData }: { data: Array<{ date: string; income: number; expense: number }> }) {
   const [hover, setHover] = useState<number | null>(null)
   const w = 800, h = 300, padL = 65, padR = 20, padT = 20, padB = 40
 
-  if (data.length === 0) {
+  if (rawData.length === 0) {
     return <div className="text-xs text-center py-10" style={{ color: 'var(--text-tertiary)' }}>Нет данных</div>
   }
+
+  // If single data point, duplicate it to create a horizontal line across the chart
+  const data = rawData.length === 1 ? [rawData[0], rawData[0]] : rawData
 
   const maxV = Math.max(1, ...data.flatMap(d => [d.income, d.expense]))
   const chartW = w - padL - padR
@@ -1197,9 +1200,9 @@ function AreaChart({ data }: { data: Array<{ date: string; income: number; expen
   const yTicks = [0, 0.25, 0.5, 0.75, 1]
   const fmtAxis = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}K` : String(Math.round(v))
 
-  // Totals for header
-  const totalIncome = data.reduce((s, d) => s + d.income, 0)
-  const totalExpense = data.reduce((s, d) => s + d.expense, 0)
+  // Totals for header — use raw data to avoid double-counting
+  const totalIncome = rawData.reduce((s, d) => s + d.income, 0)
+  const totalExpense = rawData.reduce((s, d) => s + d.expense, 0)
 
   return (
     <div>

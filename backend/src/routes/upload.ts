@@ -41,4 +41,5 @@ export async function uploadRoutes(app: FastifyInstance) {
       return reply.status(500).send({ error: 'Upload failed' })
     }
   })
+
 }

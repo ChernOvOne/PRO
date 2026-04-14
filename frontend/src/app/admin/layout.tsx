@@ -10,7 +10,7 @@ import {
   Newspaper, Wifi, Globe, Tag, MessageCircle,
   ArrowLeftRight, Megaphone, Server, FileText,
   BarChart2, Wallet, Bot, Handshake, Workflow,
-  HelpCircle,
+  HelpCircle, LifeBuoy,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
@@ -60,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Коммуникации',
     items: [
+      { href: '/admin/tickets',          icon: LifeBuoy,        label: 'Поддержка',     roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/news',             icon: Newspaper,       label: 'Новости',       roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/broadcast',        icon: MessageCircle,   label: 'Рассылки',      roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/communications/funnel-builder', icon: MessageCircle, label: 'Воронки', roles: ['ADMIN', 'EDITOR'] },

@@ -45,12 +45,16 @@ export async function tmaAuthRoute(app: FastifyInstance) {
   app.post('/telegram-mini-app', async (req, reply) => {
     const { initData } = req.body as { initData: string }
 
+    logger.info(`[TMA Auth] Request from ${(req.headers['user-agent'] || '').slice(0, 80)} | initData length: ${initData?.length || 0}`)
+
     if (!initData) {
+      logger.warn('[TMA Auth] Empty initData')
       return reply.status(400).send({ error: 'initData required' })
     }
 
     const data = validateInitData(initData, config.telegram.botToken)
     if (!data) {
+      logger.warn('[TMA Auth] Invalid initData signature or expired. Token prefix: ' + config.telegram.botToken.slice(0, 10))
       return reply.status(401).send({ error: 'Invalid initData' })
     }
 

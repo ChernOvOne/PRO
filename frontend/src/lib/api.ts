@@ -11,10 +11,21 @@ async function apiFetch<T>(
   path:    string,
   options: RequestInit = {},
 ): Promise<T> {
+  // Fallback: use Bearer token from localStorage for Telegram WebView
+  // (cookies may be blocked in iframe)
+  let bearerHeader: Record<string, string> = {}
+  if (typeof window !== 'undefined') {
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (token) bearerHeader.Authorization = `Bearer ${token}`
+    } catch {}
+  }
+
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...bearerHeader,
       ...options.headers,
     },
     ...options,
@@ -394,6 +405,22 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ amount }),
     }),
+  exportDbJson: async () => {
+    const res = await fetch('/api/admin/import/db/export/json', { credentials: 'include' })
+    if (!res.ok) throw new Error('Export failed')
+    return res.blob()
+  },
+  restoreDbJson: async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/admin/import/db/restore', {
+      method: 'POST',
+      body: fd,
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error('Restore failed')
+    return res.json() as Promise<{ jobId: string }>
+  },
   yukassaSync: (dateFrom?: string, dateTo?: string) =>
     apiFetch<{ jobId: string }>('/admin/import/yukassa-sync', {
       method: 'POST',

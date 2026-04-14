@@ -927,9 +927,12 @@ export async function adminRoutes(app: FastifyInstance) {
     const { dateFrom = '', dateTo = '', status: fStatus = '', provider: fProvider = '', userFilter = '' } = req.query as Record<string, string>
 
     // Base filters (non-date)
+    // NOTE: BALANCE/MANUAL payments excluded from totals by default — they are internal
+    // transfers (balance top-ups consumed as purchase), not real money inflow
     const baseWhere: any = {}
     if (fStatus) baseWhere.status = fStatus
     if (fProvider) baseWhere.provider = fProvider
+    else baseWhere.provider = { in: ['YUKASSA', 'CRYPTOPAY'] }
     if (userFilter === 'with') baseWhere.userId = { not: null }
     else if (userFilter === 'without') baseWhere.userId = null
 

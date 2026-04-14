@@ -66,7 +66,13 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
       prisma.buhTransaction.count({ where }),
     ])
 
-    return { items, total, skip, limit }
+    // Convert Decimal → Number to prevent JSON serialization issues
+    const sanitized = items.map(t => ({
+      ...t,
+      amount: Number(t.amount),
+    }))
+
+    return { items: sanitized, total, skip, limit }
   })
 
   // ─────────────────────────────────────────────────────────
@@ -197,24 +203,48 @@ export async function adminTransactionRoutes(app: FastifyInstance) {
     const q = req.query as { year?: string }
     const year = Number(q.year) || new Date().getFullYear()
 
-    const rows = await prisma.$queryRaw<
+    // Manual income/expense from BuhTransaction (excluding investment expenses)
+    const txRows = await prisma.$queryRaw<
       Array<{ month: number; income: number; expense: number }>
     >`
       SELECT
         EXTRACT(MONTH FROM date)::int AS month,
         COALESCE(SUM(CASE WHEN type = 'INCOME'  THEN amount ELSE 0 END), 0)::numeric AS income,
-        COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0)::numeric AS expense
+        COALESCE(SUM(CASE WHEN type = 'EXPENSE' AND source IS DISTINCT FROM 'investment' THEN amount ELSE 0 END), 0)::numeric AS expense
       FROM buh_transactions
       WHERE EXTRACT(YEAR FROM date) = ${year}
       GROUP BY 1
-      ORDER BY 1
     `
 
-    return rows.map((r) => ({
-      month:   r.month,
-      income:  Number(r.income),
-      expense: Number(r.expense),
-      profit:  Number(r.income) - Number(r.expense),
-    }))
+    // Real payment revenue (real providers only, excluding BALANCE/MANUAL)
+    const payRows = await prisma.$queryRaw<Array<{ month: number; revenue: number }>>`
+      SELECT
+        EXTRACT(MONTH FROM (confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow'))::int AS month,
+        COALESCE(SUM(amount), 0)::numeric AS revenue
+      FROM payments
+      WHERE status = 'PAID' AND provider IN ('YUKASSA', 'CRYPTOPAY')
+        AND confirmed_at IS NOT NULL
+        AND EXTRACT(YEAR FROM (confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')) = ${year}
+      GROUP BY 1
+    `
+
+    const byMonth = new Map<number, { income: number; expense: number; revenue: number }>()
+    for (const r of txRows) {
+      byMonth.set(r.month, { income: Number(r.income), expense: Number(r.expense), revenue: 0 })
+    }
+    for (const r of payRows) {
+      const existing = byMonth.get(r.month) || { income: 0, expense: 0, revenue: 0 }
+      existing.revenue = Number(r.revenue)
+      byMonth.set(r.month, existing)
+    }
+
+    return Array.from(byMonth.entries())
+      .map(([month, v]) => ({
+        month,
+        income: v.income + v.revenue,
+        expense: v.expense,
+        profit: v.income + v.revenue - v.expense,
+      }))
+      .sort((a, b) => a.month - b.month)
   })
 }

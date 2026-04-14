@@ -20,29 +20,24 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token        = req.cookies.get('token')?.value
 
-  // Redirect logged-in users away from /login
-  // Не можем знать роль из middleware (JWT не декодируем) — идём на /dashboard,
-  // а admin/layout сам перенаправит если нужно. Но если пришли с /admin — туда и шлём.
+  // Redirect logged-in users away from /login (only if cookie is present)
   if (pathname === '/login' && token) {
     const from = req.nextUrl.searchParams.get('from')
     const target = from?.startsWith('/admin') ? '/admin' : '/dashboard'
     return NextResponse.redirect(new URL(target, req.url))
   }
 
-  // Allow public paths without auth
-  if (isPublic(pathname)) {
-    return NextResponse.next()
-  }
-
-  // Protect /dashboard and /admin — require token
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
-    if (!token) {
-      const loginUrl = new URL('/login', req.url)
-      loginUrl.searchParams.set('from', pathname)
-      return NextResponse.redirect(loginUrl)
-    }
-  }
-
+  // NOTE: We do NOT redirect unauthenticated users to /login from middleware.
+  // Reason: Telegram Mini App WebView blocks cookies in iframe context, so
+  // `req.cookies.get('token')` is always undefined. If we redirected here,
+  // users opening the Mini App would always land on /login before client-side
+  // TMA auth can run.
+  //
+  // Auth check is done client-side in /dashboard/layout.tsx and /admin/layout.tsx
+  // which can use Bearer tokens from localStorage AND Telegram initData.
+  // Backend API routes are still protected by JWT middleware, so this is safe —
+  // an unauthenticated user lands on a layout that immediately redirects them
+  // or shows an auth error.
   return NextResponse.next()
 }
 

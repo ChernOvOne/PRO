@@ -28,17 +28,23 @@ interface CategoryBucket {
  * ──────────────────────────────────────────────────────── */
 
 export async function generatePdfReport(dateFrom: Date, dateTo: Date): Promise<string> {
-  const [transactions, companyName] = await Promise.all([
+  const [transactions, companyName, paymentAgg] = await Promise.all([
     prisma.buhTransaction.findMany({
-      where: { date: { gte: dateFrom, lte: dateTo } },
+      where: { date: { gte: dateFrom, lte: dateTo }, NOT: { source: 'investment' } },
       include: { category: true },
       orderBy: { date: 'desc' },
     }),
     getCompanyName(),
+    prisma.payment.aggregate({
+      where: { status: 'PAID', provider: { in: ['YUKASSA', 'CRYPTOPAY'] }, confirmedAt: { gte: dateFrom, lte: dateTo } },
+      _sum: { amount: true },
+    }),
   ])
 
-  // KPIs
-  const income  = transactions.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount), 0)
+  // KPIs — income from real payments + manual BuhTransaction(INCOME)
+  const paymentIncome = Number(paymentAgg._sum.amount ?? 0)
+  const manualIncome  = transactions.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount), 0)
+  const income  = paymentIncome + manualIncome
   const expense = transactions.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + Number(t.amount), 0)
   const profit  = income - expense
 
@@ -206,12 +212,20 @@ interface PeriodStats {
 }
 
 async function computePeriodStats(from: Date, to: Date): Promise<PeriodStats> {
-  const transactions = await prisma.buhTransaction.findMany({
-    where: { date: { gte: from, lte: to } },
-    include: { category: true },
-  })
+  const [transactions, paymentAgg] = await Promise.all([
+    prisma.buhTransaction.findMany({
+      where: { date: { gte: from, lte: to }, NOT: { source: 'investment' } },
+      include: { category: true },
+    }),
+    prisma.payment.aggregate({
+      where: { status: 'PAID', provider: { in: ['YUKASSA', 'CRYPTOPAY'] }, confirmedAt: { gte: from, lte: to } },
+      _sum: { amount: true },
+    }),
+  ])
 
-  const income  = transactions.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount), 0)
+  const paymentIncome = Number(paymentAgg._sum.amount ?? 0)
+  const manualIncome  = transactions.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount), 0)
+  const income  = paymentIncome + manualIncome
   const expense = transactions.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + Number(t.amount), 0)
 
   const catMap = new Map<string, CategoryBucket>()

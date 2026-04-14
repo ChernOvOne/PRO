@@ -92,26 +92,29 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
 
     // Helper to compute KPI for a date range
     async function computeKPI(from: Date, to: Date, daysInPeriod: number) {
-      const [incomeAgg, expenseAgg, bestDayRows] = await Promise.all([
-        prisma.buhTransaction.aggregate({
-          where: { type: 'INCOME', date: { gte: from, lte: to } },
+      const [paymentAgg, expenseAgg, bestDayRows] = await Promise.all([
+        // Real income from paid YuKassa/CryptoPay payments (by confirmed_at)
+        prisma.payment.aggregate({
+          where: { status: 'PAID', provider: { in: ['YUKASSA', 'CRYPTOPAY'] }, confirmedAt: { gte: from, lte: to } },
           _sum: { amount: true },
         }),
         prisma.buhTransaction.aggregate({
           where: { type: 'EXPENSE', date: { gte: from, lte: to }, NOT: { source: 'investment' } },
           _sum: { amount: true },
         }),
+        // Best day by payment sum (Moscow timezone, real providers only)
         prisma.$queryRaw<Array<{ day: Date; total: number }>>`
-          SELECT date AS day, COALESCE(SUM(amount), 0)::numeric AS total
-          FROM buh_transactions
-          WHERE type = 'INCOME' AND date >= ${from} AND date <= ${to}
-          GROUP BY date
+          SELECT DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') AS day, COALESCE(SUM(amount), 0)::numeric AS total
+          FROM payments
+          WHERE status = 'PAID' AND provider IN ('YUKASSA', 'CRYPTOPAY')
+            AND confirmed_at IS NOT NULL AND confirmed_at >= ${from} AND confirmed_at <= ${to}
+          GROUP BY DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')
           ORDER BY total DESC
           LIMIT 1
         `,
       ])
 
-      const income  = Number(incomeAgg._sum.amount ?? 0)
+      const income  = Number(paymentAgg._sum.amount ?? 0)
       const expense = Number(expenseAgg._sum.amount ?? 0)
       const profit  = income - expense
       const avgPerDay = daysInPeriod > 0 ? Math.round((income / daysInPeriod) * 100) / 100 : 0
@@ -157,8 +160,9 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
 
       // Balance components
       prisma.setting.findUnique({ where: { key: 'starting_balance' } }),
-      prisma.buhTransaction.aggregate({
-        where: { type: 'INCOME' },
+      // Real revenue from YuKassa/CryptoPay payments (excluding BALANCE/MANUAL)
+      prisma.payment.aggregate({
+        where: { status: 'PAID', provider: { in: ['YUKASSA', 'CRYPTOPAY'] } },
         _sum: { amount: true },
       }),
       prisma.buhTransaction.aggregate({
@@ -186,14 +190,15 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
         ORDER BY amount DESC
       `,
 
-      // Income chart — last 30 days
+      // Income chart — last 30 days (real payments only, Moscow timezone)
       prisma.$queryRaw<Array<{ date: Date; amount: number }>>`
-        SELECT date, COALESCE(SUM(amount), 0)::numeric AS amount
-        FROM buh_transactions
-        WHERE type = 'INCOME'
-          AND date >= ${chart30Start}
-          AND date <= ${now}
-        GROUP BY date
+        SELECT DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow') as date, COALESCE(SUM(amount), 0)::numeric AS amount
+        FROM payments
+        WHERE status = 'PAID' AND provider IN ('YUKASSA', 'CRYPTOPAY')
+          AND confirmed_at IS NOT NULL
+          AND confirmed_at >= ${chart30Start}
+          AND confirmed_at <= ${now}
+        GROUP BY DATE(confirmed_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')
         ORDER BY date ASC
       `,
 
@@ -278,14 +283,20 @@ export async function adminBuhDashboardRoutes(app: FastifyInstance) {
       }
     })
 
-    // Income chart — fill gaps with zero
+    // Income chart — fill gaps with zero (use local TZ to match Postgres MSK conversion)
+    const localKey = (d: Date) => {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
     const incomeChart: Array<{ date: string; amount: number }> = []
     for (let i = 0; i < 30; i++) {
       const d = new Date(chart30Start)
       d.setDate(d.getDate() + i)
-      const key = d.toISOString().slice(0, 10)
+      const key = localKey(d)
       const row = (incomeChartRows as any[]).find(
-        (r) => new Date(r.date).toISOString().slice(0, 10) === key,
+        (r) => localKey(new Date(r.date)) === key,
       )
       incomeChart.push({ date: key, amount: row ? Number(row.amount) : 0 })
     }

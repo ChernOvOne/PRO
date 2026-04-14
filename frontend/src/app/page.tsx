@@ -26,9 +26,36 @@ export default function LandingPage() {
     if (tmaTriedRef.current) return
     tmaTriedRef.current = true
 
-    const tg = (window as any).Telegram?.WebApp
-    if (tg?.initData) {
-      // Opened inside Telegram → auto-login via initData
+    // Check if this is a Telegram context (URL params or user agent)
+    const isTgContext =
+      location.hash.includes('tgWebAppData') ||
+      location.search.includes('tgWebAppData') ||
+      navigator.userAgent.includes('Telegram')
+
+    if (!isTgContext) {
+      // Normal browser — show landing immediately
+      setTmaChecked(true)
+      return
+    }
+
+    // Wait for Telegram SDK to load (max 2s)
+    const start = Date.now()
+    const waitTg = async () => {
+      while (Date.now() - start < 2000) {
+        const tg = (window as any).Telegram?.WebApp
+        if (tg?.initData) return tg
+        await new Promise(r => setTimeout(r, 50))
+      }
+      return (window as any).Telegram?.WebApp || null
+    }
+
+    waitTg().then(tg => {
+      if (!tg?.initData) {
+        setTmaChecked(true)
+        return
+      }
+      tg.expand?.()
+      tg.ready?.()
       fetch('/api/auth/telegram-mini-app', {
         method: 'POST',
         credentials: 'include',
@@ -36,20 +63,22 @@ export default function LandingPage() {
         body: JSON.stringify({ initData: tg.initData }),
       })
         .then(r => { if (r.ok) return r.json(); throw new Error() })
-        .then(() => {
-          tg.expand?.()
-          router.replace('/dashboard')
+        .then(data => {
+          if (data?.token) {
+            try { localStorage.setItem('auth_token', data.token) } catch {}
+          }
+          const startParam = tg.initDataUnsafe?.start_param
+          let dest = '/dashboard'
+          if (startParam) {
+            if (startParam.startsWith('support')) dest = '/dashboard/support'
+            else if (startParam === 'plans') dest = '/dashboard/plans'
+            else if (startParam === 'profile') dest = '/dashboard/profile'
+            else if (startParam.startsWith('ticket_')) dest = '/dashboard/support'
+          }
+          window.location.replace(dest)
         })
         .catch(() => setTmaChecked(true))
-    } else if (tg) {
-      // Inside TG but no initData — check existing session
-      fetch('/api/auth/me', { credentials: 'include' })
-        .then(r => { if (r.ok) router.replace('/dashboard'); else setTmaChecked(true) })
-        .catch(() => setTmaChecked(true))
-    } else {
-      // Normal browser — show landing immediately
-      setTmaChecked(true)
-    }
+    })
   }, [router])
 
   useEffect(() => {
