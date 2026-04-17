@@ -207,12 +207,13 @@ function StyledBlock({ block, ctx, children }: {
     }
   }
 
-  // Data attributes propagate styling to child components via CSS
-  const dataAttrs = {
-    'data-card-hover': style.cardHover || 'none',
-    'data-stagger': style.staggerChildren && inView ? '1' : '0',
-    'data-image-effect': style.imageEffect || 'none',
-  } as any
+  // Data attributes propagate styling to child components via CSS.
+  // Only set data-stagger when stagger is explicitly enabled — otherwise
+  // the CSS selector would hide all children by default.
+  const dataAttrs: Record<string, string> = {}
+  if (style.cardHover && style.cardHover !== 'none')       dataAttrs['data-card-hover'] = style.cardHover
+  if (style.imageEffect && style.imageEffect !== 'none')   dataAttrs['data-image-effect'] = style.imageEffect
+  if (style.staggerChildren) dataAttrs['data-stagger'] = inView ? '1' : '0'
 
   // Patterns
   const patternClass = style.bgPattern && style.bgPattern !== 'none' ? `lb-bg-${style.bgPattern}` : ''

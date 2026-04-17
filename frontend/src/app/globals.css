@@ -458,5 +458,15 @@
 [data-image-effect="rotate-hover"] img:hover { transform: rotate(-3deg) scale(1.03); }
 
 /* ── Stagger: child cards with transitionDelay already set inline ── */
-[data-stagger="0"] > * { opacity: 0; transform: translateY(16px); }
-[data-stagger="1"] > * { opacity: 1; transform: none; }
+/* Stagger — only active when data-stagger is explicitly set on parent block.
+   Applies opacity:0 to cards inside features/reviews/tariffs grids. */
+[data-stagger="0"] .lb-card-lift,
+[data-stagger="0"] .lb-card-scale,
+[data-stagger="0"] .lb-card-glow,
+[data-stagger="0"] .lb-card-tilt,
+[data-stagger="0"] .lb-card-border-glow { opacity: 0; transform: translateY(16px); transition: opacity 0.6s, transform 0.6s; }
+[data-stagger="1"] .lb-card-lift,
+[data-stagger="1"] .lb-card-scale,
+[data-stagger="1"] .lb-card-glow,
+[data-stagger="1"] .lb-card-tilt,
+[data-stagger="1"] .lb-card-border-glow { opacity: 1; transform: none; transition: opacity 0.6s, transform 0.6s; }
