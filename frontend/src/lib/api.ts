@@ -362,6 +362,22 @@ export const adminApi = {
   reorderLandingBlocks: (items: { id: string; sortOrder: number }[]) =>
     apiFetch<{ ok: boolean }>('/admin/landing/blocks/reorder', { method: 'POST', body: JSON.stringify({ items }) }),
 
+  // Email templates
+  listEmailTemplates: () => apiFetch<Array<{
+    key: string; name: string; description: string; vars: string[];
+    customized: boolean; value: string; defaultValue: string
+  }>>('/admin/settings/email-templates'),
+  saveEmailTemplate: (key: string, value: string) =>
+    apiFetch<{ ok: boolean }>(`/admin/settings/email-templates/${key}`, {
+      method: 'PUT', body: JSON.stringify({ value }),
+    }),
+  resetEmailTemplate: (key: string) =>
+    apiFetch<{ ok: boolean }>(`/admin/settings/email-templates/${key}`, { method: 'DELETE' }),
+  testEmailTemplate: (key: string, to: string) =>
+    apiFetch<{ ok: boolean }>(`/admin/settings/email-templates/${key}/test`, {
+      method: 'POST', body: JSON.stringify({ to }),
+    }),
+
   // Analytics
   analyticsHealth: () => apiFetch<{ remnawave: any }>('/admin/analytics/health'),
   analyticsNodes:  () => apiFetch<{ nodes: any[] }>('/admin/analytics/nodes'),

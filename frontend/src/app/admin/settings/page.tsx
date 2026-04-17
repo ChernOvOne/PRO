@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Save, RefreshCw, Loader2, Eye, EyeOff,
   Settings, Globe, CreditCard, MessageCircle,
-  Wifi, Mail, Users, Shield, UserCog,
+  Wifi, Mail, Users, Shield, UserCog, ChevronRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
@@ -29,6 +29,7 @@ interface TabDef {
   title: string
   fields: FieldDef[]
   actions?: { label: string; action: string; variant?: 'primary' | 'secondary' }[]
+  linkCards?: { href: string; title: string; description: string }[]
 }
 
 // ── Hints ────────────────────────────────────────────────────
@@ -290,6 +291,13 @@ const TABS: TabDef[] = [
       { key: 'smtp_from_name', label: 'Имя отправителя', type: 'text', placeholder: 'HIDEYOU PRO' },
       { key: 'email_default_template', label: 'Шаблон по умолчанию', type: 'textarea', placeholder: '<html>...</html>' },
       { key: 'email_footer_html', label: 'Подпись (HTML)', type: 'textarea', placeholder: '<p>С уважением, команда HIDEYOU</p>' },
+    ],
+    linkCards: [
+      {
+        href: '/admin/settings/email-templates',
+        title: '✉️ Шаблоны писем',
+        description: 'Настройте HTML каждого системного письма: регистрация, код подтверждения, сброс пароля, уведомления',
+      },
     ],
     actions: [
       { label: 'Тестовое письмо', action: 'test-email', variant: 'secondary' },
@@ -633,6 +641,24 @@ export default function AdminSettings() {
                     onChange={(v) => update(field.key, v)}
                     envValue={field.envKey ? envStatus[field.envKey] : undefined}
                   />
+                ))}
+
+                {/* Link cards — e.g. to email templates page */}
+                {(currentTab as any).linkCards?.map((card: any) => (
+                  <a key={card.href} href={card.href}
+                     className="block p-4 rounded-xl transition-all hover:scale-[1.01]"
+                     style={{
+                       background: 'linear-gradient(135deg, rgba(6,182,212,0.10), rgba(139,92,246,0.10))',
+                       border: '1px solid rgba(6,182,212,0.25)',
+                     }}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{card.title}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{card.description}</div>
+                      </div>
+                      <ChevronRight className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+                    </div>
+                  </a>
                 ))}
 
                 {/* Action buttons */}

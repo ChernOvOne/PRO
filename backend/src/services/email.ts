@@ -232,7 +232,7 @@ class EmailService {
   async sendAdminPasswordReset(email: string, plainPassword: string) {
     const { getBrandName } = await import('./brand')
     const appName = await getBrandName()
-    const content = `
+    const defaultHtml = `
       <h2>🔑 Доступ к ${appName} через сайт</h2>
       <p>Администратор сгенерировал для вас пароль от личного кабинета на сайте <b>${config.appUrl}</b>.</p>
       <p style="margin-top:18px;">Ваши данные для входа:</p>
@@ -260,6 +260,7 @@ class EmailService {
       </p>
       <a href="${config.appUrl}/auth" class="btn">Войти в личный кабинет</a>
     `
+    const content = await this.getTemplate('admin_password', { email, password: plainPassword, appUrl: config.appUrl, appName }, defaultHtml)
     return this.send({
       to: email,
       subject: `🔑 Ваш пароль от ${appName} — резервный доступ`,
@@ -272,7 +273,7 @@ class EmailService {
   async sendEmailChangedAlert(oldEmail: string, newEmail: string) {
     const { getBrandName } = await import('./brand')
     const appName = await getBrandName()
-    const content = `
+    const defaultHtml = `
       <h2>⚠️ Ваш email был изменён</h2>
       <p>Администратор ${appName} сменил адрес электронной почты на вашем аккаунте:</p>
       <div style="padding:14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:10px; color:#fecaca;">
@@ -288,10 +289,54 @@ class EmailService {
       </p>
       <a href="${config.appUrl}/dashboard/support" class="btn">Связаться с поддержкой</a>
     `
+    const content = await this.getTemplate('email_changed', { oldEmail, newEmail, appUrl: config.appUrl, appName }, defaultHtml)
     return this.send({
       to: oldEmail,
       subject: `⚠️ Email на аккаунте ${appName} был изменён`,
       html: this.wrap(content, undefined, appName),
+    })
+  }
+
+  // Get default template HTML (for admin preview / init)
+  async getDefaultTemplate(key: string): Promise<string | null> {
+    const { getBrandName } = await import('./brand')
+    const appName = await getBrandName()
+    const defaults: Record<string, string> = {
+      welcome: `<h2>Добро пожаловать!</h2><p>Твой аккаунт в <strong>${appName}</strong> создан.</p><p>Войди в личный кабинет чтобы выбрать тариф:</p><a href="${config.appUrl}/dashboard" class="btn">Открыть личный кабинет</a>`,
+      payment: `<h2>Оплата подтверждена!</h2><p>Тариф: <strong>{tariffName}</strong></p><p>Подписка активна до: <strong>{expireAt}</strong></p><a href="${config.appUrl}/dashboard" class="btn">Открыть кабинет</a>`,
+      expiry: `<h2>Подписка заканчивается</h2><p>Твоя подписка истекает через <strong>{daysLeft} дней</strong>.</p><a href="${config.appUrl}/dashboard" class="btn">Продлить подписку</a>`,
+      verification: `<h2>Код подтверждения</h2><p>Ваш код:</p><div style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px;background:rgba(85,105,255,0.15);border-radius:12px;color:#f1f5f9;">{code}</div><p style="margin-top:16px;">Код действителен 10 минут.</p>`,
+      gift: `<h2>Вам подарок!</h2><p><strong>{senderName}</strong> подарил вам подписку <strong>{tariffName}</strong>.</p><a href="${config.appUrl}/present/{giftCode}" class="btn">Активировать подарок</a>`,
+      trial_offer: `<h2>🎁 Попробуйте бесплатно!</h2><p>Вы зарегистрировались в <strong>${appName}</strong>.</p><p><strong>{trialDays} дней бесплатно</strong></p><a href="${config.appUrl}/dashboard" class="btn">Активировать</a>`,
+      reset: `<h2>Сброс пароля</h2><p>Код:</p><div style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px;background:rgba(85,105,255,0.15);border-radius:12px;color:#f1f5f9;">{code}</div>`,
+      admin_password: `<h2>🔑 Доступ к ${appName} через сайт</h2><p>Администратор сгенерировал для вас пароль.</p><p>Email: <b>{email}</b></p><p>Пароль: <code>{password}</code></p><a href="${config.appUrl}/auth" class="btn">Войти в личный кабинет</a>`,
+      email_changed: `<h2>⚠️ Ваш email был изменён</h2><p>Был: {oldEmail}<br/>Стал: {newEmail}</p><p>Если это не вы — напишите в поддержку.</p>`,
+    }
+    return defaults[key] || null
+  }
+
+  // Test-send any template key with sample vars to the given address.
+  async sendTestTemplate(key: string, toEmail: string, sampleVars: Record<string, string> = {}) {
+    const { getBrandName } = await import('./brand')
+    const appName = await getBrandName()
+    const setting = await prisma.setting.findUnique({ where: { key: `email_tpl_${key}` } })
+    const defaultHtml = await this.getDefaultTemplate(key) || '<p>Template not found</p>'
+    let html = setting?.value || defaultHtml
+    // Merge sample vars + defaults
+    const vars: Record<string, string> = {
+      appName, appUrl: config.appUrl,
+      code: '123456', tariffName: 'Pro-тариф', expireAt: new Date().toLocaleDateString('ru-RU'),
+      daysLeft: '3', senderName: 'Иван', giftCode: 'GIFT-XYZ', trialDays: '3',
+      email: toEmail, password: 'test1234', oldEmail: 'old@example.com', newEmail: 'new@example.com',
+      ...sampleVars,
+    }
+    for (const [k, v] of Object.entries(vars)) {
+      html = html.replace(new RegExp(`\\{${k}\\}`, 'g'), v)
+    }
+    return this.send({
+      to: toEmail,
+      subject: `[ТЕСТ] Шаблон ${key} — ${appName}`,
+      html: this.wrap(html, undefined, appName),
     })
   }
 

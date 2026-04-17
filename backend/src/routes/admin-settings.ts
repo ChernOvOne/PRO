@@ -72,8 +72,78 @@ function updateEnvFile(updates: Record<string, string>) {
   logger.info('Updated .env file with ' + Object.keys(updates).length + ' keys')
 }
 
+// ── Email templates registry ───────────────────────────────────
+// Each template = one email the system sends. Admins can override the HTML
+// body via Setting key `email_tpl_${key}`. Default HTML lives in email.ts.
+const EMAIL_TEMPLATES = [
+  { key: 'welcome',         name: '👋 Регистрация',           description: 'Письмо после создания аккаунта',     vars: ['appName', 'appUrl'] },
+  { key: 'verification',    name: '🔢 Код подтверждения',     description: 'Email-verification code (6 цифр)',    vars: ['code', 'appName'] },
+  { key: 'reset',           name: '🔑 Сброс пароля (код)',    description: 'Код для восстановления пароля',       vars: ['code', 'appName'] },
+  { key: 'admin_password',  name: '🔐 Пароль от админа',      description: 'Админ сгенерировал пароль для юзера', vars: ['email', 'password', 'appName', 'appUrl'] },
+  { key: 'email_changed',   name: '⚠️ Email изменён',        description: 'Алерт на старый email при смене',    vars: ['oldEmail', 'newEmail', 'appName', 'appUrl'] },
+  { key: 'payment',         name: '✅ Оплата прошла',         description: 'Подтверждение оплаты тарифа',         vars: ['tariffName', 'expireAt', 'appUrl', 'appName'] },
+  { key: 'expiry',          name: '⚠️ Подписка истекает',    description: 'Напоминание за N дней до окончания',  vars: ['daysLeft', 'appUrl', 'appName'] },
+  { key: 'gift',            name: '🎁 Подарок-подписка',     description: 'Кто-то подарил VPN-подписку',         vars: ['senderName', 'tariffName', 'giftCode', 'appUrl', 'appName'] },
+  { key: 'trial_offer',     name: '🎁 Пробный период',        description: 'Предложение активировать trial',      vars: ['trialDays', 'appUrl', 'appName'] },
+]
+
 export async function adminSettingsRoutes(app: FastifyInstance) {
   const admin = { preHandler: [app.adminOnly] }
+
+  // ─── Email templates CRUD ──────────────────────────────────
+  // List all templates with current value (or default) and metadata
+  app.get('/email-templates', admin, async () => {
+    const { emailService } = await import('../services/email')
+    const rows = await prisma.setting.findMany({
+      where: { key: { startsWith: 'email_tpl_' } },
+    })
+    const override: Record<string, string> = {}
+    for (const r of rows) override[r.key.replace('email_tpl_', '')] = r.value
+
+    const result = []
+    for (const tpl of EMAIL_TEMPLATES) {
+      const defaultHtml = await emailService.getDefaultTemplate(tpl.key) || ''
+      result.push({
+        key: tpl.key,
+        name: tpl.name,
+        description: tpl.description,
+        vars: tpl.vars,
+        customized: !!override[tpl.key],
+        value: override[tpl.key] || defaultHtml,
+        defaultValue: defaultHtml,
+      })
+    }
+    return result
+  })
+
+  // Update one template — save custom HTML
+  app.put('/email-templates/:key', admin, async (req) => {
+    const { key } = req.params as { key: string }
+    const { value } = req.body as { value: string }
+    if (!EMAIL_TEMPLATES.find(t => t.key === key)) throw new Error('Unknown template key')
+    const full = `email_tpl_${key}`
+    await prisma.setting.upsert({
+      where: { key: full }, create: { key: full, value: value || '' }, update: { value: value || '' },
+    })
+    return { ok: true }
+  })
+
+  // Reset to default — delete override
+  app.delete('/email-templates/:key', admin, async (req) => {
+    const { key } = req.params as { key: string }
+    await prisma.setting.delete({ where: { key: `email_tpl_${key}` } }).catch(() => {})
+    return { ok: true }
+  })
+
+  // Test-send template with sample vars
+  app.post('/email-templates/:key/test', admin, async (req) => {
+    const { key } = req.params as { key: string }
+    const { to } = req.body as { to?: string }
+    if (!to) throw new Error('Recipient email required')
+    const { emailService } = await import('../services/email')
+    const ok = await emailService.sendTestTemplate(key, to)
+    return { ok }
+  })
 
   // GET / — all settings as { [key]: value }
   app.get('/', admin, async () => {
