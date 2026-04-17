@@ -236,12 +236,24 @@ export default function LandingBuilderPage() {
     } catch { toast.error('Ошибка сохранения') }
   }
 
+  // Debounced server-save per block. Color picker and rapid-fire inputs
+  // would otherwise spam the API with one request per pixel movement.
+  const saveTimersRef = useRef<Record<string, any>>({})
+  const queueSave = useCallback((id: string, data: any) => {
+    const timers = saveTimersRef.current
+    if (timers[id]) clearTimeout(timers[id])
+    timers[id] = setTimeout(() => {
+      adminApi.updateLandingBlock(id, { data }).catch(() => toast.error('Ошибка'))
+      delete timers[id]
+    }, 400)
+  }, [])
+
   const updateSelectedData = (newData: any) => {
     if (!selected) return
     const merged = { ...selected.data, ...newData }
     const next = blocks.map(b => b.id === selected.id ? { ...b, data: merged } : b)
     setBlocks(next)
-    adminApi.updateLandingBlock(selected.id, { data: merged }).catch(() => toast.error('Ошибка'))
+    queueSave(selected.id, merged)
   }
   const updateSelectedStyle = (newStyle: Partial<BlockStyle>) => {
     if (!selected) return
@@ -249,10 +261,20 @@ export default function LandingBuilderPage() {
     const merged = { ...selected.data, style: { ...curStyle, ...newStyle } }
     const next = blocks.map(b => b.id === selected.id ? { ...b, data: merged } : b)
     setBlocks(next)
-    adminApi.updateLandingBlock(selected.id, { data: merged }).catch(() => toast.error('Ошибка'))
+    queueSave(selected.id, merged)
   }
 
-  const commitChange = () => pushHistory(blocks)  // call when user finishes editing (on blur)
+  // On blur: flush any pending debounced save immediately and push history snapshot.
+  const commitChange = () => {
+    const timers = saveTimersRef.current
+    for (const [id, t] of Object.entries(timers)) {
+      clearTimeout(t)
+      const block = blocks.find(b => b.id === id)
+      if (block) adminApi.updateLandingBlock(id, { data: block.data }).catch(() => {})
+      delete timers[id]
+    }
+    pushHistory(blocks)
+  }
 
   const deleteBlock = async (id: string) => {
     if (!confirm('Удалить блок?')) return
