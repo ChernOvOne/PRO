@@ -147,8 +147,6 @@ export const TRIGGER_OPTIONS = [
       hasParam: true, paramLabel: 'N', defaultParam: 7, defaultUnit: 'days', source: 'state' },
     { id: 'state_low_balance',   name: '⏰ Баланс 0 больше N времени',
       hasParam: true, paramLabel: 'N', defaultParam: 3, defaultUnit: 'days', source: 'state' },
-    { id: 'state_heavy_traffic', name: '⏰ Использует >80% трафика N времени (апсейл)',
-      hasParam: true, paramLabel: 'N', defaultParam: 30, defaultUnit: 'days', source: 'state' },
     { id: 'state_payment_pending_stuck', name: '⏰ Оплата зависла > N времени',
       hasParam: true, paramLabel: 'N', defaultParam: 30, defaultUnit: 'minutes', source: 'state' },
     { id: 'state_on_trial_about_to_expire', name: '⏰ Триал заканчивается через N времени',
@@ -566,12 +564,33 @@ export async function triggerEvent(triggerId: string, userId: string, extraVars:
       }
     }
 
-    // Check stop conditions
+    // Check stop conditions — if user already reached the goal, skip this funnel entirely
     const funnel = triggerNode.funnel as any
-    if (funnel.stopOnPayment || funnel.stopOnActiveSub || funnel.stopOnConnect || funnel.stopOnBotMessage) {
-      const user = await prisma.user.findUnique({ where: { id: userId }, select: { paymentsCount: true, subStatus: true, remnawaveUuid: true } })
+    if (funnel.stopOnPayment || funnel.stopOnActiveSub || funnel.stopOnConnect) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { paymentsCount: true, subStatus: true, firstConnectedAt: true },
+      })
       if (funnel.stopOnPayment && user && user.paymentsCount > 0) continue
       if (funnel.stopOnActiveSub && user?.subStatus === 'ACTIVE') continue
+      if (funnel.stopOnConnect && user?.firstConnectedAt) continue
+    }
+
+    // Anti-spam: don't send to this user if last message from this funnel was < N hours ago
+    if (funnel.antiSpamHours && funnel.antiSpamHours > 0) {
+      const since = new Date(Date.now() - funnel.antiSpamHours * 3600_000)
+      const recentLog = await prisma.funnelLog.findFirst({
+        where: { funnelId: triggerNode.funnelId, userId, status: 'sent', createdAt: { gte: since } },
+      })
+      if (recentLog) continue
+    }
+
+    // Max messages: don't exceed total message count per user in this funnel
+    if (funnel.maxMessages && funnel.maxMessages > 0) {
+      const sentCount = await prisma.funnelLog.count({
+        where: { funnelId: triggerNode.funnelId, userId, status: 'sent' },
+      })
+      if (sentCount >= funnel.maxMessages) continue
     }
 
     // Check sandbox mode
@@ -1162,11 +1181,8 @@ const STATE_SCENARIOS: Record<string, (ms: number, now: Date) => any> = {
     },
   }),
   state_low_balance: (ms, now) => ({
-    balance: { equals: 0 },
+    balance: { lte: 0 },
     createdAt: { lt: new Date(now.getTime() - ms) },
-  }),
-  state_heavy_traffic: (_ms, _now) => ({
-    remnawaveUuid: { not: null }, subStatus: 'ACTIVE' as const,
   }),
   state_payment_pending_stuck: (ms, now) => ({
     payments: { some: { status: 'PENDING', createdAt: { lt: new Date(now.getTime() - ms) } } },

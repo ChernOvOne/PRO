@@ -2558,75 +2558,29 @@ export default function FunnelBuilderPage() {
               {/* ═══ TAB: CONDITION ═══ */}
               {activeTab === 'condition' && (
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={conditionEnabled}
-                           onChange={e => {
-                             setConditionEnabled(e.target.checked)
-                             if (!e.target.checked) {
-                               updateField('conditionType', null)
-                               updateField('conditionValue', null)
-                             }
-                           }} className="w-4 h-4 rounded" />
-                    <span className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>Проверить перед отправкой</span>
-                  </label>
-                  {conditionEnabled && (
+                  {/* Info hint — condition tab for message/trigger is for advanced rules only */}
+                  <div className="p-2.5 rounded-lg text-[11px]" style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-tertiary)' }}>
+                    <b style={{ color: 'var(--accent-1)' }}>Как использовать условия:</b><br/>
+                    Для проверки перед отправкой — добавьте ноду «Условие» (жёлтая) перед этим сообщением в цепочке.
+                    Она разветвляет поток на TRUE/FALSE ветки с любой сложной логикой.<br/><br/>
+                    Расширенные правила ниже — для нод типа <b>«Условие»</b>:
+                  </div>
+                  {editForm.nodeType === 'condition' && (
                     <>
-                      <div>
-                        <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Условие</label>
-                        <select value={editForm.conditionType || ''}
-                                onChange={e => updateField('conditionType', e.target.value)}
-                                className="w-full px-3 py-2 rounded-lg text-[14px]"
-                                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
-                          <option value="">-- Выберите --</option>
-                          {CONDITION_TYPES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                        </select>
+                      <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                        Правила (AND / OR)
                       </div>
-                      {editForm.conditionType && (
-                        <div>
-                          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Значение</label>
-                          <input value={editForm.conditionValue || ''} onChange={e => updateField('conditionValue', e.target.value)}
-                                 className="w-full px-3 py-2 rounded-lg text-[14px]"
-                                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
-                                 placeholder="Значение условия" />
-                        </div>
-                      )}
-                      <div>
-                        <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Если не прошло</label>
-                        <select value={conditionFailAction} onChange={e => setConditionFailAction(e.target.value as any)}
-                                className="w-full px-3 py-2 rounded-lg text-[14px]"
-                                style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
-                          <option value="skip">Пропустить</option>
-                          <option value="goto">Перейти к другой ноде</option>
-                        </select>
+                      <ConditionsBuilder
+                        value={(editForm.conditions && !Array.isArray(editForm.conditions)
+                          ? editForm.conditions
+                          : { logic: 'AND', rules: [] }) as any}
+                        onChange={v => updateField('conditions', v)}
+                      />
+                      <div className="text-[10px] mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                        Если все правила пройдены → TRUE ветка, иначе → FALSE ветка. Соедините выходы к следующим нодам.
                       </div>
-                      {conditionFailAction === 'goto' && (
-                        <div>
-                          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Перейти к ноде</label>
-                          <select value={conditionFailNodeId} onChange={e => setConditionFailNodeId(e.target.value)}
-                                  className="w-full px-3 py-2 rounded-lg text-[14px]"
-                                  style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
-                            <option value="">-- Выберите --</option>
-                            {nodes.filter(n => n.id !== selectedNodeId).map(n => (
-                              <option key={n.id} value={n.id}>{n.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
                     </>
                   )}
-
-                  {/* ── Визуальный builder правил (расширенные условия) ── */}
-                  <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
-                    <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
-                      ⚙️ Расширенные правила (для ноды condition)
-                    </div>
-                    <ConditionsBuilder
-                      value={(editForm.conditions && !Array.isArray(editForm.conditions)
-                        ? editForm.conditions
-                        : { logic: 'AND', rules: [] }) as any}
-                      onChange={v => updateField('conditions', v)}
-                    />
-                  </div>
                 </div>
               )}
 
@@ -3345,13 +3299,9 @@ function SettingsForm({ group, onSave }: { group: FunnelGroup; onSave: (data: an
     stopOnPayment: (group as any).stopOnPayment || false,
     stopOnConnect: (group as any).stopOnConnect || false,
     stopOnActiveSub: (group as any).stopOnActiveSub || false,
-    stopOnBotMessage: (group as any).stopOnBotMessage || false,
-    stopOnUnsubscribe: (group as any).stopOnUnsubscribe || false,
-    stopOnTag: (group as any).stopOnTag || '',
     sandboxMode: (group as any).sandboxMode || false,
     sandboxTag: (group as any).sandboxTag || 'test_funnel',
     maxMessages: (group as any).maxMessages || '',
-    timeoutDays: (group as any).timeoutDays || '',
     workHoursStart: (group as any).workHoursStart || '',
     workHoursEnd: (group as any).workHoursEnd || '',
     antiSpamHours: (group as any).antiSpamHours || '',
@@ -3359,8 +3309,13 @@ function SettingsForm({ group, onSave }: { group: FunnelGroup; onSave: (data: an
 
   const update = (key: string, value: any) => setForm((p: any) => ({ ...p, [key]: value }))
 
+  const Hint = ({ text }: { text: string }) => (
+    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{text}</p>
+  )
+
   return (
     <div className="space-y-4">
+      {/* ── Основное ── */}
       <div>
         <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Название</label>
         <input value={form.name} onChange={e => update('name', e.target.value)}
@@ -3384,84 +3339,103 @@ function SettingsForm({ group, onSave }: { group: FunnelGroup; onSave: (data: an
           <option value="payment">Оплата</option>
           <option value="referral">Рефералы</option>
           <option value="engagement">Вовлечение</option>
+          <option value="state">Проверка состояния</option>
+          <option value="security">Безопасность</option>
           <option value="custom">Кастомные</option>
         </select>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-[13px] font-medium block" style={{ color: 'var(--text-tertiary)' }}>Стоп-условия</label>
-        <div className="grid grid-cols-1 gap-1.5">
+      {/* ── Стоп-условия ── */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <div className="text-[12px] font-bold uppercase tracking-wider" style={{ color: 'var(--accent-1)' }}>
+          Стоп-условия
+        </div>
+        <Hint text="Если юзер уже достиг цели — воронка не запустится. Проверяется при каждом срабатывании триггера." />
+        <div className="space-y-1.5">
           {[
-            { key: 'stopOnPayment', label: 'Остановить если оплатил' },
-            { key: 'stopOnActiveSub', label: 'Остановить если подписка активна' },
-            { key: 'stopOnConnect', label: 'Остановить если подключился' },
-            { key: 'stopOnBotMessage', label: 'Остановить если написал боту' },
-            { key: 'stopOnUnsubscribe', label: 'Остановить если отписался' },
+            { key: 'stopOnPayment',   label: 'Оплатил подписку',         hint: 'paymentsCount > 0 — юзер хотя бы раз оплатил' },
+            { key: 'stopOnActiveSub', label: 'Подписка активна',         hint: 'subStatus = ACTIVE — прямо сейчас подписка работает' },
+            { key: 'stopOnConnect',   label: 'Подключился к VPN',        hint: 'firstConnectedAt не null — было хотя бы одно подключение' },
           ].map(item => (
-            <label key={item.key} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-              <input type="checkbox" checked={form[item.key]} onChange={e => update(item.key, e.target.checked)} />
-              {item.label}
-            </label>
+            <div key={item.key}>
+              <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={form[item.key]} onChange={e => update(item.key, e.target.checked)} className="rounded" />
+                {item.label}
+              </label>
+              <Hint text={item.hint} />
+            </div>
           ))}
         </div>
-        <div>
-          <label className="text-[12px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Остановить по тегу</label>
-          <input value={form.stopOnTag} onChange={e => update('stopOnTag', e.target.value)}
-                 placeholder="Тег (если пусто — не проверять)"
-                 className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
-        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* ── Лимиты ── */}
+      <div className="p-3 rounded-xl space-y-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <div className="text-[12px] font-bold uppercase tracking-wider" style={{ color: 'var(--accent-1)' }}>
+          Лимиты
+        </div>
         <div>
-          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Макс. сообщений</label>
+          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+            Макс. сообщений на юзера
+          </label>
           <input type="number" value={form.maxMessages} onChange={e => update('maxMessages', e.target.value ? Number(e.target.value) : null)}
+                 placeholder="0 = без лимита"
                  className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                 style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          <Hint text="Максимум сообщений которые один юзер может получить из этой воронки за всё время. 0 = без ограничений." />
         </div>
         <div>
-          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Таймаут цепочки (дней)</label>
-          <input type="number" value={form.timeoutDays} onChange={e => update('timeoutDays', e.target.value ? Number(e.target.value) : null)}
+          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+            Антиспам (часов)
+          </label>
+          <input type="number" value={form.antiSpamHours} onChange={e => update('antiSpamHours', e.target.value ? Number(e.target.value) : null)}
+                 placeholder="0 = без ограничений"
                  className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                 style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          <Hint text="Не отправлять, если этот юзер уже получал сообщение из этой воронки менее N часов назад." />
         </div>
       </div>
 
-      <div>
-        <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Антиспам: не отправлять если получил за N часов</label>
-        <input type="number" value={form.antiSpamHours} onChange={e => update('antiSpamHours', e.target.value ? Number(e.target.value) : null)}
-               className="w-full px-3 py-2 rounded-lg text-[14px]"
-               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+      {/* ── Рабочие часы ── */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <div className="text-[12px] font-bold uppercase tracking-wider" style={{ color: 'var(--accent-1)' }}>
+          Рабочие часы
+        </div>
+        <Hint text="Если сообщение попадает за пределы рабочих часов — оно откладывается до начала следующего окна (по МСК)." />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>С</label>
+            <input type="time" value={form.workHoursStart} onChange={e => update('workHoursStart', e.target.value)}
+                   className="w-full px-3 py-2 rounded-lg text-[14px]"
+                   style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          </div>
+          <div>
+            <label className="text-[12px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>До</label>
+            <input type="time" value={form.workHoursEnd} onChange={e => update('workHoursEnd', e.target.value)}
+                   className="w-full px-3 py-2 rounded-lg text-[14px]"
+                   style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          </div>
+        </div>
+        <Hint text="Оставьте пустыми — сообщения будут отправляться в любое время." />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Рабочие часы с</label>
-          <input type="time" value={form.workHoursStart} onChange={e => update('workHoursStart', e.target.value)}
-                 className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+      {/* ── Тестирование ── */}
+      <div className="p-3 rounded-xl space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <div className="text-[12px] font-bold uppercase tracking-wider" style={{ color: 'var(--accent-1)' }}>
+          Тестирование
         </div>
-        <div>
-          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Рабочие часы до</label>
-          <input type="time" value={form.workHoursEnd} onChange={e => update('workHoursEnd', e.target.value)}
-                 className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
-        </div>
+        <label className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={form.sandboxMode} onChange={e => update('sandboxMode', e.target.checked)} className="rounded" />
+          Песочница — только юзерам с тегом
+        </label>
+        <Hint text="Если включено — воронка сработает ТОЛЬКО для юзеров у которых есть указанный тег. Используйте для тестирования перед запуском." />
+        {form.sandboxMode && (
+          <div>
+            <input value={form.sandboxTag} onChange={e => update('sandboxTag', e.target.value)}
+                   placeholder="test_funnel" className="w-full px-3 py-2 rounded-lg text-[14px]"
+                   style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+          </div>
+        )}
       </div>
-
-      <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-        <input type="checkbox" checked={form.sandboxMode} onChange={e => update('sandboxMode', e.target.checked)} />
-        Режим песочницы (только тестерам)
-      </label>
-      {form.sandboxMode && (
-        <div>
-          <label className="text-[12px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Тег тестеров</label>
-          <input value={form.sandboxTag} onChange={e => update('sandboxTag', e.target.value)}
-                 placeholder="test_funnel" className="w-full px-3 py-2 rounded-lg text-[14px]"
-                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
-        </div>
-      )}
 
       <button onClick={() => onSave(form)}
               className="w-full px-4 py-2.5 rounded-xl text-[14px] font-medium text-white"

@@ -62,7 +62,6 @@ const NODE_TYPE_CONFIG = [
       { id: 'state_gift_not_claimed',      label: '⏰ Подарок не активирован N',               category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 3,  defaultUnit: 'days'  },
       { id: 'state_feedback_request',      label: '⏰ Запрос отзыва через N времени',          category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 7,  defaultUnit: 'days'  },
       { id: 'state_low_balance',           label: '⏰ Баланс 0 больше N времени',              category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 3,  defaultUnit: 'days'  },
-      { id: 'state_heavy_traffic',         label: '⏰ Трафик >80% N времени (апсейл)',         category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 30, defaultUnit: 'days'  },
       { id: 'state_payment_pending_stuck', label: '⏰ Оплата зависла > N времени',             category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 30, defaultUnit: 'minutes' },
       { id: 'state_on_trial_about_to_expire', label: '⏰ Триал заканчивается через N времени', category: 'state', hasParam: true, paramLabel: 'N', defaultParam: 1,  defaultUnit: 'days'  },
 
