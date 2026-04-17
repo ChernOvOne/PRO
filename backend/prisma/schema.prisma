@@ -1556,3 +1556,21 @@ model TicketTemplate {
 
   @@map("ticket_templates")
 }
+
+// ── Landing Page Builder ──────────────────────────────────────
+// Stores ordered blocks for the public landing page.
+// Each block has a type (hero/features/faq/...) and type-specific `data` JSON.
+// `pageKey` allows multiple pages in future (main / pricing / about / etc).
+model LandingBlock {
+  id        String   @id @default(uuid())
+  pageKey   String   @default("main") @map("page_key")
+  type      String   // hero | features | tariffs | faq | reviews | stats | cta | proxies | steps | custom_html | spacer | image
+  data      Json     // block-specific settings (title, items, colors, etc)
+  visible   Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([pageKey, sortOrder])
+  @@map("landing_blocks")
+}

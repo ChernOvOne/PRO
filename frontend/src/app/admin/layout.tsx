@@ -75,7 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/bot',              icon: Bot,             label: 'Бот',            roles: ['ADMIN'] },
       { href: '/admin/bot/constructor',  icon: Workflow,        label: 'Конструктор',    roles: ['ADMIN'] },
       { href: '/admin/proxies',          icon: Wifi,            label: 'Прокси',        roles: ['ADMIN'] },
-      { href: '/admin/landing',          icon: Globe,           label: 'Лендинг',       roles: ['ADMIN'] },
+      { href: '/admin/landing/builder',  icon: Globe,           label: 'Лендинг',       roles: ['ADMIN'] },
       { href: '/admin/import',           icon: Upload,          label: 'Импорт',        roles: ['ADMIN'] },
       { href: '/admin/settings',         icon: Settings,        label: 'Настройки',     roles: ['ADMIN'] },
     ],

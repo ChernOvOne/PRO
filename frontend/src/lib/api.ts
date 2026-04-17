@@ -156,6 +156,7 @@ export const publicApi = {
   tariffs: () => apiFetch<Tariff[]>('/public/tariffs'),
   config:  () => apiFetch<Record<string, unknown>>('/public/config'),
   landing: () => apiFetch<Record<string, any>>('/public/landing'),
+  landingBlocks: (page = 'main') => apiFetch<any[]>(`/public/landing/blocks?page=${page}`),
   brand:   () => apiFetch<Record<string, string>>('/public/brand'),
   proxies: () => apiFetch<TelegramProxy[]>('/public/proxies'),
   news:    (limit = 5) => apiFetch<News[]>(`/public/news?limit=${limit}`),
@@ -349,6 +350,17 @@ export const adminApi = {
     apiFetch<{ ok: boolean }>(`/admin/landing/sections/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
   deleteLandingSection: (key: string) =>
     apiFetch<{ ok: boolean }>(`/admin/landing/sections/${key}`, { method: 'DELETE' }),
+
+  // Landing Builder (block-based)
+  landingBlocks:       (page = 'main') => apiFetch<any[]>(`/admin/landing/blocks?page=${page}`),
+  createLandingBlock:  (data: { pageKey?: string; type: string; data?: any; visible?: boolean }) =>
+    apiFetch<any>('/admin/landing/blocks', { method: 'POST', body: JSON.stringify(data) }),
+  updateLandingBlock:  (id: string, patch: { type?: string; data?: any; visible?: boolean }) =>
+    apiFetch<any>(`/admin/landing/blocks/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  deleteLandingBlock:  (id: string) =>
+    apiFetch<{ ok: boolean }>(`/admin/landing/blocks/${id}`, { method: 'DELETE' }),
+  reorderLandingBlocks: (items: { id: string; sortOrder: number }[]) =>
+    apiFetch<{ ok: boolean }>('/admin/landing/blocks/reorder', { method: 'POST', body: JSON.stringify({ items }) }),
 
   // Analytics
   analyticsHealth: () => apiFetch<{ remnawave: any }>('/admin/analytics/health'),

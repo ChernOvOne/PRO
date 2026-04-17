@@ -83,7 +83,20 @@ export default function AdminLandingPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Настройки лендинга</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Настройки лендинга (legacy)</h1>
+        <a href="/admin/landing/builder"
+           className="px-4 py-2 rounded-xl text-sm font-medium text-white"
+           style={{ background: 'var(--accent-gradient)' }}>
+          🎨 Открыть конструктор
+        </a>
+      </div>
+      <div className="p-3 rounded-xl text-sm"
+           style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-secondary)' }}>
+        <b style={{ color: 'var(--accent-1)' }}>Новый способ редактирования лендинга:</b>{' '}
+        используйте конструктор блоков — там удобнее и больше возможностей.
+        Эта страница оставлена для совместимости со старыми настройками.
+      </div>
 
       {/* Tab navigation */}
       <div className="flex gap-2 overflow-x-auto pb-2">

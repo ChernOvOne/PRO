@@ -10,6 +10,7 @@ import {
 import Link from 'next/link'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { useBrand } from '@/hooks/useBrand'
+import { BlockRenderer, type LandingBlock } from '@/components/landing/BlockRenderer'
 import type { Tariff, TelegramProxy, News } from '@/types'
 
 export default function LandingPage() {
@@ -19,6 +20,7 @@ export default function LandingPage() {
   const [proxies, setProxies]   = useState<TelegramProxy[]>([])
   const [news, setNews]         = useState<News[]>([])
   const [landing, setLanding]   = useState<Record<string, any>>({})
+  const [blocks, setBlocks]     = useState<LandingBlock[]>([])
   const [mobileOpen, setMobileOpen] = useState(false)
   const [tmaChecked, setTmaChecked] = useState(false)
   const tmaTriedRef = useRef(false)
@@ -89,11 +91,13 @@ export default function LandingPage() {
       fetch('/api/public/proxies').then(r => r.json()).catch(() => []),
       fetch('/api/public/news?limit=3').then(r => r.json()).catch(() => []),
       fetch('/api/public/landing').then(r => r.json()).catch(() => ({})),
-    ]).then(([t, p, n, l]) => {
+      fetch('/api/public/landing/blocks').then(r => r.json()).catch(() => []),
+    ]).then(([t, p, n, l, b]) => {
       setTariffs(t)
       setProxies(p)
       setNews(n)
       setLanding(l)
+      setBlocks(Array.isArray(b) ? b : [])
     })
   }, [])
 
@@ -168,6 +172,15 @@ export default function LandingPage() {
         </div>
       )}
 
+      {/* ── CUSTOM BLOCKS (if configured in /admin/landing/builder) ── */}
+      {blocks.length > 0 ? (
+        <>
+          {blocks.map(b => (
+            <BlockRenderer key={b.id} block={b} ctx={{ tariffs, proxies, onCta: () => router.push('/login') }} />
+          ))}
+        </>
+      ) : (
+      <>
       {/* ── HERO ── */}
       <section className="relative z-10 flex flex-col items-center text-center px-6 pt-20 pb-16 md:pt-32 md:pb-24">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm mb-8 animate-fade-in"
@@ -360,6 +373,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      </>
+      )}
 
       {/* ── FOOTER ── */}
       <footer className="relative z-10 border-t px-6 lg:px-16 py-10"

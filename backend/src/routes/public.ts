@@ -60,6 +60,15 @@ export async function publicRoutes(app: FastifyInstance) {
     return brand
   })
 
+  // Landing page blocks (new block-based builder). Returns only visible blocks.
+  app.get('/landing/blocks', async (req) => {
+    const { page = 'main' } = req.query as { page?: string }
+    return prisma.landingBlock.findMany({
+      where:   { pageKey: page, visible: true },
+      orderBy: { sortOrder: 'asc' },
+    })
+  })
+
   // Landing page sections
   app.get('/landing', async () => {
     const settings = await prisma.setting.findMany({
