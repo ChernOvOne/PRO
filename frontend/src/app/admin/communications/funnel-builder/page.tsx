@@ -97,6 +97,9 @@ interface FunnelNode {
   httpBody?: string | null
   notifyChannel?: string | null
   notifyText?: string | null
+  repeatEnabled?: boolean
+  repeatInterval?: number | null
+  repeatMax?: number | null
   tgEffect?: string | null
 }
 
@@ -220,6 +223,16 @@ const STEP_PALETTE: PaletteCategory[] = [
       { id: 'action_promo', label: '🎫 Промокод-скидка',   nodeType: 'action', defaults: { actionType: 'promo_discount', actionValue: '20' } },
       { id: 'action_tag',   label: '🏷 Добавить тег',      nodeType: 'action', defaults: { actionType: 'add_tag', actionValue: '' } },
       { id: 'action_trial', label: '🎁 Активировать триал', nodeType: 'action', defaults: { actionType: 'trial' } },
+    ],
+  },
+  {
+    title: 'Повтор',
+    icon: '🔁',
+    items: [
+      { id: 'repeat_msg', label: '🔁 Повторяющееся сообщение', nodeType: 'message', defaults: {
+        channelTg: true, tgText: '{name}, напоминаем...', repeatEnabled: true,
+        repeatInterval: 259200, repeatMax: 5, conditionType: 'not_paid',
+      }},
     ],
   },
   {
@@ -1960,6 +1973,57 @@ export default function FunnelBuilderPage() {
                       </div>
                     </div>
                   )}
+                  {/* ── Repeat section ── */}
+                  <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={!!editForm.repeatEnabled}
+                             onChange={e => updateField('repeatEnabled', e.target.checked)}
+                             className="w-4 h-4 rounded" />
+                      <span className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>🔁 Повторять эту ноду</span>
+                    </label>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                      Нода будет отправляться повторно через указанный интервал, пока не сработает стоп-условие или не достигнет максимума повторов.
+                    </p>
+                    {editForm.repeatEnabled && (
+                      <div className="space-y-2 mt-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[12px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>Интервал (секунд)</label>
+                            <input type="number" value={editForm.repeatInterval ?? 259200}
+                                   onChange={e => updateField('repeatInterval', Number(e.target.value))}
+                                   className="w-full px-3 py-2 rounded-lg text-[14px]"
+                                   style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                            <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                              3600=1ч, 86400=1д, 259200=3д, 604800=1нед
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-[12px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>Макс. повторов</label>
+                            <input type="number" value={editForm.repeatMax ?? 5}
+                                   onChange={e => updateField('repeatMax', Number(e.target.value))}
+                                   className="w-full px-3 py-2 rounded-lg text-[14px]"
+                                   style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[12px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>Стоп-условие (остановить если)</label>
+                          <select value={editForm.conditionType || ''}
+                                  onChange={e => updateField('conditionType', e.target.value || null)}
+                                  className="w-full px-3 py-2 rounded-lg text-[14px]"
+                                  style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                            <option value="">Нет (повторять до максимума)</option>
+                            <option value="not_paid">Оплатил</option>
+                            <option value="not_connected">Подключился</option>
+                            <option value="no_subscription">Есть подписка</option>
+                            <option value="expired">Подписка истекла</option>
+                          </select>
+                          <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                            Если условие выполнено — повтор прекращается. Например «Оплатил» = юзер уже оплатил, не нужно повторять.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

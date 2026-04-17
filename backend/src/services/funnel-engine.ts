@@ -812,6 +812,25 @@ async function processNode(
         return { action: 'pending' }
       }
       await sendNode(node, funnelId, userId, extraVars)
+
+      // Start repeat cycle if enabled on this node
+      if (node.repeatEnabled && node.repeatMax && node.repeatMax > 0) {
+        const intervalMs = (node.repeatInterval || 3600) * 1000
+        await prisma.pendingFunnelStep.create({
+          data: {
+            funnelId,
+            userId,
+            nodeId: node.id,
+            type: 'repeat',
+            executeAt: new Date(Date.now() + intervalMs),
+            repeatCount: 1,
+            depth,
+            varsJson: extraVars as any,
+          },
+        })
+        logger.info(`[Funnel] Repeat started for node ${node.id}: every ${node.repeatInterval}s, max ${node.repeatMax}`)
+      }
+
       return { action: 'continue' }
     }
 
