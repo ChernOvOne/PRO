@@ -863,14 +863,13 @@ export default function DashboardPage() {
                onTouchEnd={handleTouchEnd}>
             <div className={`grid gap-3 ${perPage === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {news.slice(newsIdx, newsIdx + perPage).map((n: any) => (
-                <div key={n.id} className="rounded-xl overflow-hidden transition-all duration-300"
+                <div key={n.id} className="rounded-xl overflow-hidden transition-all duration-300 flex flex-col"
                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                   {n.imageUrl && (
-                    <div className="w-full overflow-hidden"
+                    <div className="w-full overflow-hidden flex-shrink-0"
                          style={{
                            background: 'var(--surface-2)',
-                           aspectRatio: n.imageAspect && n.imageAspect !== 'auto' ? n.imageAspect : '16/9',
-                           maxHeight: n.imageAspect === 'auto' ? '240px' : undefined,
+                           height: '110px',
                          }}>
                       <img src={n.imageUrl} alt={n.title} className="w-full h-full"
                            style={{
@@ -879,27 +878,28 @@ export default function DashboardPage() {
                            }} />
                     </div>
                   )}
-                  <div className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={n.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}>
-                        {n.type === 'PROMOTION' ? <><Tag className="w-3 h-3 mr-1" />Акция</> : <><Newspaper className="w-3 h-3 mr-1" />Новость</>}
+                  <div className="p-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className={`${n.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}`}
+                            style={{ fontSize: '10px', padding: '2px 6px' }}>
+                        {n.type === 'PROMOTION' ? <><Tag className="w-2.5 h-2.5 mr-0.5" />Акция</> : <><Newspaper className="w-2.5 h-2.5 mr-0.5" />Новость</>}
                       </span>
-                      <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                      <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>
                         {new Date(n.publishedAt).toLocaleDateString('ru')}
                       </span>
                     </div>
-                    <p className="text-sm font-semibold mb-1">{n.title}</p>
-                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    <p className="text-[13px] font-semibold mb-1 leading-tight">{n.title}</p>
+                    <p className="text-[11px] leading-snug" style={{ color: 'var(--text-secondary)' }}>
                       {(() => {
                         const stripped = (n.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-                        return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped
+                        return stripped.length > 60 ? stripped.slice(0, 60) + '…' : stripped
                       })()}
                     </p>
                     {n.buttons?.[0]?.url && (
                       <a href={n.buttons[0].url} target="_blank" rel="noopener"
-                         className="inline-flex items-center gap-1 text-xs mt-2.5 font-medium transition-opacity hover:opacity-80"
+                         className="inline-flex items-center gap-1 text-[11px] mt-2 font-medium transition-opacity hover:opacity-80"
                          style={{ color: 'var(--accent-1)' }}>
-                        Подробнее <ExternalLink className="w-3 h-3" />
+                        Подробнее <ExternalLink className="w-2.5 h-2.5" />
                       </a>
                     )}
                   </div>
