@@ -165,8 +165,13 @@ const TABS: TabDef[] = [
   {
     id: 'general', icon: Settings, title: 'Общие',
     fields: [
-      { key: 'app_name', label: 'Название проекта', type: 'text', placeholder: 'HIDEYOU PRO' },
+      { key: 'app_name', label: 'Название проекта', type: 'text', placeholder: 'HIDEYOU' },
       { key: 'app_description', label: 'Описание', type: 'text', placeholder: 'VPN-платформа' },
+      { key: 'app_logo_url', label: 'URL логотипа (опц.)', type: 'url', placeholder: 'https://example.com/logo.svg' },
+      { key: 'app_favicon_url', label: 'URL favicon (опц.)', type: 'url', placeholder: 'https://example.com/favicon.ico' },
+      { key: 'footer_text', label: 'Текст футера', type: 'text', placeholder: 'HIDEYOU VPN' },
+      { key: 'terms_url', label: 'URL условий', type: 'url', placeholder: '/terms' },
+      { key: 'privacy_url', label: 'URL политики', type: 'url', placeholder: '/privacy' },
       { key: 'brand_color', label: 'Основной цвет бренда', type: 'color' },
       { key: 'brand_color_secondary', label: 'Дополнительный цвет', type: 'color' },
       { key: 'default_language', label: 'Язык', type: 'select', options: [

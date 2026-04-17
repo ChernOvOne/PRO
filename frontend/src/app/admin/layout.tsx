@@ -13,6 +13,7 @@ import {
   HelpCircle, LifeBuoy,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useBrand } from '@/hooks/useBrand'
 
 // Staff roles that can access admin panel
 const STAFF_ROLES = ['ADMIN', 'EDITOR', 'INVESTOR', 'PARTNER']
@@ -87,6 +88,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [loading, setLoading]   = useState(true)
   const [sideOpen, setSideOpen] = useState(false)
   const [userRole, setUserRole] = useState<string>('ADMIN')
+  const brand = useBrand()
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
@@ -126,7 +128,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Shield className="w-[18px] h-[18px] text-white" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-[15px]" style={{ color: 'var(--text-primary)' }}>HIDEYOU</span>
+            <span className="font-semibold text-[15px]" style={{ color: 'var(--text-primary)' }}>{brand.app_name}</span>
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
                   style={{ background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }}>ADMIN</span>
           </div>

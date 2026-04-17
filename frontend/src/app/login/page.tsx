@@ -6,6 +6,7 @@ import { Shield, Mail, Eye, EyeOff, Loader2, ArrowLeft, KeyRound, UserPlus, Hash
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { authApi, verificationApi } from '@/lib/api'
+import { useBrand } from '@/hooks/useBrand'
 
 declare global {
   interface Window { onTelegramAuth?: (user: any) => void }
@@ -18,6 +19,7 @@ function LoginContent() {
   const params  = useSearchParams()
   const refCode = params.get('ref')
   const tgRef   = useRef<HTMLDivElement>(null)
+  const brand   = useBrand()
 
   const [tab, setTab] = useState<Tab>('telegram')
 
@@ -263,7 +265,7 @@ function LoginContent() {
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              Войти в <span className="text-gradient">HIDEYOU</span>
+              Войти в <span className="text-gradient">{brand.app_name}</span>
             </h1>
             <p className="mt-1" style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
               Безопасный VPN — всегда под рукой

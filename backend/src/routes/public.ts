@@ -37,6 +37,29 @@ export async function publicRoutes(app: FastifyInstance) {
     return { valid: true, referrerName: user.telegramName || 'Friend' }
   })
 
+  // ── Brand settings for UI (app_name, colors, urls, logos) ──
+  // Safe for public — contains only branding, no secrets.
+  app.get('/brand', async () => {
+    const BRAND_KEYS = [
+      'app_name', 'app_description', 'app_logo_url', 'app_favicon_url',
+      'brand_color', 'brand_color_secondary', 'currency_symbol',
+      'domain', 'api_domain', 'app_url',
+      'support_url', 'channel_url', 'bot_url',
+      'terms_url', 'privacy_url', 'footer_text',
+      'telegram_channel_name',
+    ]
+    const rows = await prisma.setting.findMany({ where: { key: { in: BRAND_KEYS } } })
+    const brand: Record<string, string> = {
+      app_name: 'HIDEYOU',
+      app_description: 'VPN сервис',
+      brand_color: '#06b6d4',
+      brand_color_secondary: '#8b5cf6',
+      currency_symbol: '₽',
+    }
+    for (const r of rows) brand[r.key] = r.value || brand[r.key] || ''
+    return brand
+  })
+
   // Landing page sections
   app.get('/landing', async () => {
     const settings = await prisma.setting.findMany({

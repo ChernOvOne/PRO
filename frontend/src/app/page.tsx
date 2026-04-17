@@ -9,10 +9,12 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useBrand } from '@/hooks/useBrand'
 import type { Tariff, TelegramProxy, News } from '@/types'
 
 export default function LandingPage() {
   const router = useRouter()
+  const brand = useBrand()
   const [tariffs, setTariffs]   = useState<Tariff[]>([])
   const [proxies, setProxies]   = useState<TelegramProxy[]>([])
   const [news, setNews]         = useState<News[]>([])
@@ -122,7 +124,7 @@ export default function LandingPage() {
                style={{ background: 'var(--accent-gradient)' }}>
             <Shield className="w-5 h-5 text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight">HIDEYOU</span>
+          <span className="text-xl font-bold tracking-tight">{brand.app_name}</span>
         </div>
 
         <div className="hidden md:flex items-center gap-8 text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -216,7 +218,7 @@ export default function LandingPage() {
       <section id="features" className="relative z-10 px-6 lg:px-16 py-20 md:py-28">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold">Почему HIDEYOU?</h2>
+            <h2 className="text-3xl md:text-4xl font-bold">Почему {brand.app_name}?</h2>
             <p className="mt-4 text-lg" style={{ color: 'var(--text-secondary)' }}>
               Технологии, которые работают когда другие нет
             </p>
@@ -366,15 +368,17 @@ export default function LandingPage() {
              style={{ color: 'var(--text-tertiary)' }}>
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
-            <span>HIDEYOU VPN &copy; {new Date().getFullYear()}</span>
+            <span>{brand.footer_text || `${brand.app_name} VPN`} &copy; {new Date().getFullYear()}</span>
           </div>
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:opacity-80 transition-opacity">Конфиденциальность</Link>
             <Link href="/terms" className="hover:opacity-80 transition-opacity">Условия</Link>
-            <a href="https://t.me/hideyouvpn" target="_blank" rel="noopener"
-               className="hover:opacity-80 transition-opacity flex items-center gap-1">
-              <MessageCircle className="w-3.5 h-3.5" /> Telegram
-            </a>
+            {brand.channel_url && (
+              <a href={brand.channel_url} target="_blank" rel="noopener"
+                 className="hover:opacity-80 transition-opacity flex items-center gap-1">
+                <MessageCircle className="w-3.5 h-3.5" /> Telegram
+              </a>
+            )}
           </div>
         </div>
       </footer>

@@ -9,6 +9,7 @@ import {
   Wifi, Newspaper, Settings, Wallet, CheckCheck, LifeBuoy,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useBrand } from '@/hooks/useBrand'
 
 interface User {
   id: string; email?: string; telegramName?: string
@@ -43,6 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [authError, setAuthError] = useState<string | null>(null)
   const [sideOpen, setSideOpen]   = useState(false)
   const [unread, setUnread]       = useState(0)
+  const brand = useBrand()
   const [bellOpen, setBellOpen]   = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notiLoading, setNotiLoading] = useState(false)
@@ -350,7 +352,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <div>
           <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
-            HIDEYOU
+            {brand.app_name}
           </span>
           <span className="text-[10px] font-medium ml-1.5 px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(6,182,212,0.12)', color: '#22d3ee' }}>VPN</span>
@@ -478,7 +480,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                  style={{ background: 'var(--accent-gradient)' }}>
               <Shield className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="font-semibold text-sm">HIDEYOU</span>
+            <span className="font-semibold text-sm">{brand.app_name}</span>
           </Link>
           <div className="flex items-center gap-1">
             <ThemeToggle compact />

@@ -7,6 +7,7 @@ import { emailService } from '../services/email'
 import { inAppNotifications } from '../services/notification-service'
 import { remnawave } from '../services/remnawave'
 import { balanceService } from '../services/balance'
+import { getBrandName } from '../services/brand'
 import { config } from '../config'
 import { logger } from '../utils/logger'
 import { InlineKeyboard } from 'grammy'
@@ -243,7 +244,7 @@ export async function buildVars(userId: string, extra: Record<string, string> = 
     currentTime: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
     customerSource: u.customerSource || '',
     paymentUrl: config.appUrl + '/payment',
-    appName: 'HIDEYOU',
+    appName: await getBrandName(),
     campaignName: '',
     promoDiscount: '',
     tariffPrice: '',

@@ -156,6 +156,7 @@ export const publicApi = {
   tariffs: () => apiFetch<Tariff[]>('/public/tariffs'),
   config:  () => apiFetch<Record<string, unknown>>('/public/config'),
   landing: () => apiFetch<Record<string, any>>('/public/landing'),
+  brand:   () => apiFetch<Record<string, string>>('/public/brand'),
   proxies: () => apiFetch<TelegramProxy[]>('/public/proxies'),
   news:    (limit = 5) => apiFetch<News[]>(`/public/news?limit=${limit}`),
   checkReferral: (code: string) =>

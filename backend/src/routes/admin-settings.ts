@@ -123,6 +123,17 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
       } catch { /* ignore */ }
     }
 
+    // Invalidate brand cache if any branding-related setting changed
+    const BRAND_PREFIXES = ['app_', 'brand_', 'support_url', 'channel_url', 'bot_url',
+                            'terms_url', 'privacy_url', 'footer_text', 'domain',
+                            'api_domain', 'currency_symbol', 'telegram_channel_name']
+    if (settingsArray.some(s => BRAND_PREFIXES.some(p => s.key.startsWith(p) || s.key === p))) {
+      try {
+        const { invalidateBrand } = await import('../services/brand')
+        invalidateBrand()
+      } catch { /* ignore */ }
+    }
+
     // Sync to .env
     if (settingsArray.length > 0) {
       const envUpdates: Record<string, string> = {}

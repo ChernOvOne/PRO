@@ -1159,11 +1159,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // Send invitation email
     const { emailService } = await import('../services/email')
+    const { getBrandName } = await import('../services/brand')
+    const appName = await getBrandName()
     await emailService.send({
       to: email,
-      subject: 'Вы приглашены как администратор — HIDEYOU VPN',
+      subject: `Вы приглашены как администратор — ${appName}`,
       html: `<h2>Приглашение в администраторы</h2>
-        <p>Вас пригласили в панель администратора <strong>HIDEYOU VPN</strong>.</p>
+        <p>Вас пригласили в панель администратора <strong>${appName}</strong>.</p>
         <p>Войдите по ссылке и установите пароль через "Сбросить пароль":</p>
         <a href="${config.appUrl}/login" style="display:inline-block;padding:12px 24px;background:#5569ff;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;margin-top:12px;">Войти в панель</a>`,
     }).catch(() => {})
@@ -1188,7 +1190,9 @@ export async function adminRoutes(app: FastifyInstance) {
     // Notify via bot
     try {
       const { bot } = await import('../bot')
-      await bot.api.sendMessage(telegramId, '🔑 Вы назначены *администратором* HIDEYOU VPN.', { parse_mode: 'Markdown' })
+      const { getBrandName } = await import('../services/brand')
+      const appName = await getBrandName()
+      await bot.api.sendMessage(telegramId, `🔑 Вы назначены *администратором* ${appName}.`, { parse_mode: 'Markdown' })
     } catch {}
 
     logger.info(`Admin invited by TG: ${telegramId}`)
