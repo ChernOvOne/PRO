@@ -48,6 +48,8 @@ export async function adminNewsRoutes(app: FastifyInstance) {
     title:        z.string().min(1),
     content:      z.string().min(1),
     imageUrl:     z.string().optional().nullable(),
+    imageFocus:   z.string().optional().nullable(),
+    imageAspect:  z.string().optional().nullable(),
     buttons:      z.any().optional().nullable(),
     discountCode: z.string().optional().nullable(),
     discountPct:  z.number().optional().nullable(),

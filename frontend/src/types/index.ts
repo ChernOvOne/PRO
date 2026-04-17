@@ -86,6 +86,8 @@ export interface News {
   title:        string
   content:      string
   imageUrl?:    string
+  imageFocus?:  string   // CSS object-position: "50% 50%" | "top left" etc
+  imageAspect?: string   // "16/9" | "4/3" | "1/1" | "21/9" | "auto"
   buttons?:     Array<{ label: string; url: string; style?: string }>
   discountCode?: string
   discountPct?:  number

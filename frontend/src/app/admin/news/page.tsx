@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, Eye, EyeOff, Pin, Upload, X, Image as ImageIcon } 
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
 import { RichEditor } from '@/components/RichEditor'
+import { ImageFocusPicker } from '@/components/ImageFocusPicker'
 import type { News } from '@/types'
 
 export default function AdminNewsPage() {
@@ -111,13 +112,21 @@ export default function AdminNewsPage() {
                 Обложка (необязательно)
               </label>
               {editing.imageUrl ? (
-                <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                  <img src={editing.imageUrl} alt="" className="w-full max-h-[200px] object-cover" />
-                  <button onClick={() => setEditing({ ...editing, imageUrl: '' })}
-                          className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center"
-                          style={{ background: 'rgba(0,0,0,0.7)', color: '#fff' }}>
-                    <X className="w-4 h-4" />
-                  </button>
+                <div className="space-y-3">
+                  <div className="flex justify-end">
+                    <button onClick={() => setEditing({ ...editing, imageUrl: '', imageFocus: undefined, imageAspect: undefined })}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
+                            style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      <X className="w-3.5 h-3.5" /> Удалить картинку
+                    </button>
+                  </div>
+                  <ImageFocusPicker
+                    imageUrl={editing.imageUrl}
+                    focus={(editing as any).imageFocus || '50% 50%'}
+                    aspect={(editing as any).imageAspect || '16/9'}
+                    onFocusChange={v => setEditing({ ...editing, imageFocus: v } as any)}
+                    onAspectChange={v => setEditing({ ...editing, imageAspect: v } as any)}
+                  />
                 </div>
               ) : (
                 <div className="flex gap-2">

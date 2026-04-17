@@ -227,6 +227,8 @@ model News {
   title        String
   content      String    // markdown
   imageUrl     String?   @map("image_url")
+  imageFocus   String?   @map("image_focus")    // CSS object-position (e.g. "50% 50%", "top left")
+  imageAspect  String?   @map("image_aspect")   // "16/9" | "4/3" | "1/1" | "21/9" | "auto"
   buttons      Json?     // [{label, url, style}]
 
   // Promotion-specific

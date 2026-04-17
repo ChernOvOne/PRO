@@ -1261,8 +1261,17 @@ function NewsBlock({ data, style }: { data: any; style: BlockStyle }) {
                       style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
                       cardHover={style.cardHover || 'lift'}>
               {n.imageUrl && (
-                <div className="w-full aspect-video overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                  <img src={n.imageUrl} alt={n.title} className="w-full h-full object-cover" />
+                <div className="w-full overflow-hidden"
+                     style={{
+                       background: 'var(--surface-2)',
+                       aspectRatio: n.imageAspect && n.imageAspect !== 'auto' ? n.imageAspect : '16/9',
+                       maxHeight: n.imageAspect === 'auto' ? '320px' : undefined,
+                     }}>
+                  <img src={n.imageUrl} alt={n.title} className="w-full h-full"
+                       style={{
+                         objectFit: n.imageAspect === 'auto' ? 'contain' : 'cover',
+                         objectPosition: n.imageFocus || '50% 50%',
+                       }} />
                 </div>
               )}
               <div className="p-6 flex-1 flex flex-col">

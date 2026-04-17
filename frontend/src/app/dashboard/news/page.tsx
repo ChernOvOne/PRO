@@ -77,8 +77,19 @@ export default function NewsPage() {
               </div>
 
               {item.imageUrl && (
-                <img src={item.imageUrl} alt={item.title}
-                     className="w-full h-48 object-cover rounded-xl mb-4" />
+                <div className="w-full overflow-hidden rounded-xl mb-4"
+                     style={{
+                       background: 'var(--surface-2)',
+                       aspectRatio: (item as any).imageAspect && (item as any).imageAspect !== 'auto' ? (item as any).imageAspect : '16/9',
+                       maxHeight: (item as any).imageAspect === 'auto' ? '400px' : undefined,
+                     }}>
+                  <img src={item.imageUrl} alt={item.title}
+                       className="w-full h-full"
+                       style={{
+                         objectFit: (item as any).imageAspect === 'auto' ? 'contain' : 'cover',
+                         objectPosition: (item as any).imageFocus || '50% 50%',
+                       }} />
+                </div>
               )}
 
               <h2 className="text-lg font-semibold mb-2">{item.title}</h2>
