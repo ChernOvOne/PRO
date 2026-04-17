@@ -865,19 +865,30 @@ export default function DashboardPage() {
               {news.slice(newsIdx, newsIdx + perPage).map((n: any) => (
                 <div key={n.id} className="rounded-xl overflow-hidden transition-all duration-300 flex flex-col"
                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                  {n.imageUrl && (
-                    <div className="w-full overflow-hidden flex-shrink-0"
-                         style={{
-                           background: 'var(--surface-2)',
-                           height: '110px',
-                         }}>
-                      <img src={n.imageUrl} alt={n.title} className="w-full h-full"
-                           style={{
-                             objectFit: n.imageAspect === 'auto' ? 'contain' : 'cover',
-                             objectPosition: n.imageFocus || '50% 50%',
-                           }} />
-                    </div>
-                  )}
+                  {n.imageUrl && (() => {
+                    const aspect = n.imageAspect || '16/9'
+                    // For "tall" aspects (1:1, 4:3), cap width so the image
+                    // doesn't take the whole card vertically on narrow layouts.
+                    const tallCap: Record<string, string> = { '1/1': '180px', '4/3': '220px' }
+                    const maxWidth = tallCap[aspect]
+                    return (
+                      <div className="w-full flex-shrink-0 flex items-center justify-center"
+                           style={{ background: 'var(--surface-2)' }}>
+                        <div className="overflow-hidden w-full"
+                             style={{
+                               aspectRatio: aspect === 'auto' ? undefined : aspect,
+                               maxHeight: aspect === 'auto' ? '180px' : '200px',
+                               maxWidth: maxWidth,
+                             }}>
+                          <img src={n.imageUrl} alt={n.title} className="w-full h-full"
+                               style={{
+                                 objectFit: aspect === 'auto' ? 'contain' : 'cover',
+                                 objectPosition: n.imageFocus || '50% 50%',
+                               }} />
+                        </div>
+                      </div>
+                    )
+                  })()}
                   <div className="p-3">
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className={`${n.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}`}
