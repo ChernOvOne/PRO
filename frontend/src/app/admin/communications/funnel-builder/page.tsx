@@ -139,55 +139,96 @@ interface PaletteCategory {
   items: PaletteItem[]
 }
 
-// RW = приходит от REMNAWAVE webhook, SYS = от системы (payment.ts, auth.ts), CRON = по расписанию
+// ── Palette of triggers (matches TRIGGER_OPTIONS from engine / NODE_TYPE_CONFIG) ──
 const TRIGGER_PALETTE: PaletteCategory[] = [
   {
-    title: 'REMNAWAVE (webhook)',
-    icon: '⚡',
+    title: 'Регистрация',
+    icon: '👋',
     items: [
-      { id: 'expiring_72h', label: '⚡ Истекает через 3 дня (72ч)', nodeType: 'trigger', defaults: { triggerType: 'expiring_72h', channelTg: true } },
-      { id: 'expiring_48h', label: '⚡ Истекает через 2 дня (48ч)', nodeType: 'trigger', defaults: { triggerType: 'expiring_48h', channelTg: true } },
-      { id: 'expiring_24h', label: '⚡ Истекает завтра (24ч)', nodeType: 'trigger', defaults: { triggerType: 'expiring_24h', channelTg: true } },
-      { id: 'expired', label: '⚡ Подписка истекла', nodeType: 'trigger', defaults: { triggerType: 'expired', channelTg: true } },
-      { id: 'traffic_limit', label: '⚡ Трафик исчерпан (100%)', nodeType: 'trigger', defaults: { triggerType: 'traffic_limit', channelTg: true } },
-      { id: 'inactive', label: '⚡ Неактивный пользователь', nodeType: 'trigger', defaults: { triggerType: 'inactive', channelTg: true } },
-      { id: 'first_connection', label: '⚡ Первое подключение VPN', nodeType: 'trigger', defaults: { triggerType: 'first_connection', channelTg: true } },
-      { id: 'registration_rw', label: '⚡ Регистрация (REMNAWAVE)', nodeType: 'trigger', defaults: { triggerType: 'registration', channelTg: true } },
-      { id: 'device_added', label: '⚡ Новое устройство', nodeType: 'trigger', defaults: { triggerType: 'device_added', channelTg: true } },
-      { id: 'node_down', label: '⚡ Сервер VPN упал', nodeType: 'trigger', defaults: { triggerType: 'node_down', channelTg: true } },
+      { id: 'registration',     label: '👋 Регистрация',          nodeType: 'trigger', defaults: { triggerType: 'registration', channelTg: true } },
+      { id: 'first_connection', label: '🎉 Первое подключение',   nodeType: 'trigger', defaults: { triggerType: 'first_connection', channelTg: true } },
     ],
   },
   {
-    title: 'Система (код)',
-    icon: '🔧',
+    title: 'Подписка (webhook)',
+    icon: '🔔',
     items: [
-      { id: 'payment', label: '🔧 Клиент оплатил', nodeType: 'trigger', defaults: { triggerType: 'payment', channelTg: true } },
-      { id: 'payment_failed', label: '🔧 Оплата не прошла', nodeType: 'trigger', defaults: { triggerType: 'payment_failed', channelTg: true } },
-      { id: 'referral_registered', label: '🔧 Реферал зарегался', nodeType: 'trigger', defaults: { triggerType: 'referral_registered', channelTg: true } },
-      { id: 'referral_paid', label: '🔧 Реферал оплатил', nodeType: 'trigger', defaults: { triggerType: 'referral_paid', channelTg: true } },
+      { id: 'expiring_3d',   label: '⚠️ Истекает через 3 дня',  nodeType: 'trigger', defaults: { triggerType: 'expiring_3d', channelTg: true } },
+      { id: 'expiring_1d',   label: '🔴 Истекает через 1 день',  nodeType: 'trigger', defaults: { triggerType: 'expiring_1d', channelTg: true } },
+      { id: 'expired',       label: '❌ Подписка истекла',       nodeType: 'trigger', defaults: { triggerType: 'expired', channelTg: true } },
+      { id: 'traffic_80',    label: '📊 Трафик 80%',             nodeType: 'trigger', defaults: { triggerType: 'traffic_80', channelTg: true } },
+      { id: 'traffic_100',   label: '🚫 Трафик исчерпан',        nodeType: 'trigger', defaults: { triggerType: 'traffic_100', channelTg: true } },
     ],
   },
   {
-    title: 'Cron (по расписанию)',
+    title: 'Оплата',
+    icon: '💳',
+    items: [
+      { id: 'payment_success', label: '✅ Оплата прошла',         nodeType: 'trigger', defaults: { triggerType: 'payment_success', channelTg: true } },
+      { id: 'payment_pending', label: '⏳ Оплата не завершена',   nodeType: 'trigger', defaults: { triggerType: 'payment_pending', channelTg: true } },
+      { id: 'referral_paid',   label: '💰 Реферал оплатил',       nodeType: 'trigger', defaults: { triggerType: 'referral_paid', channelTg: true } },
+    ],
+  },
+  {
+    title: 'Безопасность',
+    icon: '🔒',
+    items: [
+      { id: 'new_device',       label: '📱 Новое устройство',     nodeType: 'trigger', defaults: { triggerType: 'new_device', channelTg: true } },
+      { id: 'sub_link_revoked', label: '🔄 Ссылка обновлена',     nodeType: 'trigger', defaults: { triggerType: 'sub_link_revoked', channelTg: true } },
+    ],
+  },
+  {
+    title: '⏰ Проверка состояния',
     icon: '⏰',
     items: [
-      { id: 'traffic_warning', label: '⏰ Трафик на N%', nodeType: 'trigger', defaults: { triggerType: 'traffic_warning', triggerParam: 80, channelTg: true } },
-      { id: 'manual', label: '⏰ Ручной запуск', nodeType: 'trigger', defaults: { triggerType: 'manual', channelTg: true } },
+      { id: 'state_trial',       label: '⏰ Не активировал триал', nodeType: 'trigger', defaults: { triggerType: 'state_trial_not_activated', triggerParam: 1, delayType: 'hours', channelTg: true } },
+      { id: 'state_not_conn',    label: '⏰ Не подключился',       nodeType: 'trigger', defaults: { triggerType: 'state_not_connected', triggerParam: 24, delayType: 'hours', channelTg: true } },
+      { id: 'state_inactive',    label: '⏰ Неактивен N дней',     nodeType: 'trigger', defaults: { triggerType: 'state_inactive', triggerParam: 14, delayType: 'days', channelTg: true } },
+      { id: 'state_winback',     label: '⏰ Winback',              nodeType: 'trigger', defaults: { triggerType: 'state_winback', triggerParam: 7, delayType: 'days', channelTg: true } },
+      { id: 'state_no_refs',     label: '⏰ 0 рефералов',         nodeType: 'trigger', defaults: { triggerType: 'state_no_referrals', triggerParam: 7, delayType: 'days', channelTg: true } },
+      { id: 'state_feedback',    label: '⏰ Запрос отзыва',        nodeType: 'trigger', defaults: { triggerType: 'state_feedback_request', triggerParam: 7, delayType: 'days', channelTg: true } },
+      { id: 'manual',            label: '🖐 Ручной запуск',        nodeType: 'trigger', defaults: { triggerType: 'manual', channelTg: true } },
     ],
   },
 ]
 
+// ── Palette of step nodes (all non-trigger node types) ──
 const STEP_PALETTE: PaletteCategory[] = [
   {
-    title: 'Шаги цепочки',
-    icon: '📨',
+    title: 'Сообщения',
+    icon: '💬',
     items: [
-      { id: 'message', label: 'Сообщение', nodeType: 'message', defaults: { channelTg: true } },
-      { id: 'reminder', label: 'Напоминание', nodeType: 'message', defaults: { channelTg: true, delayType: 'days', delayValue: 3, conditionType: 'not_paid' } },
-      { id: 'discount', label: 'Скидка', nodeType: 'message', defaults: { channelTg: true, delayType: 'days', delayValue: 7, actionType: 'promo_discount', actionValue: '20' } },
-      { id: 'bonus', label: 'Бонус', nodeType: 'message', defaults: { channelTg: true, actionType: 'bonus_days', actionValue: '7' } },
-      { id: 'wait_pay', label: 'Ждать оплату', nodeType: 'message', defaults: { delayType: 'days', delayValue: 7, conditionType: 'not_paid' } },
-      { id: 'stop', label: 'Стоп', nodeType: 'stop', defaults: {} },
+      { id: 'message',     label: '💬 Сообщение',         nodeType: 'message',      defaults: { channelTg: true, tgText: '{name}, ...', tgParseMode: 'Markdown' } },
+      { id: 'notify_admin',label: '🔔 Уведомить админа',  nodeType: 'notify_admin', defaults: { notifyChannel: 'tg' } },
+    ],
+  },
+  {
+    title: 'Логика',
+    icon: '🔀',
+    items: [
+      { id: 'condition', label: '🔀 Условие (TRUE/FALSE)', nodeType: 'condition', defaults: { conditions: { logic: 'AND', rules: [] } } },
+      { id: 'delay',     label: '⏱ Задержка',              nodeType: 'delay',     defaults: { delayType: 'hours', delayValue: 1 } },
+      { id: 'split',     label: '🎲 A/B тест',             nodeType: 'split',     defaults: { splitPercent: 50 } },
+      { id: 'wait_event',label: '⏳ Ждать событие',         nodeType: 'wait_event',defaults: { waitEvent: 'payment_success', waitTimeout: 86400 } },
+    ],
+  },
+  {
+    title: 'Действия',
+    icon: '⚡',
+    items: [
+      { id: 'action_bonus', label: '🎁 Бонус-дни',         nodeType: 'action', defaults: { actionType: 'bonus_days', actionValue: '7' } },
+      { id: 'action_promo', label: '🎫 Промокод-скидка',   nodeType: 'action', defaults: { actionType: 'promo_discount', actionValue: '20' } },
+      { id: 'action_tag',   label: '🏷 Добавить тег',      nodeType: 'action', defaults: { actionType: 'add_tag', actionValue: '' } },
+      { id: 'action_trial', label: '🎁 Активировать триал', nodeType: 'action', defaults: { actionType: 'trial' } },
+    ],
+  },
+  {
+    title: 'Навигация',
+    icon: '🔗',
+    items: [
+      { id: 'goto', label: '🔁 Переход (goto)',  nodeType: 'goto', defaults: { gotoTargetType: 'node' } },
+      { id: 'http', label: '🌐 HTTP запрос',      nodeType: 'http', defaults: { httpMethod: 'POST', httpUrl: '' } },
+      { id: 'stop', label: '⏹ Стоп',              nodeType: 'stop', defaults: {} },
     ],
   },
 ]
