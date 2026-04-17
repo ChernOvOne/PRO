@@ -38,6 +38,7 @@ interface RendererContext {
   proxies?: TelegramProxy[]
   onCta?: () => void
   previewDevice?: 'desktop' | 'tablet' | 'mobile'  // force-hide classes in builder preview
+  disableAnimations?: boolean  // in builder: show blocks instantly without scroll effects
 }
 
 const ICONS: Record<string, any> = {
@@ -52,22 +53,53 @@ function resolveIcon(name: string): any {
 }
 
 // ── Animation hook ────────────────────────────────────────────
-function useInView(delay = 0) {
+// Starts with `inView = false` so the initial paint is the hidden state
+// (prevents flash-of-content before observer fires).
+function useInView(enabled: boolean, delay = 0) {
   const ref = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(false)
   useEffect(() => {
-    if (!ref.current) return
+    if (!enabled || !ref.current) return
     const el = ref.current
+    // If already in viewport at mount time → trigger immediately (with requestAnimationFrame
+    // so the browser commits the initial hidden state first).
+    const rect = el.getBoundingClientRect()
+    const vpH = window.innerHeight || document.documentElement.clientHeight
+    const alreadyVisible = rect.top < vpH * 0.85 && rect.bottom > 0
+    if (alreadyVisible) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (delay > 0) setTimeout(() => setInView(true), delay)
+          else setInView(true)
+        })
+      })
+      return
+    }
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        setTimeout(() => setInView(true), delay)
+        if (delay > 0) setTimeout(() => setInView(true), delay)
+        else setInView(true)
         obs.disconnect()
       }
     }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [delay])
+  }, [enabled, delay])
   return { ref, inView }
+}
+
+// Inline transform for each animation — applied directly so the hidden state
+// is painted on the very first frame (no FOUC).
+function hiddenTransform(anim: string): string | undefined {
+  switch (anim) {
+    case 'fade-up':     return 'translateY(30px)'
+    case 'fade-down':   return 'translateY(-30px)'
+    case 'slide-left':  return 'translateX(30px)'
+    case 'slide-right': return 'translateX(-30px)'
+    case 'zoom-in':     return 'scale(0.92)'
+    case 'zoom-out':    return 'scale(1.08)'
+    default:            return undefined
+  }
 }
 
 // ── Style wrapper ─────────────────────────────────────────────
@@ -75,9 +107,9 @@ function StyledBlock({ block, ctx, children }: {
   block: LandingBlock; ctx: RendererContext; children: React.ReactNode
 }) {
   const style: BlockStyle = (block.data?.style || {}) as BlockStyle
-  const { ref, inView } = useInView(style.animationDelay || 0)
   const anim = style.animation || 'none'
-  const animate = anim !== 'none'
+  const animate = anim !== 'none' && !ctx.disableAnimations
+  const { ref, inView } = useInView(animate, style.animationDelay || 0)
 
   const hideClass = []
   if (style.hideOnMobile && ctx.previewDevice !== 'desktop') hideClass.push('hide-mobile')
@@ -87,15 +119,29 @@ function StyledBlock({ block, ctx, children }: {
     ? `linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)), url(${style.bgImage}) center/cover`
     : style.bgGradient || style.bgColor || undefined
 
+  // Inline animation state — must be set from first render, not from a CSS class
+  // (otherwise there's a visible flash before CSS applies)
+  const animStyle: React.CSSProperties = {}
+  if (animate) {
+    animStyle.transition = 'opacity 0.7s ease-out, transform 0.7s cubic-bezier(.16,1,.3,1)'
+    animStyle.willChange = 'opacity, transform'
+    if (!inView) {
+      animStyle.opacity = 0
+      const t = hiddenTransform(anim)
+      if (t) animStyle.transform = t
+    }
+  }
+
   return (
     <div
       ref={ref}
-      className={`lb-block ${hideClass.join(' ')} ${animate ? `lb-anim-${anim}` : ''} ${animate && inView ? 'lb-in' : ''}`}
+      className={`lb-block ${hideClass.join(' ')}`}
       style={{
         paddingTop:    style.paddingTop !== undefined ? style.paddingTop + 'px' : undefined,
         paddingBottom: style.paddingBottom !== undefined ? style.paddingBottom + 'px' : undefined,
         background:    bg,
         textAlign:     style.textAlign,
+        ...animStyle,
       }}
     >
       {children}

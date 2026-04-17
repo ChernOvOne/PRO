@@ -462,7 +462,7 @@ export default function LandingBuilderPage() {
                      outlineOffset: '-2px',
                      opacity: b.visible ? 1 : 0.4,
                    }}>
-                <BlockRenderer block={b} ctx={{ tariffs, proxies, previewDevice: device, onCta: () => {} }} />
+                <BlockRenderer block={b} ctx={{ tariffs, proxies, previewDevice: device, disableAnimations: true, onCta: () => {} }} />
               </div>
             ))}
           </div>
