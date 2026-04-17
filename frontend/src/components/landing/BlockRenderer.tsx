@@ -1279,7 +1279,15 @@ function NewsBlock({ data, style }: { data: any; style: BlockStyle }) {
                   )}
                 </div>
                 <h3 className="font-semibold mb-2 text-lg leading-snug" style={{ color: 'var(--text-primary)' }}>{n.title}</h3>
-                {n.content && <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{preview(n.content)}</p>}
+                {n.content && <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{preview(n.content)}</p>}
+                {Array.isArray(n.buttons) && n.buttons[0]?.url && (
+                  <a href={n.buttons[0].url} target="_blank" rel="noopener"
+                     className="mt-auto inline-flex items-center gap-1.5 text-sm font-semibold"
+                     style={{ color: 'var(--accent-1)' }}>
+                    {n.buttons[0].label || 'Подробнее'}
+                    <ChevronRight className="w-4 h-4" />
+                  </a>
+                )}
               </div>
             </CardWrap>
           ))}
