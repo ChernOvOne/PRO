@@ -95,11 +95,12 @@ function resolveIcon(name: string): any {
 }
 
 // ── Animation hook ────────────────────────────────────────────
-// Starts with `inView = false` so the initial paint is the hidden state
-// (prevents flash-of-content before observer fires).
+// Starts with `inView = false` when animation is enabled, so the initial
+// paint is the hidden state (prevents flash-of-content before observer fires).
+// When animations are disabled (builder preview), starts as true.
 function useInView(enabled: boolean, delay = 0) {
   const ref = useRef<HTMLDivElement>(null)
-  const [inView, setInView] = useState(false)
+  const [inView, setInView] = useState(!enabled)
   useEffect(() => {
     if (!enabled || !ref.current) return
     const el = ref.current
@@ -216,7 +217,10 @@ function StyledBlock({ block, ctx, children }: {
   const dataAttrs: Record<string, string> = {}
   if (style.cardHover && style.cardHover !== 'none')       dataAttrs['data-card-hover'] = style.cardHover
   if (style.imageEffect && style.imageEffect !== 'none')   dataAttrs['data-image-effect'] = style.imageEffect
-  if (style.staggerChildren) dataAttrs['data-stagger'] = inView ? '1' : '0'
+  // Stagger: show immediately in builder (disableAnimations), otherwise tied to inView
+  if (style.staggerChildren) {
+    dataAttrs['data-stagger'] = (ctx.disableAnimations || inView) ? '1' : '0'
+  }
 
   // Patterns
   const patternClass = style.bgPattern && style.bgPattern !== 'none' ? `lb-bg-${style.bgPattern}` : ''
