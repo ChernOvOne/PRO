@@ -82,9 +82,9 @@ export default function NewsPage() {
               )}
 
               <h2 className="text-lg font-semibold mb-2">{item.title}</h2>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                {item.content}
-              </p>
+              <div className="news-content text-sm leading-relaxed"
+                   style={{ color: 'var(--text-secondary)' }}
+                   dangerouslySetInnerHTML={{ __html: item.content || '' }} />
 
               {item.discountCode && (
                 <div className="mt-4 p-3 rounded-xl flex items-center gap-3"

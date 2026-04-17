@@ -875,7 +875,10 @@ export default function DashboardPage() {
                   </div>
                   <p className="text-sm font-semibold mb-1">{n.title}</p>
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    {n.content?.slice(0, 80)}{n.content?.length > 80 ? '...' : ''}
+                    {(() => {
+                      const stripped = (n.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                      return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped
+                    })()}
                   </p>
                   {n.buttons?.[0]?.url && (
                     <a href={n.buttons[0].url} target="_blank" rel="noopener"
