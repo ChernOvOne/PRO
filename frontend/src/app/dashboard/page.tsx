@@ -863,30 +863,46 @@ export default function DashboardPage() {
                onTouchEnd={handleTouchEnd}>
             <div className={`grid gap-3 ${perPage === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {news.slice(newsIdx, newsIdx + perPage).map((n: any) => (
-                <div key={n.id} className="p-4 rounded-xl transition-all duration-300"
+                <div key={n.id} className="rounded-xl overflow-hidden transition-all duration-300"
                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={n.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}>
-                      {n.type === 'PROMOTION' ? <><Tag className="w-3 h-3 mr-1" />Акция</> : <><Newspaper className="w-3 h-3 mr-1" />Новость</>}
-                    </span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                      {new Date(n.publishedAt).toLocaleDateString('ru')}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold mb-1">{n.title}</p>
-                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    {(() => {
-                      const stripped = (n.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-                      return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped
-                    })()}
-                  </p>
-                  {n.buttons?.[0]?.url && (
-                    <a href={n.buttons[0].url} target="_blank" rel="noopener"
-                       className="inline-flex items-center gap-1 text-xs mt-2.5 font-medium transition-opacity hover:opacity-80"
-                       style={{ color: 'var(--accent-1)' }}>
-                      Подробнее <ExternalLink className="w-3 h-3" />
-                    </a>
+                  {n.imageUrl && (
+                    <div className="w-full overflow-hidden"
+                         style={{
+                           background: 'var(--surface-2)',
+                           aspectRatio: n.imageAspect && n.imageAspect !== 'auto' ? n.imageAspect : '16/9',
+                           maxHeight: n.imageAspect === 'auto' ? '240px' : undefined,
+                         }}>
+                      <img src={n.imageUrl} alt={n.title} className="w-full h-full"
+                           style={{
+                             objectFit: n.imageAspect === 'auto' ? 'contain' : 'cover',
+                             objectPosition: n.imageFocus || '50% 50%',
+                           }} />
+                    </div>
                   )}
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={n.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}>
+                        {n.type === 'PROMOTION' ? <><Tag className="w-3 h-3 mr-1" />Акция</> : <><Newspaper className="w-3 h-3 mr-1" />Новость</>}
+                      </span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {new Date(n.publishedAt).toLocaleDateString('ru')}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold mb-1">{n.title}</p>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      {(() => {
+                        const stripped = (n.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                        return stripped.length > 80 ? stripped.slice(0, 80) + '…' : stripped
+                      })()}
+                    </p>
+                    {n.buttons?.[0]?.url && (
+                      <a href={n.buttons[0].url} target="_blank" rel="noopener"
+                         className="inline-flex items-center gap-1 text-xs mt-2.5 font-medium transition-opacity hover:opacity-80"
+                         style={{ color: 'var(--accent-1)' }}>
+                        Подробнее <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
