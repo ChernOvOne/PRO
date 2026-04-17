@@ -377,15 +377,16 @@
 @media (max-width: 767px) { .lb-block.hide-mobile { display: none; } }
 @media (min-width: 768px) { .lb-block.hide-desktop { display: none; } }
 
-/* ── Landing Builder: cards hover effects ── */
-.lb-card-lift        { transition: transform 0.3s cubic-bezier(.16,1,.3,1), box-shadow 0.3s; will-change: transform; }
-.lb-card-lift:hover  { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
-.lb-card-scale       { transition: transform 0.3s cubic-bezier(.16,1,.3,1); will-change: transform; }
-.lb-card-scale:hover { transform: scale(1.03); }
-.lb-card-glow        { transition: box-shadow 0.3s, border-color 0.3s; }
-.lb-card-glow:hover  { box-shadow: 0 0 40px rgba(6,182,212,0.25); border-color: var(--accent-1) !important; }
-.lb-card-tilt        { transition: transform 0.3s cubic-bezier(.16,1,.3,1); transform-style: preserve-3d; }
-.lb-card-tilt:hover  { transform: perspective(1000px) rotateX(-2deg) rotateY(2deg) translateZ(8px); }
+/* ── Landing Builder: cards hover effects ──
+   Use !important where Tailwind utilities or inline transitionDelay may interfere. */
+.lb-card-lift        { transition: transform 0.3s cubic-bezier(.16,1,.3,1), box-shadow 0.3s !important; will-change: transform; }
+.lb-card-lift:hover  { transform: translateY(-8px) !important; box-shadow: 0 24px 48px rgba(0,0,0,0.25) !important; }
+.lb-card-scale       { transition: transform 0.3s cubic-bezier(.16,1,.3,1) !important; will-change: transform; }
+.lb-card-scale:hover { transform: scale(1.04) !important; }
+.lb-card-glow        { transition: box-shadow 0.3s, border-color 0.3s !important; }
+.lb-card-glow:hover  { box-shadow: 0 0 48px rgba(6,182,212,0.35) !important; border-color: var(--accent-1) !important; }
+.lb-card-tilt        { transition: transform 0.3s cubic-bezier(.16,1,.3,1) !important; transform-style: preserve-3d; }
+.lb-card-tilt:hover  { transform: perspective(1000px) rotateX(-3deg) rotateY(3deg) translateZ(10px) !important; }
 .lb-card-border-glow { position: relative; transition: border-color 0.3s; }
 .lb-card-border-glow::before {
   content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px;
@@ -395,24 +396,34 @@
 }
 .lb-card-border-glow:hover::before { background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); }
 
-/* ── Landing Builder: button hover effects ── */
-.lb-btn { cursor: pointer; border: none; }
-.lb-btn-hover-lift       { transition: transform 0.2s, box-shadow 0.2s; }
-.lb-btn-hover-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(6,182,212,0.3); }
-.lb-btn-hover-scale      { transition: transform 0.2s; }
-.lb-btn-hover-scale:hover{ transform: scale(1.05); }
-.lb-btn-hover-glow       { transition: box-shadow 0.3s; }
-.lb-btn-hover-glow:hover { box-shadow: 0 0 24px rgba(6,182,212,0.5); }
-.lb-btn-hover-shake:hover { animation: lb-shake 0.4s; }
+/* ── Landing Builder: button hover effects ──
+   Use !important to win over Tailwind's .transition-all shorthand. */
+.lb-btn { cursor: pointer; border: none; will-change: transform, box-shadow; }
+.lb-btn-hover-none { transition: none; }
+
+.lb-btn-hover-lift       { transition: transform 0.25s cubic-bezier(.16,1,.3,1), box-shadow 0.25s !important; }
+.lb-btn-hover-lift:hover { transform: translateY(-4px) !important; box-shadow: 0 14px 30px rgba(6,182,212,0.4) !important; }
+
+.lb-btn-hover-scale      { transition: transform 0.25s cubic-bezier(.16,1,.3,1) !important; }
+.lb-btn-hover-scale:hover{ transform: scale(1.07) !important; }
+
+.lb-btn-hover-glow       { transition: box-shadow 0.3s !important; }
+.lb-btn-hover-glow:hover { box-shadow: 0 0 32px rgba(6,182,212,0.7), 0 0 12px rgba(6,182,212,0.4) !important; }
+
+.lb-btn-hover-shake      { transition: none !important; }
+.lb-btn-hover-shake:hover { animation: lb-shake 0.4s !important; }
+
 .lb-btn-hover-shine      { position: relative; overflow: hidden; }
 .lb-btn-hover-shine::after {
   content:''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
-  transition: left 0.6s;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  transition: left 0.7s;
+  pointer-events: none;
 }
 .lb-btn-hover-shine:hover::after { left: 100%; }
-.lb-btn-hover-gradient-shift { background-size: 200% 200%; transition: background-position 0.4s; }
-.lb-btn-hover-gradient-shift:hover { background-position: 100% 100%; }
+
+.lb-btn-hover-gradient-shift { background-size: 200% 200% !important; transition: background-position 0.5s !important; }
+.lb-btn-hover-gradient-shift:hover { background-position: 100% 100% !important; }
 
 @keyframes lb-shake {
   0%, 100% { transform: translateX(0); }

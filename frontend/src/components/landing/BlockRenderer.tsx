@@ -889,11 +889,9 @@ function TwoColumnBlock({ data, style, onCta }: { data: any; style: BlockStyle; 
             </ul>
           )}
           {data.ctaText && (
-            <button onClick={onCta}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-base font-semibold text-white"
-                    style={{ background: 'var(--accent-gradient)' }}>
-              {data.ctaText} <ChevronRight className="w-4 h-4" />
-            </button>
+            <BrandButton onClick={onCta} style={style} icon={<ChevronRight className="w-4 h-4" />}>
+              {data.ctaText}
+            </BrandButton>
           )}
         </div>
         <div className={imageRight ? 'order-2' : 'order-2 md:order-1'}>
@@ -1017,7 +1015,7 @@ function ContactFormBlock({ data, style }: { data: any; style: BlockStyle }) {
                     className="w-full px-4 py-3 rounded-xl text-sm resize-none"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
           <button type="submit" disabled={sending}
-                  className="w-full py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                  className={`w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-60 lb-btn lb-btn-hover-${style.buttonHover || 'lift'}`}
                   style={{ background: 'var(--accent-gradient)' }}>
             {sending ? 'Отправка...' : (data.buttonText || 'Отправить')}
           </button>
@@ -1055,7 +1053,7 @@ function NewsletterBlock({ data, style }: { data: any; style: BlockStyle }) {
                    className="flex-1 px-4 py-3 rounded-xl text-sm"
                    style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
             <button type="submit"
-                    className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
+                    className={`px-6 py-3 rounded-xl text-sm font-semibold text-white lb-btn lb-btn-hover-${style.buttonHover || 'lift'}`}
                     style={{ background: 'var(--accent-gradient)' }}>
               {data.buttonText || 'Подписаться'}
             </button>
@@ -1108,7 +1106,8 @@ function PricingTableBlock({ data, style, onCta }: { data: any; style: BlockStyl
                 <td />
                 {plans.map((p, i) => (
                   <td key={i} className="p-4 text-center">
-                    <button onClick={onCta} className="px-4 py-2 rounded-lg text-xs font-semibold text-white"
+                    <button onClick={onCta}
+                            className={`px-4 py-2 rounded-lg text-xs font-semibold lb-btn lb-btn-hover-${style.buttonHover || 'lift'}`}
                             style={{ background: p.highlighted ? 'var(--accent-gradient)' : 'var(--surface-2)', color: p.highlighted ? '#fff' : 'var(--text-primary)' }}>
                       {p.buttonText || 'Выбрать'}
                     </button>
@@ -1135,7 +1134,7 @@ function TelegramWidgetBlock({ data, style }: { data: any; style: BlockStyle }) 
         <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>{data.subtitle || 'Новости, инструкции, акции'}</p>
         {channel && (
           <a href={`https://t.me/${channel}`} target="_blank" rel="noopener"
-             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white"
+             className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white lb-btn lb-btn-hover-${style.buttonHover || 'lift'}`}
              style={{ background: '#2aabee' }}>
             <Send className="w-4 h-4" /> Открыть @{channel}
           </a>
