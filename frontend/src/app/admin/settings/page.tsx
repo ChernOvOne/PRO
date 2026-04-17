@@ -174,6 +174,18 @@ const TABS: TabDef[] = [
       { key: 'privacy_url', label: 'URL политики', type: 'url', placeholder: '/privacy' },
       { key: 'brand_color', label: 'Основной цвет бренда', type: 'color' },
       { key: 'brand_color_secondary', label: 'Дополнительный цвет', type: 'color' },
+      { key: 'brand_font', label: 'Шрифт (Google Font)', type: 'select', options: [
+        { value: 'Inter', label: 'Inter (по умолчанию)' },
+        { value: 'Manrope', label: 'Manrope' },
+        { value: 'Montserrat', label: 'Montserrat' },
+        { value: 'Poppins', label: 'Poppins' },
+        { value: 'Nunito', label: 'Nunito' },
+        { value: 'Roboto', label: 'Roboto' },
+        { value: 'Open Sans', label: 'Open Sans' },
+        { value: 'Rubik', label: 'Rubik' },
+        { value: 'Raleway', label: 'Raleway' },
+      ]},
+      { key: 'brand_radius', label: 'Скругление углов (px)', type: 'number', placeholder: '12' },
       { key: 'default_language', label: 'Язык', type: 'select', options: [
         { value: 'ru', label: 'Русский' }, { value: 'en', label: 'English' },
       ]},

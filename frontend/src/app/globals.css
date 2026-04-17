@@ -371,3 +371,33 @@
 @media (min-width: 769px) {
   .mobile-bottom-nav { display: none !important; }
 }
+
+/* ── Landing Builder: block animations & visibility helpers ── */
+.lb-block { will-change: opacity, transform; }
+
+/* Hide on breakpoints */
+@media (max-width: 767px) { .lb-block.hide-mobile { display: none; } }
+@media (min-width: 768px) { .lb-block.hide-desktop { display: none; } }
+
+/* Initial state — invisible, waits for .lb-in */
+.lb-anim-fade-in,
+.lb-anim-fade-up,
+.lb-anim-fade-down,
+.lb-anim-slide-left,
+.lb-anim-slide-right,
+.lb-anim-zoom-in,
+.lb-anim-zoom-out {
+  opacity: 0;
+  transition: opacity 0.7s ease-out, transform 0.7s cubic-bezier(.16,1,.3,1);
+}
+.lb-anim-fade-up      { transform: translateY(30px); }
+.lb-anim-fade-down    { transform: translateY(-30px); }
+.lb-anim-slide-left   { transform: translateX(30px); }
+.lb-anim-slide-right  { transform: translateX(-30px); }
+.lb-anim-zoom-in      { transform: scale(0.92); }
+.lb-anim-zoom-out     { transform: scale(1.08); }
+
+.lb-in {
+  opacity: 1 !important;
+  transform: none !important;
+}

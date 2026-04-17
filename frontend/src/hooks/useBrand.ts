@@ -10,6 +10,8 @@ export interface Brand {
   app_favicon_url?: string
   brand_color: string
   brand_color_secondary: string
+  brand_font?: string
+  brand_radius?: string
   currency_symbol: string
   domain?: string
   app_url?: string
