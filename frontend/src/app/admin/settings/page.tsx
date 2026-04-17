@@ -172,6 +172,15 @@ const TABS: TabDef[] = [
       { key: 'footer_text', label: 'Текст футера', type: 'text', placeholder: 'HIDEYOU VPN' },
       { key: 'terms_url', label: 'URL условий', type: 'url', placeholder: '/terms' },
       { key: 'privacy_url', label: 'URL политики', type: 'url', placeholder: '/privacy' },
+      { key: 'brand_palette_preset', label: 'Цветовая палитра', type: 'select', options: [
+        { value: '',          label: 'Своя (ниже)' },
+        { value: 'ocean',     label: '🌊 Ocean (голубой/бирюзовый)' },
+        { value: 'sunset',    label: '🌅 Sunset (оранжевый/розовый)' },
+        { value: 'midnight',  label: '🌌 Midnight (фиолет/индиго)' },
+        { value: 'forest',    label: '🌲 Forest (зелёный/бирюзовый)' },
+        { value: 'monochrome',label: '⚫ Monochrome (чёрно-белый)' },
+        { value: 'fire',      label: '🔥 Fire (красный/оранжевый)' },
+      ]},
       { key: 'brand_color', label: 'Основной цвет бренда', type: 'color' },
       { key: 'brand_color_secondary', label: 'Дополнительный цвет', type: 'color' },
       { key: 'brand_font', label: 'Шрифт (Google Font)', type: 'select', options: [

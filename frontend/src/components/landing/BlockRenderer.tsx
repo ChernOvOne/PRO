@@ -13,16 +13,58 @@ import type { Tariff, TelegramProxy } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────────
 export interface BlockStyle {
-  paddingTop?: number           // px
-  paddingBottom?: number        // px
-  bgColor?: string              // css color
-  bgGradient?: string           // e.g. "linear-gradient(135deg, #06b6d4, #8b5cf6)"
-  bgImage?: string              // url
+  // Spacing
+  paddingTop?: number
+  paddingBottom?: number
+
+  // Background
+  bgColor?: string
+  bgGradient?: string
+  bgImage?: string
+  bgAnimated?: boolean                        // moving gradient
+  bgPattern?: 'none' | 'dots' | 'grid' | 'noise'
+  bgOverlay?: string                           // color + "alpha" — applied on top
+
+  // Container
+  containerWidth?: 'narrow' | 'normal' | 'wide' | 'full'
   textAlign?: 'left' | 'center' | 'right'
+
+  // Visibility
   hideOnMobile?: boolean
   hideOnDesktop?: boolean
+
+  // Animation (entrance)
   animation?: 'none' | 'fade-in' | 'fade-up' | 'fade-down' | 'slide-left' | 'slide-right' | 'zoom-in' | 'zoom-out'
-  animationDelay?: number       // ms
+  animationDelay?: number
+  staggerChildren?: boolean                    // items appear one-by-one
+
+  // Section dividers
+  dividerTop?: 'none' | 'wave' | 'triangle' | 'curve' | 'tilt' | 'stairs'
+  dividerBottom?: 'none' | 'wave' | 'triangle' | 'curve' | 'tilt' | 'stairs'
+  dividerColor?: string                        // color for divider SVG fill
+
+  // Title styling
+  titleSize?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
+  titleWeight?: 'normal' | 'medium' | 'semibold' | 'bold' | 'black'
+  titleGradient?: boolean
+  titleColor?: string
+
+  // Cards (for items inside features/reviews/team/steps)
+  cardHover?: 'none' | 'lift' | 'glow' | 'scale' | 'tilt' | 'border-glow'
+
+  // Decorative
+  sectionNumber?: string                       // "01", "02"…
+  sectionNumberColor?: string
+
+  // Image effects (for image/logo_wall/team blocks)
+  imageEffect?: 'none' | 'grayscale-hover' | 'blur-hover' | 'zoom-hover' | 'rotate-hover'
+  imageRounded?: number                        // px
+
+  // Button overrides per block (inherits from global brand settings)
+  buttonVariant?: 'solid' | 'gradient' | 'outline' | 'ghost' | 'glass' | 'soft'
+  buttonShape?: 'rounded' | 'pill' | 'square'
+  buttonSize?: 'sm' | 'md' | 'lg' | 'xl'
+  buttonHover?: 'none' | 'lift' | 'glow' | 'scale' | 'shine' | 'shake' | 'gradient-shift'
 }
 
 export interface LandingBlock {
@@ -102,6 +144,34 @@ function hiddenTransform(anim: string): string | undefined {
   }
 }
 
+// ── Section dividers (SVG) ────────────────────────────────────
+function SectionDivider({ shape, color, position }: {
+  shape: string; color: string; position: 'top' | 'bottom'
+}) {
+  if (!shape || shape === 'none') return null
+  const rotate = position === 'top' ? 'rotate(180deg)' : 'none'
+  const style: React.CSSProperties = {
+    position: 'absolute', left: 0, right: 0, width: '100%',
+    height: '60px', display: 'block', pointerEvents: 'none',
+    transform: rotate, zIndex: 1,
+    [position]: '-1px',
+  } as any
+
+  const paths: Record<string, React.ReactNode> = {
+    wave:     <path d="M0,60 C240,120 480,0 720,40 C960,80 1200,20 1440,60 L1440,100 L0,100 Z" fill={color} />,
+    triangle: <path d="M0,60 L720,0 L1440,60 L1440,100 L0,100 Z" fill={color} />,
+    curve:    <path d="M0,60 Q720,0 1440,60 L1440,100 L0,100 Z" fill={color} />,
+    tilt:     <path d="M0,100 L1440,40 L1440,100 Z" fill={color} />,
+    stairs:   <path d="M0,100 L0,60 L360,60 L360,40 L720,40 L720,20 L1080,20 L1080,0 L1440,0 L1440,100 Z" fill={color} />,
+  }
+
+  return (
+    <svg viewBox="0 0 1440 100" preserveAspectRatio="none" style={style}>
+      {paths[shape]}
+    </svg>
+  )
+}
+
 // ── Style wrapper ─────────────────────────────────────────────
 function StyledBlock({ block, ctx, children }: {
   block: LandingBlock; ctx: RendererContext; children: React.ReactNode
@@ -115,12 +185,17 @@ function StyledBlock({ block, ctx, children }: {
   if (style.hideOnMobile && ctx.previewDevice !== 'desktop') hideClass.push('hide-mobile')
   if (style.hideOnDesktop && ctx.previewDevice !== 'mobile') hideClass.push('hide-desktop')
 
+  // Container width map
+  const widthMap: Record<string, string> = {
+    narrow: 'max-w-[640px]', normal: 'max-w-[1024px]', wide: 'max-w-[1280px]', full: '',
+  }
+  const widthClass = widthMap[style.containerWidth || ''] ?? ''
+
+  // Background layers
   const bg = style.bgImage
     ? `linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)), url(${style.bgImage}) center/cover`
     : style.bgGradient || style.bgColor || undefined
 
-  // Inline animation state — must be set from first render, not from a CSS class
-  // (otherwise there's a visible flash before CSS applies)
   const animStyle: React.CSSProperties = {}
   if (animate) {
     animStyle.transition = 'opacity 0.7s ease-out, transform 0.7s cubic-bezier(.16,1,.3,1)'
@@ -132,10 +207,21 @@ function StyledBlock({ block, ctx, children }: {
     }
   }
 
+  // Data attributes propagate styling to child components via CSS
+  const dataAttrs = {
+    'data-card-hover': style.cardHover || 'none',
+    'data-stagger': style.staggerChildren && inView ? '1' : '0',
+    'data-image-effect': style.imageEffect || 'none',
+  } as any
+
+  // Patterns
+  const patternClass = style.bgPattern && style.bgPattern !== 'none' ? `lb-bg-${style.bgPattern}` : ''
+  const animatedBgClass = style.bgAnimated ? 'lb-bg-animated' : ''
+
   return (
     <div
       ref={ref}
-      className={`lb-block ${hideClass.join(' ')}`}
+      className={`lb-block relative ${hideClass.join(' ')} ${patternClass} ${animatedBgClass}`}
       style={{
         paddingTop:    style.paddingTop !== undefined ? style.paddingTop + 'px' : undefined,
         paddingBottom: style.paddingBottom !== undefined ? style.paddingBottom + 'px' : undefined,
@@ -143,70 +229,215 @@ function StyledBlock({ block, ctx, children }: {
         textAlign:     style.textAlign,
         ...animStyle,
       }}
+      {...dataAttrs}
     >
-      {children}
+      <SectionDivider shape={style.dividerTop || 'none'} color={style.dividerColor || 'var(--surface-0)'} position="top" />
+      {/* Background overlay */}
+      {style.bgOverlay && (
+        <div className="absolute inset-0 pointer-events-none" style={{ background: style.bgOverlay }} />
+      )}
+      {/* Section number decoration */}
+      {style.sectionNumber && (
+        <div className="absolute top-8 left-8 text-7xl md:text-8xl font-black opacity-10 pointer-events-none select-none z-0"
+             style={{ color: style.sectionNumberColor || 'var(--accent-1)' }}>
+          {style.sectionNumber}
+        </div>
+      )}
+      <div className={widthClass ? `${widthClass} mx-auto relative z-10` : 'relative z-10'}>
+        {children}
+      </div>
+      <SectionDivider shape={style.dividerBottom || 'none'} color={style.dividerColor || 'var(--surface-0)'} position="bottom" />
     </div>
+  )
+}
+
+// ── Brand button component ─────────────────────────────────────
+// Supports 6 variants, 4 sizes, 3 shapes, 7 hover effects. Used by all CTA-like blocks.
+export function BrandButton({ onClick, children, icon, style, block }: {
+  onClick?: () => void
+  children: React.ReactNode
+  icon?: React.ReactNode
+  style?: BlockStyle
+  block?: any
+}) {
+  const s = style || {}
+  const variant = s.buttonVariant || 'gradient'
+  const size    = s.buttonSize    || 'md'
+  const shape   = s.buttonShape   || 'rounded'
+  const hover   = s.buttonHover   || 'lift'
+
+  const sizeMap = {
+    sm: 'px-4 py-2 text-sm',
+    md: 'px-6 py-2.5 text-base',
+    lg: 'px-8 py-3.5 text-base',
+    xl: 'px-10 py-4 text-lg',
+  }
+  const shapeMap = { rounded: 'rounded-xl', pill: 'rounded-full', square: 'rounded-md' }
+
+  const variantStyle: React.CSSProperties = {}
+  let variantCls = 'text-white'
+  switch (variant) {
+    case 'gradient': variantStyle.background = 'var(--accent-gradient)'; break
+    case 'solid':    variantStyle.background = 'var(--accent-1)'; break
+    case 'outline':  variantCls = ''; variantStyle.color = 'var(--accent-1)'; variantStyle.background = 'transparent'; variantStyle.border = '2px solid var(--accent-1)'; break
+    case 'ghost':    variantCls = ''; variantStyle.color = 'var(--accent-1)'; variantStyle.background = 'rgba(6,182,212,0.08)'; break
+    case 'glass':    variantCls = ''; variantStyle.color = 'var(--text-primary)'; variantStyle.background = 'rgba(255,255,255,0.08)'; variantStyle.backdropFilter = 'blur(12px)'; variantStyle.border = '1px solid rgba(255,255,255,0.12)'; break
+    case 'soft':     variantCls = ''; variantStyle.color = 'var(--accent-1)'; variantStyle.background = 'rgba(6,182,212,0.15)'; break
+  }
+
+  return (
+    <button onClick={onClick}
+            className={`inline-flex items-center gap-2 font-semibold transition-all lb-btn lb-btn-hover-${hover} ${sizeMap[size]} ${shapeMap[shape]} ${variantCls}`}
+            style={variantStyle}>
+      {children}
+      {icon}
+    </button>
+  )
+}
+
+// ── Card wrapper (applies hover effect to item cards) ─────────
+export function CardWrap({ children, className = '', style, cardHover }: {
+  children: React.ReactNode; className?: string; style?: React.CSSProperties; cardHover?: string
+}) {
+  const hc = cardHover && cardHover !== 'none' ? `lb-card-${cardHover}` : ''
+  return <div className={`${className} ${hc}`} style={style}>{children}</div>
+}
+
+// ── Counter (animates from 0 to value when in view) ───────────
+function Counter({ value, className, style }: { value: string; className?: string; style?: React.CSSProperties }) {
+  const { ref, inView } = useInView(true)
+  // Parse value — extract number and suffix (e.g. "10К+" → 10, "К+")
+  const match = value.match(/^([\d.]+)\s*(.*)$/)
+  const target = match ? parseFloat(match[1]) : 0
+  const suffix = match ? match[2] : ''
+  const [cur, setCur] = useState(target === 0 ? 0 : 0)
+
+  useEffect(() => {
+    if (!inView) return
+    const duration = 1400
+    const start = performance.now()
+    let raf = 0
+    const tick = () => {
+      const progress = Math.min(1, (performance.now() - start) / duration)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setCur(target * eased)
+      if (progress < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [inView, target])
+
+  const display = Number.isInteger(target) ? Math.round(cur) : cur.toFixed(1)
+  return (
+    <span ref={ref as any} className={className} style={style}>
+      {target > 0 ? `${display}${suffix}` : value}
+    </span>
+  )
+}
+
+// ── Title helper (applies titleSize / weight / gradient) ──────
+function StyledTitle({ style, text, className = '' }: { style?: BlockStyle; text?: string; className?: string }) {
+  if (!text) return null
+  const s = style || {}
+  const sizeMap = {
+    sm:   'text-2xl md:text-3xl',
+    md:   'text-3xl md:text-4xl',
+    lg:   'text-4xl md:text-5xl',
+    xl:   'text-5xl md:text-6xl',
+    '2xl':'text-6xl md:text-7xl',
+    '3xl':'text-7xl md:text-8xl',
+  }
+  const weightMap = {
+    normal: 'font-normal', medium: 'font-medium', semibold: 'font-semibold',
+    bold: 'font-bold', black: 'font-black',
+  }
+  const sizeCls   = sizeMap[s.titleSize || 'md']
+  const weightCls = weightMap[s.titleWeight || 'bold']
+  const gradCls   = s.titleGradient ? 'lb-text-gradient' : ''
+  const color     = s.titleColor && !s.titleGradient ? s.titleColor : undefined
+
+  return (
+    <h2 className={`${sizeCls} ${weightCls} ${gradCls} ${className}`}
+        style={{ color: color || (s.titleGradient ? undefined : 'var(--text-primary)') }}>
+      {text}
+    </h2>
   )
 }
 
 // ── Main dispatcher ───────────────────────────────────────────
 export function BlockRenderer({ block, ctx }: { block: LandingBlock; ctx: RendererContext }) {
   const d = block.data || {}
+  const s: BlockStyle = (d.style || {}) as BlockStyle
   let content: React.ReactNode = null
   switch (block.type) {
-    case 'hero':          content = <HeroBlock data={d} onCta={ctx.onCta} />; break
-    case 'features':      content = <FeaturesBlock data={d} />; break
-    case 'tariffs':       content = <TariffsBlock data={d} tariffs={ctx.tariffs || []} onCta={ctx.onCta} />; break
-    case 'faq':           content = <FaqBlock data={d} />; break
-    case 'reviews':       content = <ReviewsBlock data={d} />; break
-    case 'stats':         content = <StatsBlock data={d} />; break
-    case 'cta':           content = <CtaBlock data={d} onCta={ctx.onCta} />; break
-    case 'proxies':       content = <ProxiesBlock data={d} proxies={ctx.proxies || []} />; break
-    case 'steps':         content = <StepsBlock data={d} />; break
+    case 'hero':          content = <HeroBlock data={d} style={s} onCta={ctx.onCta} />; break
+    case 'features':      content = <FeaturesBlock data={d} style={s} />; break
+    case 'tariffs':       content = <TariffsBlock data={d} style={s} tariffs={ctx.tariffs || []} onCta={ctx.onCta} />; break
+    case 'faq':           content = <FaqBlock data={d} style={s} />; break
+    case 'reviews':       content = <ReviewsBlock data={d} style={s} />; break
+    case 'stats':         content = <StatsBlock data={d} style={s} />; break
+    case 'cta':           content = <CtaBlock data={d} style={s} onCta={ctx.onCta} />; break
+    case 'proxies':       content = <ProxiesBlock data={d} style={s} proxies={ctx.proxies || []} />; break
+    case 'steps':         content = <StepsBlock data={d} style={s} />; break
     case 'custom_html':   content = <CustomHtmlBlock data={d} />; break
     case 'spacer':        content = <div style={{ height: (d.height || 40) + 'px' }} />; break
-    case 'image':         content = <ImageBlock data={d} />; break
-    case 'countdown':     content = <CountdownBlock data={d} />; break
-    case 'video':         content = <VideoBlock data={d} />; break
-    case 'logo_wall':     content = <LogoWallBlock data={d} />; break
-    case 'two_column':    content = <TwoColumnBlock data={d} onCta={ctx.onCta} />; break
-    case 'team':          content = <TeamBlock data={d} />; break
-    case 'timeline':      content = <TimelineBlock data={d} />; break
-    case 'contact_form':  content = <ContactFormBlock data={d} />; break
-    case 'newsletter':    content = <NewsletterBlock data={d} />; break
-    case 'pricing_table': content = <PricingTableBlock data={d} onCta={ctx.onCta} />; break
-    case 'telegram_widget': content = <TelegramWidgetBlock data={d} />; break
+    case 'image':         content = <ImageBlock data={d} style={s} />; break
+    case 'countdown':     content = <CountdownBlock data={d} style={s} />; break
+    case 'video':         content = <VideoBlock data={d} style={s} />; break
+    case 'logo_wall':     content = <LogoWallBlock data={d} style={s} />; break
+    case 'two_column':    content = <TwoColumnBlock data={d} style={s} onCta={ctx.onCta} />; break
+    case 'team':          content = <TeamBlock data={d} style={s} />; break
+    case 'timeline':      content = <TimelineBlock data={d} style={s} />; break
+    case 'contact_form':  content = <ContactFormBlock data={d} style={s} />; break
+    case 'newsletter':    content = <NewsletterBlock data={d} style={s} />; break
+    case 'pricing_table': content = <PricingTableBlock data={d} style={s} onCta={ctx.onCta} />; break
+    case 'telegram_widget': content = <TelegramWidgetBlock data={d} style={s} />; break
     default: return null
   }
   return <StyledBlock block={block} ctx={ctx}>{content}</StyledBlock>
 }
 
 // ═══ 1. Hero ═════════════════════════════════════════════════
-function HeroBlock({ data, onCta }: { data: any; onCta?: () => void }) {
+function HeroBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   const align = data.align || 'center'
+  const variant = data.variant || 'center'   // center / split / left-image-right
+  const titleSize = { ...style, titleSize: style.titleSize || 'xl' } as BlockStyle
+
+  if (variant === 'split' && data.image) {
+    return (
+      <section className="relative z-10 px-6 lg:px-16 py-20 overflow-hidden">
+        <div className="grid md:grid-cols-2 gap-10 items-center">
+          <div>
+            {data.badge && <div className="inline-block px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>{data.badge}</div>}
+            <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-4" />
+            {data.subtitle && <p className="text-lg md:text-xl mb-8" style={{ color: 'var(--text-secondary)' }}>{data.subtitle}</p>}
+            {data.ctaText && <BrandButton onClick={onCta} style={style} icon={<ChevronRight className="w-4 h-4" />}>{data.ctaText}</BrandButton>}
+          </div>
+          <img src={data.image} alt={data.title} className="w-full rounded-2xl" />
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="relative z-10 px-6 lg:px-16 py-20 overflow-hidden">
-      <div className={`max-w-5xl mx-auto ${align === 'center' ? 'text-center' : ''}`}>
+      <div className={align === 'center' ? 'text-center' : ''}>
         {data.badge && (
           <div className="inline-block px-4 py-1.5 rounded-full text-sm font-medium mb-6"
                style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>
             {data.badge}
           </div>
         )}
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4" style={{ color: 'var(--text-primary)' }}>
-          {data.title || 'Заголовок'}
-        </h1>
+        <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-4" />
         {data.subtitle && (
           <p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
             {data.subtitle}
           </p>
         )}
         {data.ctaText && (
-          <button onClick={onCta}
-                  className="inline-flex items-center gap-2 px-8 py-3 rounded-xl text-base font-semibold text-white transition-transform hover:scale-105"
-                  style={{ background: 'var(--accent-gradient)' }}>
-            {data.ctaText} <ChevronRight className="w-4 h-4" />
-          </button>
+          <BrandButton onClick={onCta} style={style} icon={<ChevronRight className="w-4 h-4" />}>
+            {data.ctaText}
+          </BrandButton>
         )}
       </div>
     </section>
@@ -214,28 +445,47 @@ function HeroBlock({ data, onCta }: { data: any; onCta?: () => void }) {
 }
 
 // ═══ 2. Features ═════════════════════════════════════════════
-function FeaturesBlock({ data }: { data: any }) {
+function FeaturesBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   const cols = data.columns || 3
+  const variant = data.variant || 'cards'      // cards / borderless / icons-top / icons-left / bordered
+  const iconsLeft = variant === 'icons-left'
+  const stagger = style.staggerChildren
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
-      <div className="max-w-6xl mx-auto">
+      <div>
         {data.title && (
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-12" style={{ color: 'var(--text-primary)' }}>
-            {data.title}
-          </h2>
+          <div className="text-center mb-12">
+            <StyledTitle style={style} text={data.title} />
+          </div>
         )}
         <div className={`grid gap-6 ${cols === 2 ? 'md:grid-cols-2' : cols === 4 ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'}`}>
           {items.map((item, i) => {
             const Icon = resolveIcon(item.icon)
+            const cardStyle: React.CSSProperties = {}
+            let cardCls = 'p-6 rounded-2xl'
+            if (variant === 'cards' || variant === 'bordered') {
+              cardStyle.background = variant === 'bordered' ? 'transparent' : 'var(--surface-1)'
+              cardStyle.border = '1px solid var(--glass-border)'
+            } else if (variant === 'borderless') {
+              cardStyle.background = 'transparent'
+            }
+            if (stagger) {
+              cardStyle.transition = 'opacity 0.6s, transform 0.6s'
+              cardStyle.transitionDelay = (i * 100) + 'ms'
+            }
             return (
-              <div key={i} className="p-6 rounded-2xl" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ background: 'rgba(6,182,212,0.12)' }}>
+              <CardWrap key={i} className={`${cardCls} ${iconsLeft ? 'flex gap-4 items-start' : ''}`}
+                        style={cardStyle} cardHover={style.cardHover}>
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${iconsLeft ? '' : 'mb-4'}`}
+                     style={{ background: 'rgba(6,182,212,0.12)' }}>
                   <Icon className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
                 </div>
-                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
-                {item.text && <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.text}</p>}
-              </div>
+                <div className={iconsLeft ? 'flex-1' : ''}>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
+                  {item.text && <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.text}</p>}
+                </div>
+              </CardWrap>
             )
           })}
         </div>
@@ -245,33 +495,38 @@ function FeaturesBlock({ data }: { data: any }) {
 }
 
 // ═══ 3. Tariffs ══════════════════════════════════════════════
-function TariffsBlock({ data, tariffs, onCta }: { data: any; tariffs: Tariff[]; onCta?: () => void }) {
+function TariffsBlock({ data, style, tariffs, onCta }: { data: any; style: BlockStyle; tariffs: Tariff[]; onCta?: () => void }) {
   const showIds: string[] = Array.isArray(data.tariffIds) ? data.tariffIds : []
   const visible = showIds.length > 0 ? tariffs.filter(t => showIds.includes(t.id)) : tariffs
   const highlightId = data.highlightId
   return (
     <section id="tariffs" className="relative z-10 px-6 lg:px-16 py-16">
-      <div className="max-w-6xl mx-auto">
-        {data.title && <h2 className="text-3xl md:text-4xl font-bold text-center mb-4" style={{ color: 'var(--text-primary)' }}>{data.title}</h2>}
+      <div>
+        {data.title && <div className="text-center mb-4"><StyledTitle style={style} text={data.title} /></div>}
         {data.subtitle && <p className="text-center mb-12" style={{ color: 'var(--text-secondary)' }}>{data.subtitle}</p>}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {visible.map(t => {
+          {visible.map((t, i) => {
             const isHighlighted = t.id === highlightId || t.isFeatured
+            const cardStyle: React.CSSProperties = {
+              background: 'var(--surface-1)',
+              border: isHighlighted ? '2px solid var(--accent-1)' : '1px solid var(--glass-border)',
+              boxShadow: isHighlighted ? '0 10px 40px rgba(6,182,212,0.15)' : 'none',
+            }
+            if (style.staggerChildren) {
+              cardStyle.transitionDelay = (i * 80) + 'ms'
+            }
             return (
-              <div key={t.id} className="p-6 rounded-2xl flex flex-col"
-                   style={{
-                     background: 'var(--surface-1)',
-                     border: isHighlighted ? '2px solid var(--accent-1)' : '1px solid var(--glass-border)',
-                     boxShadow: isHighlighted ? '0 10px 40px rgba(6,182,212,0.15)' : 'none',
-                   }}>
+              <CardWrap key={t.id} className="p-6 rounded-2xl flex flex-col" style={cardStyle} cardHover={style.cardHover}>
                 {isHighlighted && (
                   <div className="inline-block self-start px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider mb-3" style={{ background: 'rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>Популярный</div>
                 )}
                 <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t.name}</h3>
                 {t.description && <p className="text-sm mb-4" style={{ color: 'var(--text-tertiary)' }}>{t.description}</p>}
                 <div className="text-3xl font-bold mb-5" style={{ color: 'var(--text-primary)' }}>{Number(t.priceRub).toLocaleString('ru-RU')} ₽<span className="text-sm font-normal" style={{ color: 'var(--text-tertiary)' }}>/{t.durationDays} дн</span></div>
-                <button onClick={onCta} className="mt-auto px-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: 'var(--accent-gradient)' }}>Выбрать</button>
-              </div>
+                <div className="mt-auto">
+                  <BrandButton onClick={onCta} style={style}>Выбрать</BrandButton>
+                </div>
+              </CardWrap>
             )
           })}
         </div>
@@ -281,23 +536,30 @@ function TariffsBlock({ data, tariffs, onCta }: { data: any; tariffs: Tariff[]; 
 }
 
 // ═══ 4. FAQ ══════════════════════════════════════════════════
-function FaqBlock({ data }: { data: any }) {
+function FaqBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   const [openIdx, setOpenIdx] = useState<number | null>(null)
+  const variant = data.variant || 'boxes'   // boxes / lines
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
       <div className="max-w-3xl mx-auto">
-        {data.title && <h2 className="text-3xl md:text-4xl font-bold text-center mb-10" style={{ color: 'var(--text-primary)' }}>{data.title}</h2>}
+        {data.title && <div className="text-center mb-10"><StyledTitle style={style} text={data.title} /></div>}
         <div className="space-y-3">
-          {items.map((item, i) => (
-            <div key={i} className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
-              <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left">
-                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{item.q}</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${openIdx === i ? 'rotate-180' : ''}`} style={{ color: 'var(--text-tertiary)' }} />
-              </button>
-              {openIdx === i && <div className="px-5 pb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.a}</div>}
-            </div>
-          ))}
+          {items.map((item, i) => {
+            const cardStyle: React.CSSProperties = variant === 'boxes'
+              ? { background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }
+              : { borderBottom: '1px solid var(--glass-border)' }
+            const cardCls = variant === 'boxes' ? 'rounded-2xl overflow-hidden' : ''
+            return (
+              <CardWrap key={i} className={cardCls} style={cardStyle} cardHover={variant === 'boxes' ? style.cardHover : 'none'}>
+                <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left">
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{item.q}</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${openIdx === i ? 'rotate-180' : ''}`} style={{ color: 'var(--text-tertiary)' }} />
+                </button>
+                {openIdx === i && <div className="px-5 pb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>{item.a}</div>}
+              </CardWrap>
+            )
+          })}
         </div>
       </div>
     </section>
@@ -305,24 +567,28 @@ function FaqBlock({ data }: { data: any }) {
 }
 
 // ═══ 5. Reviews ══════════════════════════════════════════════
-function ReviewsBlock({ data }: { data: any }) {
+function ReviewsBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
-      <div className="max-w-6xl mx-auto">
-        {data.title && <h2 className="text-3xl md:text-4xl font-bold text-center mb-10" style={{ color: 'var(--text-primary)' }}>{data.title}</h2>}
+      <div>
+        {data.title && <div className="text-center mb-10"><StyledTitle style={style} text={data.title} /></div>}
         <div className="grid md:grid-cols-3 gap-5">
-          {items.map((item, i) => (
-            <div key={i} className="p-6 rounded-2xl" style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}>
-              <div className="flex gap-0.5 mb-3">
-                {[1,2,3,4,5].map(n => (
-                  <Star key={n} className="w-4 h-4" style={{ color: n <= (item.rating || 5) ? '#fbbf24' : 'var(--text-tertiary)', fill: n <= (item.rating || 5) ? '#fbbf24' : 'transparent' }} />
-                ))}
-              </div>
-              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>"{item.text}"</p>
-              <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
-            </div>
-          ))}
+          {items.map((item, i) => {
+            const cs: React.CSSProperties = { background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }
+            if (style.staggerChildren) cs.transitionDelay = (i * 80) + 'ms'
+            return (
+              <CardWrap key={i} className="p-6 rounded-2xl" style={cs} cardHover={style.cardHover}>
+                <div className="flex gap-0.5 mb-3">
+                  {[1,2,3,4,5].map(n => (
+                    <Star key={n} className="w-4 h-4" style={{ color: n <= (item.rating || 5) ? '#fbbf24' : 'var(--text-tertiary)', fill: n <= (item.rating || 5) ? '#fbbf24' : 'transparent' }} />
+                  ))}
+                </div>
+                <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>"{item.text}"</p>
+                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+              </CardWrap>
+            )
+          })}
         </div>
       </div>
     </section>
@@ -330,15 +596,18 @@ function ReviewsBlock({ data }: { data: any }) {
 }
 
 // ═══ 6. Stats ════════════════════════════════════════════════
-function StatsBlock({ data }: { data: any }) {
+function StatsBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
+  const animated = data.animated !== false  // default on — counters go from 0
   return (
     <section className="relative z-10 px-6 lg:px-16 py-14">
-      <div className="max-w-5xl mx-auto">
+      <div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {items.map((item, i) => (
             <div key={i} className="text-center">
-              <div className="text-3xl md:text-4xl font-bold" style={{ color: 'var(--accent-1)' }}>{item.number}</div>
+              <div className="text-3xl md:text-4xl font-bold" style={{ color: 'var(--accent-1)' }}>
+                {animated ? <Counter value={item.number} /> : item.number}
+              </div>
               <div className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.label}</div>
             </div>
           ))}
@@ -349,25 +618,24 @@ function StatsBlock({ data }: { data: any }) {
 }
 
 // ═══ 7. CTA ══════════════════════════════════════════════════
-function CtaBlock({ data, onCta }: { data: any; onCta?: () => void }) {
+function CtaBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
       <div className="max-w-4xl mx-auto p-10 md:p-14 rounded-3xl text-center"
            style={{ background: data.bgColor || 'var(--accent-gradient)' }}>
         <h2 className="text-3xl md:text-4xl font-bold mb-3 text-white">{data.title || 'Начните прямо сейчас'}</h2>
         {data.subtitle && <p className="text-white opacity-90 mb-6">{data.subtitle}</p>}
-        <button onClick={onCta}
-                className="inline-flex items-center gap-2 px-8 py-3 rounded-xl text-base font-semibold bg-white"
-                style={{ color: data.bgColor ? 'var(--text-primary)' : 'var(--accent-1)' }}>
-          {data.buttonText || 'Попробовать'} <ChevronRight className="w-4 h-4" />
-        </button>
+        <BrandButton onClick={onCta} style={{ ...style, buttonVariant: style.buttonVariant || 'solid' }}
+                     icon={<ChevronRight className="w-4 h-4" />}>
+          {data.buttonText || 'Попробовать'}
+        </BrandButton>
       </div>
     </section>
   )
 }
 
 // ═══ 8. Proxies ══════════════════════════════════════════════
-function ProxiesBlock({ data, proxies }: { data: any; proxies: TelegramProxy[] }) {
+function ProxiesBlock({ data, style, proxies }: { data: any; style: BlockStyle; proxies: TelegramProxy[] }) {
   if (!proxies.length) return null
   return (
     <section id="proxies" className="relative z-10 px-6 lg:px-16 py-16">
@@ -396,20 +664,24 @@ function ProxiesBlock({ data, proxies }: { data: any; proxies: TelegramProxy[] }
 }
 
 // ═══ 9. Steps ════════════════════════════════════════════════
-function StepsBlock({ data }: { data: any }) {
+function StepsBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
-      <div className="max-w-5xl mx-auto">
-        {data.title && <h2 className="text-3xl md:text-4xl font-bold text-center mb-10" style={{ color: 'var(--text-primary)' }}>{data.title}</h2>}
+      <div>
+        {data.title && <div className="text-center mb-10"><StyledTitle style={style} text={data.title} /></div>}
         <div className="grid md:grid-cols-3 gap-6">
-          {items.map((item, i) => (
-            <div key={i} className="relative">
-              <div className="text-5xl font-bold mb-3" style={{ color: 'var(--accent-1)', opacity: 0.2 }}>{item.number || (i + 1)}</div>
-              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
-              {item.text && <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.text}</p>}
-            </div>
-          ))}
+          {items.map((item, i) => {
+            const cs: React.CSSProperties = {}
+            if (style.staggerChildren) cs.transitionDelay = (i * 100) + 'ms'
+            return (
+              <CardWrap key={i} className="relative" style={cs} cardHover={style.cardHover}>
+                <div className="text-5xl font-bold mb-3" style={{ color: 'var(--accent-1)', opacity: 0.2 }}>{item.number || (i + 1)}</div>
+                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
+                {item.text && <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.text}</p>}
+              </CardWrap>
+            )
+          })}
         </div>
       </div>
     </section>
@@ -426,7 +698,7 @@ function CustomHtmlBlock({ data }: { data: any }) {
 }
 
 // ═══ 11. Image ═══════════════════════════════════════════════
-function ImageBlock({ data }: { data: any }) {
+function ImageBlock({ data, style }: { data: any; style: BlockStyle }) {
   if (!data.url) return null
   return (
     <section className="relative z-10 px-6 lg:px-16 py-8">
@@ -439,7 +711,7 @@ function ImageBlock({ data }: { data: any }) {
 }
 
 // ═══ 12. Countdown ═══════════════════════════════════════════
-function CountdownBlock({ data }: { data: any }) {
+function CountdownBlock({ data, style }: { data: any; style: BlockStyle }) {
   const target = data.targetDate ? new Date(data.targetDate).getTime() : Date.now() + 86400_000
   const [left, setLeft] = useState(Math.max(0, target - Date.now()))
   useEffect(() => {
@@ -478,7 +750,7 @@ function CountdownBlock({ data }: { data: any }) {
 }
 
 // ═══ 13. Video ═══════════════════════════════════════════════
-function VideoBlock({ data }: { data: any }) {
+function VideoBlock({ data, style }: { data: any; style: BlockStyle }) {
   const url = data.url || ''
   // Detect YouTube / Vimeo / direct mp4
   let embedUrl = ''
@@ -508,7 +780,7 @@ function VideoBlock({ data }: { data: any }) {
 }
 
 // ═══ 14. Logo Wall ═══════════════════════════════════════════
-function LogoWallBlock({ data }: { data: any }) {
+function LogoWallBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   return (
     <section className="relative z-10 px-6 lg:px-16 py-12">
@@ -531,7 +803,7 @@ function LogoWallBlock({ data }: { data: any }) {
 }
 
 // ═══ 15. Two Column ══════════════════════════════════════════
-function TwoColumnBlock({ data, onCta }: { data: any; onCta?: () => void }) {
+function TwoColumnBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   const imageRight = data.imagePosition !== 'left'
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
@@ -572,7 +844,7 @@ function TwoColumnBlock({ data, onCta }: { data: any; onCta?: () => void }) {
 }
 
 // ═══ 16. Team ════════════════════════════════════════════════
-function TeamBlock({ data }: { data: any }) {
+function TeamBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
@@ -601,7 +873,7 @@ function TeamBlock({ data }: { data: any }) {
 }
 
 // ═══ 17. Timeline ════════════════════════════════════════════
-function TimelineBlock({ data }: { data: any }) {
+function TimelineBlock({ data, style }: { data: any; style: BlockStyle }) {
   const items: any[] = Array.isArray(data.items) ? data.items : []
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
@@ -631,7 +903,7 @@ function TimelineBlock({ data }: { data: any }) {
 }
 
 // ═══ 18. Contact Form ════════════════════════════════════════
-function ContactFormBlock({ data }: { data: any }) {
+function ContactFormBlock({ data, style }: { data: any; style: BlockStyle }) {
   const [email, setEmail] = useState('')
   const [name, setName]   = useState('')
   const [msg, setMsg]     = useState('')
@@ -695,7 +967,7 @@ function ContactFormBlock({ data }: { data: any }) {
 }
 
 // ═══ 19. Newsletter ══════════════════════════════════════════
-function NewsletterBlock({ data }: { data: any }) {
+function NewsletterBlock({ data, style }: { data: any; style: BlockStyle }) {
   const [email, setEmail] = useState('')
   const [done, setDone] = useState(false)
   const submit = (e: React.FormEvent) => {
@@ -734,7 +1006,7 @@ function NewsletterBlock({ data }: { data: any }) {
 }
 
 // ═══ 20. Pricing Table ═══════════════════════════════════════
-function PricingTableBlock({ data, onCta }: { data: any; onCta?: () => void }) {
+function PricingTableBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   const features: string[] = Array.isArray(data.features) ? data.features : []
   const plans: any[] = Array.isArray(data.plans) ? data.plans : []
   return (
@@ -791,7 +1063,7 @@ function PricingTableBlock({ data, onCta }: { data: any; onCta?: () => void }) {
 }
 
 // ═══ 21. Telegram widget ═════════════════════════════════════
-function TelegramWidgetBlock({ data }: { data: any }) {
+function TelegramWidgetBlock({ data, style }: { data: any; style: BlockStyle }) {
   const channel = (data.channel || '').replace('@', '').replace('https://t.me/', '')
   return (
     <section className="relative z-10 px-6 lg:px-16 py-14">

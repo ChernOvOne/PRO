@@ -376,3 +376,87 @@
 /* Animations are applied via inline styles in BlockRenderer (to avoid FOUC). */
 @media (max-width: 767px) { .lb-block.hide-mobile { display: none; } }
 @media (min-width: 768px) { .lb-block.hide-desktop { display: none; } }
+
+/* ── Landing Builder: cards hover effects ── */
+.lb-card-lift        { transition: transform 0.3s cubic-bezier(.16,1,.3,1), box-shadow 0.3s; will-change: transform; }
+.lb-card-lift:hover  { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+.lb-card-scale       { transition: transform 0.3s cubic-bezier(.16,1,.3,1); will-change: transform; }
+.lb-card-scale:hover { transform: scale(1.03); }
+.lb-card-glow        { transition: box-shadow 0.3s, border-color 0.3s; }
+.lb-card-glow:hover  { box-shadow: 0 0 40px rgba(6,182,212,0.25); border-color: var(--accent-1) !important; }
+.lb-card-tilt        { transition: transform 0.3s cubic-bezier(.16,1,.3,1); transform-style: preserve-3d; }
+.lb-card-tilt:hover  { transform: perspective(1000px) rotateX(-2deg) rotateY(2deg) translateZ(8px); }
+.lb-card-border-glow { position: relative; transition: border-color 0.3s; }
+.lb-card-border-glow::before {
+  content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px;
+  background: linear-gradient(135deg, transparent, transparent); pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude; transition: background 0.3s;
+}
+.lb-card-border-glow:hover::before { background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); }
+
+/* ── Landing Builder: button hover effects ── */
+.lb-btn { cursor: pointer; border: none; }
+.lb-btn-hover-lift       { transition: transform 0.2s, box-shadow 0.2s; }
+.lb-btn-hover-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(6,182,212,0.3); }
+.lb-btn-hover-scale      { transition: transform 0.2s; }
+.lb-btn-hover-scale:hover{ transform: scale(1.05); }
+.lb-btn-hover-glow       { transition: box-shadow 0.3s; }
+.lb-btn-hover-glow:hover { box-shadow: 0 0 24px rgba(6,182,212,0.5); }
+.lb-btn-hover-shake:hover { animation: lb-shake 0.4s; }
+.lb-btn-hover-shine      { position: relative; overflow: hidden; }
+.lb-btn-hover-shine::after {
+  content:''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  transition: left 0.6s;
+}
+.lb-btn-hover-shine:hover::after { left: 100%; }
+.lb-btn-hover-gradient-shift { background-size: 200% 200%; transition: background-position 0.4s; }
+.lb-btn-hover-gradient-shift:hover { background-position: 100% 100%; }
+
+@keyframes lb-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* ── Gradient text ── */
+.lb-text-gradient {
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* ── Animated gradient background ── */
+.lb-bg-animated {
+  background: linear-gradient(-45deg, var(--accent-1), var(--accent-2), #0f172a, var(--accent-1));
+  background-size: 400% 400%;
+  animation: lb-gradient-shift 15s ease infinite;
+}
+@keyframes lb-gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── Background patterns ── */
+.lb-bg-dots { background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 24px 24px; }
+.lb-bg-grid { background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 32px 32px; }
+.lb-bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.3 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23a)'/%3E%3C/svg%3E");
+  background-size: 200px;
+}
+
+/* ── Image effects ── */
+[data-image-effect="grayscale-hover"] img { filter: grayscale(100%); transition: filter 0.4s; }
+[data-image-effect="grayscale-hover"] img:hover { filter: grayscale(0%); }
+[data-image-effect="blur-hover"] img { filter: blur(2px); transition: filter 0.4s; }
+[data-image-effect="blur-hover"] img:hover { filter: blur(0); }
+[data-image-effect="zoom-hover"] img { transition: transform 0.5s cubic-bezier(.16,1,.3,1); }
+[data-image-effect="zoom-hover"] img:hover { transform: scale(1.08); }
+[data-image-effect="rotate-hover"] img { transition: transform 0.5s; }
+[data-image-effect="rotate-hover"] img:hover { transform: rotate(-3deg) scale(1.03); }
+
+/* ── Stagger: child cards with transitionDelay already set inline ── */
+[data-stagger="0"] > * { opacity: 0; transform: translateY(16px); }
+[data-stagger="1"] > * { opacity: 1; transform: none; }

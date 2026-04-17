@@ -529,12 +529,25 @@ function BlockSettings({ block, tariffs, onChange, commit }: {
       {/* Hero / CTA */}
       {(block.type === 'hero' || block.type === 'cta') && (
         <>
-          {block.type === 'hero' && <Field label="Бейдж"><Input v={d.badge} onC={v => set('badge', v)} onBlur={commit} /></Field>}
+          {block.type === 'hero' && (
+            <>
+              <Field label="Вариант раскладки">
+                <Select v={d.variant || 'center'} onC={v => set('variant', v)}
+                        opts={[{v:'center',l:'По центру'}, {v:'split',l:'Split (текст + картинка)'}]} />
+              </Field>
+              <Field label="Бейдж"><Input v={d.badge} onC={v => set('badge', v)} onBlur={commit} /></Field>
+            </>
+          )}
           <Field label="Заголовок"><Input v={d.title} onC={v => set('title', v)} onBlur={commit} /></Field>
           <Field label="Подзаголовок"><Textarea v={d.subtitle} onC={v => set('subtitle', v)} onBlur={commit} /></Field>
           <Field label="Текст кнопки">
             <Input v={d.ctaText || d.buttonText} onC={v => set(block.type === 'cta' ? 'buttonText' : 'ctaText', v)} onBlur={commit} />
           </Field>
+          {block.type === 'hero' && d.variant === 'split' && (
+            <Field label="URL картинки справа">
+              <Input v={d.image} onC={v => set('image', v)} onBlur={commit} />
+            </Field>
+          )}
         </>
       )}
 
@@ -543,9 +556,38 @@ function BlockSettings({ block, tariffs, onChange, commit }: {
         <>
           {block.type !== 'stats' && <Field label="Заголовок"><Input v={d.title} onC={v => set('title', v)} onBlur={commit} /></Field>}
           {block.type === 'features' && (
-            <Field label="Колонок">
-              <Select v={d.columns || 3} onC={v => set('columns', Number(v))} opts={[{v: 2, l: '2'}, {v: 3, l: '3'}, {v: 4, l: '4'}]} />
+            <>
+              <Field label="Колонок">
+                <Select v={d.columns || 3} onC={v => set('columns', Number(v))} opts={[{v: 2, l: '2'}, {v: 3, l: '3'}, {v: 4, l: '4'}]} />
+              </Field>
+              <Field label="Раскладка">
+                <Select v={d.variant || 'cards'} onC={v => set('variant', v)}
+                        opts={[
+                          {v:'cards',l:'Карточки'},
+                          {v:'borderless',l:'Без рамок'},
+                          {v:'bordered',l:'Только рамка'},
+                          {v:'icons-left',l:'Иконки слева'},
+                        ]} />
+              </Field>
+            </>
+          )}
+          {block.type === 'faq' && (
+            <Field label="Раскладка">
+              <Select v={d.variant || 'boxes'} onC={v => set('variant', v)}
+                      opts={[{v:'boxes',l:'Карточки'}, {v:'lines',l:'Минимализм'}]} />
             </Field>
+          )}
+          {block.type === 'reviews' && (
+            <Field label="Раскладка">
+              <Select v={d.variant || 'cards'} onC={v => set('variant', v)}
+                      opts={[{v:'cards',l:'3 колонки'}, {v:'masonry-like',l:'2 колонки (широкие)'}]} />
+            </Field>
+          )}
+          {block.type === 'stats' && (
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={d.animated !== false} onChange={e => set('animated', e.target.checked)} />
+              🔢 Анимировать числа от 0
+            </label>
           )}
           <ItemsEditor type={block.type} items={Array.isArray(d.items) ? d.items : []}
                        onChange={items => set('items', items)} onBlur={commit} />
@@ -709,42 +751,195 @@ function StyleSettings({ block, onChange, commit }: {
   block: LandingBlock; onChange: (patch: Partial<BlockStyle>) => void; commit: () => void
 }) {
   const s: BlockStyle = (block.data?.style || {}) as BlockStyle
-  return (
-    <div className="p-4 space-y-4">
+
+  // Collapsible sections
+  const Section = ({ title, children, defaultOpen = false }: {
+    title: string; children: React.ReactNode; defaultOpen?: boolean
+  }) => {
+    const [open, setOpen] = useState(defaultOpen)
+    return (
       <div className="pb-3 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Стиль блока</div>
-        <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>Оформление, отступы, фон, анимация.</p>
+        <button onClick={() => setOpen(!open)}
+                className="w-full flex items-center justify-between py-2 text-[11px] font-bold uppercase tracking-wider"
+                style={{ color: 'var(--text-tertiary)' }}>
+          <span>{title}</span>
+          <span>{open ? '−' : '+'}</span>
+        </button>
+        {open && <div className="space-y-3 mt-2">{children}</div>}
       </div>
+    )
+  }
 
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Отступ сверху (px)"><Input type="number" v={s.paddingTop ?? ''} onC={v => onChange({ paddingTop: v === '' ? undefined : Number(v) })} onBlur={commit} /></Field>
-        <Field label="Отступ снизу (px)"><Input type="number" v={s.paddingBottom ?? ''} onC={v => onChange({ paddingBottom: v === '' ? undefined : Number(v) })} onBlur={commit} /></Field>
-      </div>
-
-      <Field label="Цвет фона (опц.)">
-        <div className="flex gap-2">
-          <input type="color" value={s.bgColor || '#000000'} onChange={e => onChange({ bgColor: e.target.value })}
-                 onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
-          <Input v={s.bgColor || ''} onC={v => onChange({ bgColor: v || undefined })} onBlur={commit} placeholder="напр. #0f172a" />
+  return (
+    <div className="p-4 space-y-3">
+      {/* ── Контейнер ── */}
+      <Section title="📐 Контейнер" defaultOpen>
+        <Field label="Ширина">
+          <Select v={s.containerWidth || 'normal'} onC={v => onChange({ containerWidth: v as any })}
+                  opts={[
+                    {v:'narrow',l:'Узкая (640px)'},
+                    {v:'normal',l:'Обычная (1024px)'},
+                    {v:'wide',l:'Широкая (1280px)'},
+                    {v:'full',l:'На всю ширину'},
+                  ]} />
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Отступ сверху (px)"><Input type="number" v={s.paddingTop ?? ''} onC={v => onChange({ paddingTop: v === '' ? undefined : Number(v) })} onBlur={commit} /></Field>
+          <Field label="Отступ снизу (px)"><Input type="number" v={s.paddingBottom ?? ''} onC={v => onChange({ paddingBottom: v === '' ? undefined : Number(v) })} onBlur={commit} /></Field>
         </div>
-      </Field>
+        <Field label="Выравнивание текста">
+          <Select v={s.textAlign || ''} onC={v => onChange({ textAlign: (v || undefined) as any })}
+                  opts={[{v:'',l:'По умолчанию'}, {v:'left',l:'Влево'}, {v:'center',l:'По центру'}, {v:'right',l:'Вправо'}]} />
+        </Field>
+      </Section>
 
-      <Field label="Градиент (CSS)">
-        <Input v={s.bgGradient || ''} onC={v => onChange({ bgGradient: v || undefined })} onBlur={commit}
-               placeholder="linear-gradient(135deg, #06b6d4, #8b5cf6)" />
-      </Field>
+      {/* ── Заголовок ── */}
+      <Section title="🔤 Заголовок блока">
+        <Field label="Размер">
+          <Select v={s.titleSize || 'md'} onC={v => onChange({ titleSize: v as any })}
+                  opts={[
+                    {v:'sm',l:'S'}, {v:'md',l:'M (обычный)'}, {v:'lg',l:'L'},
+                    {v:'xl',l:'XL'}, {v:'2xl',l:'2XL'}, {v:'3xl',l:'3XL (огромный)'},
+                  ]} />
+        </Field>
+        <Field label="Вес">
+          <Select v={s.titleWeight || 'bold'} onC={v => onChange({ titleWeight: v as any })}
+                  opts={[
+                    {v:'normal',l:'Обычный'}, {v:'medium',l:'Средний'}, {v:'semibold',l:'Полужирный'},
+                    {v:'bold',l:'Жирный'}, {v:'black',l:'Чёрный'},
+                  ]} />
+        </Field>
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={!!s.titleGradient} onChange={e => onChange({ titleGradient: e.target.checked })} />
+          🌈 Градиентный текст
+        </label>
+        {!s.titleGradient && (
+          <Field label="Цвет заголовка">
+            <div className="flex gap-2">
+              <input type="color" value={s.titleColor || '#ffffff'} onChange={e => onChange({ titleColor: e.target.value })}
+                     onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
+              <Input v={s.titleColor || ''} onC={v => onChange({ titleColor: v || undefined })} onBlur={commit} placeholder="auto" />
+            </div>
+          </Field>
+        )}
+      </Section>
 
-      <Field label="URL фоновой картинки">
-        <Input v={s.bgImage || ''} onC={v => onChange({ bgImage: v || undefined })} onBlur={commit} placeholder="https://..." />
-      </Field>
+      {/* ── Фон блока ── */}
+      <Section title="🎨 Фон блока">
+        <Field label="Цвет фона">
+          <div className="flex gap-2">
+            <input type="color" value={s.bgColor || '#000000'} onChange={e => onChange({ bgColor: e.target.value })}
+                   onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
+            <Input v={s.bgColor || ''} onC={v => onChange({ bgColor: v || undefined })} onBlur={commit} placeholder="#0f172a" />
+          </div>
+        </Field>
+        <Field label="Градиент (CSS)">
+          <Input v={s.bgGradient || ''} onC={v => onChange({ bgGradient: v || undefined })} onBlur={commit}
+                 placeholder="linear-gradient(135deg, #06b6d4, #8b5cf6)" />
+        </Field>
+        <Field label="URL картинки">
+          <Input v={s.bgImage || ''} onC={v => onChange({ bgImage: v || undefined })} onBlur={commit} placeholder="https://..." />
+        </Field>
+        <Field label="Паттерн поверх фона">
+          <Select v={s.bgPattern || 'none'} onC={v => onChange({ bgPattern: v as any })}
+                  opts={[{v:'none',l:'Нет'}, {v:'dots',l:'Точки'}, {v:'grid',l:'Сетка'}, {v:'noise',l:'Шум'}]} />
+        </Field>
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={!!s.bgAnimated} onChange={e => onChange({ bgAnimated: e.target.checked })} />
+          🌊 Анимированный градиент
+        </label>
+        <Field label="Оверлей (поверх фона)">
+          <Input v={s.bgOverlay || ''} onC={v => onChange({ bgOverlay: v || undefined })} onBlur={commit}
+                 placeholder="rgba(0,0,0,0.4)" />
+        </Field>
+      </Section>
 
-      <Field label="Выравнивание текста">
-        <Select v={s.textAlign || ''} onC={v => onChange({ textAlign: (v || undefined) as any })}
-                opts={[{v:'',l:'По умолчанию'}, {v:'left',l:'Влево'}, {v:'center',l:'По центру'}, {v:'right',l:'Вправо'}]} />
-      </Field>
+      {/* ── Кнопки (CTA) ── */}
+      <Section title="🔘 Стиль кнопок">
+        <Field label="Вариант">
+          <Select v={s.buttonVariant || 'gradient'} onC={v => onChange({ buttonVariant: v as any })}
+                  opts={[
+                    {v:'gradient',l:'Градиент'}, {v:'solid',l:'Сплошной'}, {v:'outline',l:'Контурная'},
+                    {v:'ghost',l:'Призрачная'}, {v:'glass',l:'Стекло'}, {v:'soft',l:'Мягкая'},
+                  ]} />
+        </Field>
+        <Field label="Размер">
+          <Select v={s.buttonSize || 'md'} onC={v => onChange({ buttonSize: v as any })}
+                  opts={[{v:'sm',l:'S'}, {v:'md',l:'M'}, {v:'lg',l:'L'}, {v:'xl',l:'XL'}]} />
+        </Field>
+        <Field label="Форма">
+          <Select v={s.buttonShape || 'rounded'} onC={v => onChange({ buttonShape: v as any })}
+                  opts={[{v:'rounded',l:'Скруглённая'}, {v:'pill',l:'Пилюля'}, {v:'square',l:'Квадратная'}]} />
+        </Field>
+        <Field label="Hover-эффект">
+          <Select v={s.buttonHover || 'lift'} onC={v => onChange({ buttonHover: v as any })}
+                  opts={[
+                    {v:'none',l:'Без эффекта'},
+                    {v:'lift',l:'↑ Подъём'},
+                    {v:'scale',l:'⤢ Увеличение'},
+                    {v:'glow',l:'✨ Свечение'},
+                    {v:'shine',l:'💫 Блик'},
+                    {v:'shake',l:'〰 Встряска'},
+                    {v:'gradient-shift',l:'🌈 Смена градиента'},
+                  ]} />
+        </Field>
+      </Section>
 
-      <div className="pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>Анимация появления</div>
+      {/* ── Карточки внутри ── */}
+      <Section title="🃏 Карточки (hover)">
+        <Field label="Эффект при наведении">
+          <Select v={s.cardHover || 'none'} onC={v => onChange({ cardHover: v as any })}
+                  opts={[
+                    {v:'none',l:'Без эффекта'},
+                    {v:'lift',l:'↑ Поднимается'},
+                    {v:'scale',l:'⤢ Увеличивается'},
+                    {v:'glow',l:'✨ Подсвечивается'},
+                    {v:'tilt',l:'🎴 3D-наклон'},
+                    {v:'border-glow',l:'🌈 Градиентная рамка'},
+                  ]} />
+        </Field>
+        <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+          Применяется к карточкам внутри features, reviews, team и т.д.
+        </p>
+      </Section>
+
+      {/* ── Разделители ── */}
+      <Section title="〰 Разделители">
+        <Field label="Сверху">
+          <Select v={s.dividerTop || 'none'} onC={v => onChange({ dividerTop: v as any })}
+                  opts={[
+                    {v:'none',l:'Нет'},
+                    {v:'wave',l:'🌊 Волна'},
+                    {v:'triangle',l:'▲ Треугольник'},
+                    {v:'curve',l:'⌒ Дуга'},
+                    {v:'tilt',l:'/ Наклон'},
+                    {v:'stairs',l:'▤ Ступеньки'},
+                  ]} />
+        </Field>
+        <Field label="Снизу">
+          <Select v={s.dividerBottom || 'none'} onC={v => onChange({ dividerBottom: v as any })}
+                  opts={[
+                    {v:'none',l:'Нет'},
+                    {v:'wave',l:'🌊 Волна'},
+                    {v:'triangle',l:'▲ Треугольник'},
+                    {v:'curve',l:'⌒ Дуга'},
+                    {v:'tilt',l:'/ Наклон'},
+                    {v:'stairs',l:'▤ Ступеньки'},
+                  ]} />
+        </Field>
+        {(s.dividerTop || s.dividerBottom) && (
+          <Field label="Цвет разделителя">
+            <div className="flex gap-2">
+              <input type="color" value={s.dividerColor || '#0b1121'} onChange={e => onChange({ dividerColor: e.target.value })}
+                     onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
+              <Input v={s.dividerColor || ''} onC={v => onChange({ dividerColor: v || undefined })} onBlur={commit} placeholder="auto" />
+            </div>
+          </Field>
+        )}
+      </Section>
+
+      {/* ── Анимация появления ── */}
+      <Section title="🎬 Анимация появления">
         <Field label="Эффект">
           <Select v={s.animation || 'none'} onC={v => onChange({ animation: v as any })}
                   opts={[
@@ -763,19 +958,49 @@ function StyleSettings({ block, onChange, commit }: {
             <Input type="number" v={s.animationDelay ?? 0} onC={v => onChange({ animationDelay: Number(v) || 0 })} onBlur={commit} />
           </Field>
         )}
-      </div>
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={!!s.staggerChildren} onChange={e => onChange({ staggerChildren: e.target.checked })} />
+          🎭 Каскад (элементы по очереди)
+        </label>
+      </Section>
 
-      <div className="pt-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>Видимость</div>
-        <label className="flex items-center gap-2 text-xs cursor-pointer py-1" style={{ color: 'var(--text-secondary)' }}>
+      {/* ── Декор ── */}
+      <Section title="✨ Декор">
+        <Field label="Номер секции (01, 02...)">
+          <Input v={s.sectionNumber || ''} onC={v => onChange({ sectionNumber: v || undefined })} onBlur={commit} placeholder="01" />
+        </Field>
+        {s.sectionNumber && (
+          <Field label="Цвет номера">
+            <div className="flex gap-2">
+              <input type="color" value={s.sectionNumberColor || '#06b6d4'} onChange={e => onChange({ sectionNumberColor: e.target.value })}
+                     onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
+              <Input v={s.sectionNumberColor || ''} onC={v => onChange({ sectionNumberColor: v || undefined })} onBlur={commit} />
+            </div>
+          </Field>
+        )}
+        <Field label="Эффект на картинке">
+          <Select v={s.imageEffect || 'none'} onC={v => onChange({ imageEffect: v as any })}
+                  opts={[
+                    {v:'none',l:'Нет'},
+                    {v:'grayscale-hover',l:'ЧБ → цвет на hover'},
+                    {v:'blur-hover',l:'Размытие → чёткость'},
+                    {v:'zoom-hover',l:'Zoom на hover'},
+                    {v:'rotate-hover',l:'Поворот на hover'},
+                  ]} />
+        </Field>
+      </Section>
+
+      {/* ── Видимость ── */}
+      <Section title="👁 Видимость">
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
           <input type="checkbox" checked={!!s.hideOnMobile} onChange={e => onChange({ hideOnMobile: e.target.checked })} />
-          Скрыть на мобильном (&lt; 768px)
+          📱 Скрыть на мобильном
         </label>
-        <label className="flex items-center gap-2 text-xs cursor-pointer py-1" style={{ color: 'var(--text-secondary)' }}>
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
           <input type="checkbox" checked={!!s.hideOnDesktop} onChange={e => onChange({ hideOnDesktop: e.target.checked })} />
-          Скрыть на десктопе (≥ 768px)
+          💻 Скрыть на десктопе
         </label>
-      </div>
+      </Section>
     </div>
   )
 }

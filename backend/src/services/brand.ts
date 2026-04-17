@@ -24,8 +24,8 @@ export async function getBrand(): Promise<Record<string, string>> {
   if (cache && cache.expiresAt > Date.now()) return cache.brand
   const BRAND_KEYS = [
     'app_name', 'app_description', 'app_logo_url', 'app_favicon_url',
-    'brand_color', 'brand_color_secondary', 'currency_symbol',
-    'brand_font', 'brand_radius',
+    'brand_color', 'brand_color_secondary', 'brand_palette_preset',
+    'brand_font', 'brand_radius', 'currency_symbol',
     'domain', 'api_domain', 'app_url',
     'support_url', 'channel_url', 'bot_url',
     'terms_url', 'privacy_url', 'footer_text',
