@@ -71,7 +71,6 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Система',
     items: [
       { href: '/admin/wiki',             icon: HelpCircle,      label: 'Wiki / Справка' },
-      { href: '/admin/analytics',        icon: TrendingUp,      label: 'Аналитика',     roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/bot',              icon: Bot,             label: 'Бот',            roles: ['ADMIN'] },
       { href: '/admin/bot/constructor',  icon: Workflow,        label: 'Конструктор',    roles: ['ADMIN'] },
       { href: '/admin/proxies',          icon: Wifi,            label: 'Прокси',        roles: ['ADMIN'] },
