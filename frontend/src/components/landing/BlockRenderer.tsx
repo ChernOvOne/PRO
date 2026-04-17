@@ -191,10 +191,13 @@ function StyledBlock({ block, ctx, children }: {
   }
   const widthClass = widthMap[style.containerWidth || ''] ?? ''
 
-  // Background layers
-  const bg = style.bgImage
-    ? `linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)), url(${style.bgImage}) center/cover`
-    : style.bgGradient || style.bgColor || undefined
+  // Background layers — inline bg is skipped when animated gradient is on,
+  // so the CSS animation (.lb-bg-animated) can take effect.
+  const bg = style.bgAnimated
+    ? undefined
+    : style.bgImage
+      ? `linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)), url(${style.bgImage}) center/cover`
+      : style.bgGradient || style.bgColor || undefined
 
   const animStyle: React.CSSProperties = {}
   if (animate) {
@@ -219,6 +222,19 @@ function StyledBlock({ block, ctx, children }: {
   const patternClass = style.bgPattern && style.bgPattern !== 'none' ? `lb-bg-${style.bgPattern}` : ''
   const animatedBgClass = style.bgAnimated ? 'lb-bg-animated' : ''
 
+  // When pattern is set, use background-color + let CSS class apply background-image.
+  // (Using `background` shorthand would wipe out the pattern's background-image.)
+  const usePattern = !!patternClass
+  const bgInline: React.CSSProperties = {}
+  if (!style.bgAnimated) {
+    if (usePattern) {
+      bgInline.backgroundColor = style.bgColor || undefined
+      if (style.bgGradient) bgInline.backgroundImage = style.bgGradient
+    } else if (bg) {
+      bgInline.background = bg
+    }
+  }
+
   return (
     <div
       ref={ref}
@@ -226,8 +242,8 @@ function StyledBlock({ block, ctx, children }: {
       style={{
         paddingTop:    style.paddingTop !== undefined ? style.paddingTop + 'px' : undefined,
         paddingBottom: style.paddingBottom !== undefined ? style.paddingBottom + 'px' : undefined,
-        background:    bg,
         textAlign:     style.textAlign,
+        ...bgInline,
         ...animStyle,
       }}
       {...dataAttrs}

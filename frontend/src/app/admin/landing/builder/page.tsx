@@ -746,34 +746,48 @@ function BlockSettings({ block, tariffs, onChange, commit }: {
   )
 }
 
+// ═══ Section (collapsible group) — defined OUTSIDE StyleSettings so its
+// state isn't reset on every prop change to the parent. ═════════════
+function StyleSection({ id, title, children, defaultOpen = false }: {
+  id: string; title: string; children: React.ReactNode; defaultOpen?: boolean
+}) {
+  // Persist open state across block selections via localStorage
+  const key = `lb-style-section-${id}`
+  const [open, setOpen] = useState(() => {
+    if (typeof window === 'undefined') return defaultOpen
+    const v = localStorage.getItem(key)
+    if (v === null) return defaultOpen
+    return v === '1'
+  })
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    try { localStorage.setItem(key, next ? '1' : '0') } catch {}
+  }
+  return (
+    <div className="pb-3 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+      <button onClick={toggle}
+              className="w-full flex items-center justify-between py-2 text-[11px] font-bold uppercase tracking-wider"
+              style={{ color: 'var(--text-tertiary)' }}>
+        <span>{title}</span>
+        <span>{open ? '−' : '+'}</span>
+      </button>
+      {open && <div className="space-y-3 mt-2">{children}</div>}
+    </div>
+  )
+}
+
 // ═══ Style settings (padding, bg, animation, hide) ═══════════
 function StyleSettings({ block, onChange, commit }: {
   block: LandingBlock; onChange: (patch: Partial<BlockStyle>) => void; commit: () => void
 }) {
   const s: BlockStyle = (block.data?.style || {}) as BlockStyle
-
-  // Collapsible sections
-  const Section = ({ title, children, defaultOpen = false }: {
-    title: string; children: React.ReactNode; defaultOpen?: boolean
-  }) => {
-    const [open, setOpen] = useState(defaultOpen)
-    return (
-      <div className="pb-3 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-        <button onClick={() => setOpen(!open)}
-                className="w-full flex items-center justify-between py-2 text-[11px] font-bold uppercase tracking-wider"
-                style={{ color: 'var(--text-tertiary)' }}>
-          <span>{title}</span>
-          <span>{open ? '−' : '+'}</span>
-        </button>
-        {open && <div className="space-y-3 mt-2">{children}</div>}
-      </div>
-    )
-  }
+  const Section = StyleSection
 
   return (
     <div className="p-4 space-y-3">
       {/* ── Контейнер ── */}
-      <Section title="📐 Контейнер" defaultOpen>
+      <Section id="container" title="📐 Контейнер" defaultOpen>
         <Field label="Ширина">
           <Select v={s.containerWidth || 'normal'} onC={v => onChange({ containerWidth: v as any })}
                   opts={[
@@ -794,7 +808,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Заголовок ── */}
-      <Section title="🔤 Заголовок блока">
+      <Section id="title" title="🔤 Заголовок блока">
         <Field label="Размер">
           <Select v={s.titleSize || 'md'} onC={v => onChange({ titleSize: v as any })}
                   opts={[
@@ -825,7 +839,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Фон блока ── */}
-      <Section title="🎨 Фон блока">
+      <Section id="bg" title="🎨 Фон блока">
         <Field label="Цвет фона">
           <div className="flex gap-2">
             <input type="color" value={s.bgColor || '#000000'} onChange={e => onChange({ bgColor: e.target.value })}
@@ -855,7 +869,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Кнопки (CTA) ── */}
-      <Section title="🔘 Стиль кнопок">
+      <Section id="button" title="🔘 Стиль кнопок">
         <Field label="Вариант">
           <Select v={s.buttonVariant || 'gradient'} onC={v => onChange({ buttonVariant: v as any })}
                   opts={[
@@ -886,7 +900,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Карточки внутри ── */}
-      <Section title="🃏 Карточки (hover)">
+      <Section id="card" title="🃏 Карточки (hover)">
         <Field label="Эффект при наведении">
           <Select v={s.cardHover || 'none'} onC={v => onChange({ cardHover: v as any })}
                   opts={[
@@ -904,7 +918,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Разделители ── */}
-      <Section title="〰 Разделители">
+      <Section id="divider" title="〰 Разделители">
         <Field label="Сверху">
           <Select v={s.dividerTop || 'none'} onC={v => onChange({ dividerTop: v as any })}
                   opts={[
@@ -939,7 +953,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Анимация появления ── */}
-      <Section title="🎬 Анимация появления">
+      <Section id="anim" title="🎬 Анимация появления">
         <Field label="Эффект">
           <Select v={s.animation || 'none'} onC={v => onChange({ animation: v as any })}
                   opts={[
@@ -965,7 +979,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Декор ── */}
-      <Section title="✨ Декор">
+      <Section id="decor" title="✨ Декор">
         <Field label="Номер секции (01, 02...)">
           <Input v={s.sectionNumber || ''} onC={v => onChange({ sectionNumber: v || undefined })} onBlur={commit} placeholder="01" />
         </Field>
@@ -991,7 +1005,7 @@ function StyleSettings({ block, onChange, commit }: {
       </Section>
 
       {/* ── Видимость ── */}
-      <Section title="👁 Видимость">
+      <Section id="visibility" title="👁 Видимость">
         <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
           <input type="checkbox" checked={!!s.hideOnMobile} onChange={e => onChange({ hideOnMobile: e.target.checked })} />
           📱 Скрыть на мобильном
