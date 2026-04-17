@@ -1246,28 +1246,41 @@ function NewsBlock({ data, style }: { data: any; style: BlockStyle }) {
       .then(r => r.json()).then(setNews).catch(() => {})
   }, [data.limit])
   if (!news.length) return null
+  // Truncate markdown/HTML content to 160 chars for card preview
+  const preview = (text: string) => {
+    const stripped = (text || '').replace(/<[^>]+>/g, '').replace(/[#*_`]/g, '').trim()
+    return stripped.length > 160 ? stripped.slice(0, 160).trim() + '…' : stripped
+  }
   return (
     <section className="relative z-10 px-6 lg:px-16 py-16">
       <div>
         {data.title && <div className="text-center mb-10"><StyledTitle style={style} text={data.title} /></div>}
         <div className="grid md:grid-cols-3 gap-5">
-          {news.map((n, i) => (
-            <CardWrap key={n.id} className="p-6 rounded-2xl"
+          {news.map((n) => (
+            <CardWrap key={n.id} className="rounded-2xl overflow-hidden flex flex-col"
                       style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
                       cardHover={style.cardHover || 'lift'}>
-              {n.category && (
-                <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider mb-3"
-                      style={{ background: 'rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
-                  {n.category}
-                </span>
-              )}
-              <h3 className="font-semibold mb-2 text-lg" style={{ color: 'var(--text-primary)' }}>{n.title}</h3>
-              {n.summary && <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>{n.summary}</p>}
-              {n.publishedAt && (
-                <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                  {new Date(n.publishedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+              {n.imageUrl && (
+                <div className="w-full aspect-video overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                  <img src={n.imageUrl} alt={n.title} className="w-full h-full object-cover" />
                 </div>
               )}
+              <div className="p-6 flex-1 flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                        style={{ background: n.type === 'PROMOTION' ? 'rgba(139,92,246,0.15)' : 'rgba(6,182,212,0.15)',
+                                 color: n.type === 'PROMOTION' ? '#a78bfa' : 'var(--accent-1)' }}>
+                    {n.type === 'PROMOTION' ? 'Акция' : 'Новость'}
+                  </span>
+                  {n.publishedAt && (
+                    <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {new Date(n.publishedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-semibold mb-2 text-lg leading-snug" style={{ color: 'var(--text-primary)' }}>{n.title}</h3>
+                {n.content && <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{preview(n.content)}</p>}
+              </div>
             </CardWrap>
           ))}
         </div>

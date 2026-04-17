@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, Eye, EyeOff, Pin } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Edit2, Trash2, Eye, EyeOff, Pin, Upload, X, Image as ImageIcon } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
+import { RichEditor } from '@/components/RichEditor'
 import type { News } from '@/types'
 
 export default function AdminNewsPage() {
@@ -10,6 +12,8 @@ export default function AdminNewsPage() {
   const [loading, setLoading]   = useState(true)
   const [editing, setEditing]   = useState<Partial<News> | null>(null)
   const [saving, setSaving]     = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = () => {
     adminApi.news().then(d => setNews(d.news)).catch(() => {}).finally(() => setLoading(false))
@@ -28,8 +32,8 @@ export default function AdminNewsPage() {
       }
       setEditing(null)
       load()
-    } catch (err) {
-      alert('Ошибка сохранения')
+    } catch {
+      toast.error('Ошибка сохранения')
     } finally {
       setSaving(false)
     }
@@ -42,12 +46,23 @@ export default function AdminNewsPage() {
   }
 
   const togglePublish = async (item: News) => {
-    if (item.isActive) {
-      await adminApi.updateNews(item.id, { isActive: false })
-    } else {
-      await adminApi.publishNews(item.id)
-    }
+    if (item.isActive) await adminApi.updateNews(item.id, { isActive: false })
+    else await adminApi.publishNews(item.id)
     load()
+  }
+
+  const uploadCoverImage = async (file: File) => {
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await adminApi.uploadFile(fd)
+      if (res.ok && res.url) {
+        setEditing(prev => prev ? { ...prev, imageUrl: res.url } : prev)
+        toast.success('Изображение загружено')
+      } else throw new Error()
+    } catch { toast.error('Ошибка загрузки') }
+    finally { setUploading(false) }
   }
 
   return (
@@ -62,70 +77,127 @@ export default function AdminNewsPage() {
 
       {/* Editor modal */}
       {editing && (
-        <div className="glass-card  animate-scale-in">
+        <div className="glass-card animate-scale-in">
           <h2 className="font-semibold mb-4">{editing.id ? 'Редактировать' : 'Новая запись'}</h2>
 
           <div className="space-y-4">
+            {/* Type toggle */}
             <div className="flex gap-2">
               {(['NEWS', 'PROMOTION'] as const).map(t => (
-                <button key={t}
-                        onClick={() => setEditing({ ...editing, type: t })}
+                <button key={t} onClick={() => setEditing({ ...editing, type: t })}
                         className="px-4 py-2 rounded-xl text-sm transition-all"
                         style={{
                           background: editing.type === t ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
                           border: `1px solid ${editing.type === t ? 'var(--accent-1)' : 'var(--glass-border)'}`,
                         }}>
-                  {t === 'NEWS' ? 'Новость' : 'Акция'}
+                  {t === 'NEWS' ? '📰 Новость' : '🎁 Акция'}
                 </button>
               ))}
             </div>
 
-            <input className="glass-input" placeholder="Заголовок"
-                   value={editing.title || ''}
-                   onChange={e => setEditing({ ...editing, title: e.target.value })} />
+            {/* Title */}
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                Заголовок
+              </label>
+              <input className="glass-input" placeholder="Заголовок новости..."
+                     value={editing.title || ''}
+                     onChange={e => setEditing({ ...editing, title: e.target.value })} />
+            </div>
 
-            <textarea className="glass-input min-h-[120px] resize-y" placeholder="Содержание (Markdown)"
-                      value={editing.content || ''}
-                      onChange={e => setEditing({ ...editing, content: e.target.value })} />
+            {/* Cover image */}
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                Обложка (необязательно)
+              </label>
+              {editing.imageUrl ? (
+                <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                  <img src={editing.imageUrl} alt="" className="w-full max-h-[200px] object-cover" />
+                  <button onClick={() => setEditing({ ...editing, imageUrl: '' })}
+                          className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.7)', color: '#fff' }}>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input className="glass-input flex-1" placeholder="URL изображения (https://...)"
+                         value={editing.imageUrl || ''}
+                         onChange={e => setEditing({ ...editing, imageUrl: e.target.value })} />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                          className="btn-secondary text-sm px-4 disabled:opacity-60">
+                    <Upload className="w-4 h-4" /> {uploading ? 'Загрузка...' : 'Файл'}
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+                         onChange={e => {
+                           const f = e.target.files?.[0]
+                           if (f) uploadCoverImage(f)
+                           e.target.value = ''
+                         }} />
+                </div>
+              )}
+            </div>
 
-            <input className="glass-input" placeholder="URL изображения (необязательно)"
-                   value={editing.imageUrl || ''}
-                   onChange={e => setEditing({ ...editing, imageUrl: e.target.value })} />
+            {/* Content — rich editor */}
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                Текст новости
+              </label>
+              <RichEditor
+                value={editing.content || ''}
+                onChange={(html) => setEditing({ ...editing, content: html })}
+                placeholder="Напишите текст новости. Используйте панель инструментов для форматирования, вставки ссылок и картинок."
+                minHeight={280}
+              />
+            </div>
 
+            {/* Promo-specific */}
             {editing.type === 'PROMOTION' && (
               <div className="grid grid-cols-2 gap-3">
-                <input className="glass-input" placeholder="Промокод"
-                       value={editing.discountCode || ''}
-                       onChange={e => setEditing({ ...editing, discountCode: e.target.value })} />
-                <input className="glass-input" placeholder="Скидка %" type="number"
-                       value={editing.discountPct || ''}
-                       onChange={e => setEditing({ ...editing, discountPct: Number(e.target.value) || undefined })} />
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Промокод</label>
+                  <input className="glass-input" placeholder="SUMMER20"
+                         value={editing.discountCode || ''}
+                         onChange={e => setEditing({ ...editing, discountCode: e.target.value.toUpperCase() })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Скидка %</label>
+                  <input className="glass-input" placeholder="20" type="number"
+                         value={editing.discountPct || ''}
+                         onChange={e => setEditing({ ...editing, discountPct: Number(e.target.value) || undefined })} />
+                </div>
               </div>
             )}
 
-            <input className="glass-input" placeholder="Ссылка на подробности (URL, необязательно)"
-                   value={(editing.buttons && Array.isArray(editing.buttons) && editing.buttons[0]?.url) || ''}
-                   onChange={e => {
-                     const url = e.target.value
-                     setEditing({
-                       ...editing,
-                       buttons: url ? [{ label: 'Подробнее', url, style: 'primary' }] : [],
-                     })
-                   }} />
-
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox"
-                       checked={editing.isPinned || false}
-                       onChange={e => setEditing({ ...editing, isPinned: e.target.checked })}
-                       className="w-4 h-4 rounded" />
-                <span className="text-sm">Закрепить</span>
+            {/* Link button */}
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                Кнопка «Подробнее» (необязательно)
               </label>
+              <input className="glass-input" placeholder="https://..."
+                     value={(Array.isArray(editing.buttons) && editing.buttons[0]?.url) || ''}
+                     onChange={e => {
+                       const url = e.target.value
+                       setEditing({
+                         ...editing,
+                         buttons: url ? [{ label: 'Подробнее', url, style: 'primary' }] : [],
+                       })
+                     }} />
             </div>
 
-            <div className="flex gap-2">
-              <button onClick={save} disabled={saving} className="btn-primary text-sm flex-1">
-                {saving ? 'Сохраняю...' : 'Сохранить'}
+            {/* Pin */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={editing.isPinned || false}
+                     onChange={e => setEditing({ ...editing, isPinned: e.target.checked })}
+                     className="w-4 h-4 rounded" />
+              <span className="text-sm">📌 Закрепить вверху</span>
+            </label>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-2">
+              <button onClick={save} disabled={saving || !editing.title || !editing.content}
+                      className="btn-primary text-sm flex-1 disabled:opacity-50">
+                {saving ? 'Сохранение...' : 'Сохранить'}
               </button>
               <button onClick={() => setEditing(null)} className="btn-secondary text-sm">
                 Отмена
@@ -142,12 +214,17 @@ export default function AdminNewsPage() {
         </div>
       ) : news.length === 0 ? (
         <div className="glass-card text-center py-12">
-          <p style={{ color: 'var(--text-tertiary)' }}>Нет записей</p>
+          <ImageIcon className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--text-tertiary)' }} />
+          <p style={{ color: 'var(--text-tertiary)' }}>Пока нет записей</p>
         </div>
       ) : (
         <div className="space-y-3">
           {news.map(item => (
             <div key={item.id} className="glass-card flex items-center gap-4">
+              {item.imageUrl && (
+                <img src={item.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                     style={{ background: 'var(--surface-2)' }} />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className={item.type === 'PROMOTION' ? 'badge-violet' : 'badge-blue'}>
