@@ -287,13 +287,19 @@ export function BrandButton({ onClick, children, icon, style, block }: {
   const shape   = s.buttonShape   || 'rounded'
   const hover   = s.buttonHover   || 'lift'
 
-  const sizeMap = {
-    sm: 'px-4 py-2 text-sm',
-    md: 'px-6 py-2.5 text-base',
-    lg: 'px-8 py-3.5 text-base',
-    xl: 'px-10 py-4 text-lg',
+  // Use inline styles for sizing/shaping — bulletproof against Tailwind JIT
+  // purging our string-templated utility classes.
+  const sizeStyles: Record<string, React.CSSProperties> = {
+    sm: { padding: '8px 16px',  fontSize: '13px' },
+    md: { padding: '10px 24px', fontSize: '15px' },
+    lg: { padding: '14px 32px', fontSize: '16px' },
+    xl: { padding: '18px 40px', fontSize: '18px' },
   }
-  const shapeMap = { rounded: 'rounded-xl', pill: 'rounded-full', square: 'rounded-md' }
+  const shapeStyles: Record<string, React.CSSProperties> = {
+    rounded: { borderRadius: '12px' },
+    pill:    { borderRadius: '9999px' },
+    square:  { borderRadius: '6px' },
+  }
 
   const variantStyle: React.CSSProperties = {}
   let variantCls = 'text-white'
@@ -308,8 +314,8 @@ export function BrandButton({ onClick, children, icon, style, block }: {
 
   return (
     <button onClick={onClick}
-            className={`inline-flex items-center gap-2 font-semibold transition-all lb-btn lb-btn-hover-${hover} ${sizeMap[size]} ${shapeMap[shape]} ${variantCls}`}
-            style={variantStyle}>
+            className={`inline-flex items-center gap-2 font-semibold lb-btn lb-btn-hover-${hover} ${variantCls}`}
+            style={{ ...sizeStyles[size], ...shapeStyles[shape], ...variantStyle }}>
       {children}
       {icon}
     </button>
