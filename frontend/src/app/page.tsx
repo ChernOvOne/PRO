@@ -21,6 +21,7 @@ export default function LandingPage() {
   const [news, setNews]         = useState<News[]>([])
   const [landing, setLanding]   = useState<Record<string, any>>({})
   const [blocks, setBlocks]     = useState<LandingBlock[]>([])
+  const [blocksLoaded, setBlocksLoaded] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [tmaChecked, setTmaChecked] = useState(false)
   const tmaTriedRef = useRef(false)
@@ -98,7 +99,8 @@ export default function LandingPage() {
       setNews(n)
       setLanding(l)
       setBlocks(Array.isArray(b) ? b : [])
-    })
+      setBlocksLoaded(true)
+    }).catch(() => setBlocksLoaded(true))
   }, [])
 
   const heroTitle    = landing?.hero?.title    || 'Интернет без границ'
@@ -173,7 +175,14 @@ export default function LandingPage() {
       )}
 
       {/* ── CUSTOM BLOCKS (if configured in /admin/landing/builder) ── */}
-      {blocks.length > 0 ? (
+      {/* Wait for fetch to finish before deciding what to render — otherwise we
+          flash the hardcoded fallback for a moment before custom blocks load. */}
+      {!blocksLoaded ? (
+        <div className="min-h-[50vh] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full border-2 border-transparent"
+               style={{ borderTopColor: '#8b5cf6', borderRightColor: '#06b6d4', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      ) : blocks.length > 0 ? (
         <>
           {blocks.map(b => (
             <BlockRenderer key={b.id} block={b} ctx={{ tariffs, proxies, onCta: () => router.push('/login') }} />
