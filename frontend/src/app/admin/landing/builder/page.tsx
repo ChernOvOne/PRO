@@ -20,12 +20,13 @@ import {
   Layers, Shield, CheckCircle2, Star, MessageCircle,
   Image as ImageIcon, Code, Hash, BarChart2,
   ChevronsUp, Wifi, Clock, Play, Building2, Columns,
-  Users, Calendar, Mail, ListChecks, Send,
+  Users, Calendar, Mail, ListChecks, Send, Newspaper, Minus, Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { adminApi } from '@/lib/api'
 import { BlockRenderer, type LandingBlock, type BlockStyle } from '@/components/landing/BlockRenderer'
+import { DEFAULT_TEMPLATE } from './default-template'
 import type { Tariff, TelegramProxy } from '@/types'
 
 // ── Block palette ────────────────────────────────────────────
@@ -118,6 +119,23 @@ const PALETTE: PaletteItem[] = [
     title: 'Наш Telegram-канал', subtitle: 'Новости, инструкции, акции', channel: '@yourchannel',
   } },
   { type: 'proxies', label: 'Прокси', icon: Wifi, description: 'Список TG-прокси из БД', defaultData: { title: 'Бесплатные прокси для Telegram', subtitle: '' } },
+
+  // ── Текст и контент ──
+  { type: 'heading', label: 'Заголовок', icon: Hash, description: 'Большой заголовок секции', defaultData: {
+    kicker: '', text: 'Заголовок секции', subtitle: 'Описание под заголовком', level: 'h2', size: 'xl', align: 'center', gradient: false,
+  } },
+  { type: 'text', label: 'Текст', icon: FileText, description: 'Абзац (или несколько)', defaultData: {
+    content: 'Первый абзац текста.\n\nВторой абзац отделяется пустой строкой.', align: 'left', size: 'md', maxWidth: 'md',
+  } },
+  { type: 'quote', label: 'Цитата', icon: MessageCircle, description: 'Большая цитата с автором', defaultData: {
+    text: 'Лучший VPN, который я когда-либо использовал. Рекомендую всем.', author: 'Иван П.', role: 'Клиент',
+  } },
+  { type: 'news', label: 'Новости', icon: Newspaper, description: 'Список новостей из админки', defaultData: {
+    title: 'Новости', limit: 3,
+  } },
+  { type: 'divider', label: 'Линия', icon: Minus, description: 'Декоративный разделитель', defaultData: {
+    variant: 'gradient', width: 'normal',
+  } },
 
   // ── Утилиты ──
   { type: 'spacer', label: 'Отступ', icon: ArrowLeft, description: 'Пустое пространство', defaultData: { height: 40 } },
@@ -276,6 +294,25 @@ export default function LandingBuilderPage() {
     pushHistory(blocks)
   }
 
+  // ── Load default premium template (replaces all existing blocks) ──
+  const loadTemplate = async () => {
+    if (!confirm('Загрузить готовый шаблон лендинга?\n\nЭто ЗАМЕНИТ все существующие блоки новыми.')) return
+    try {
+      // Delete all existing
+      await Promise.all(blocks.map(b => adminApi.deleteLandingBlock(b.id).catch(() => {})))
+      // Create new blocks in order
+      const created: LandingBlock[] = []
+      for (const tpl of DEFAULT_TEMPLATE) {
+        const b = await adminApi.createLandingBlock({ type: tpl.type, data: tpl.data, visible: true })
+        created.push(b)
+      }
+      setBlocks(created)
+      setSelectedId(null)
+      pushHistory(created)
+      toast.success(`Шаблон загружен — ${created.length} блоков`)
+    } catch { toast.error('Ошибка загрузки шаблона') }
+  }
+
   const deleteBlock = async (id: string) => {
     if (!confirm('Удалить блок?')) return
     try {
@@ -370,6 +407,12 @@ export default function LandingBuilderPage() {
               Превью
             </button>
           </div>
+
+          <button onClick={loadTemplate} title="Загрузить готовый шаблон лендинга"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 text-white"
+                  style={{ background: 'var(--accent-gradient)' }}>
+            <Sparkles className="w-3.5 h-3.5" /> Шаблон
+          </button>
 
           <a href="/" target="_blank" rel="noopener"
              className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"
@@ -763,6 +806,114 @@ function BlockSettings({ block, tariffs, onChange, commit }: {
         <Field label="HTML код">
           <Textarea rows={12} className="font-mono text-[11px]" v={d.html} onC={v => set('html', v)} onBlur={commit} />
         </Field>
+      )}
+
+      {/* Heading */}
+      {block.type === 'heading' && (
+        <>
+          <Field label="Подпись сверху (необязательно)">
+            <Input v={d.kicker} onC={v => set('kicker', v)} onBlur={commit} placeholder="ПОЧЕМУ МЫ" />
+          </Field>
+          <Field label="Текст заголовка">
+            <Input v={d.text} onC={v => set('text', v)} onBlur={commit} />
+          </Field>
+          <Field label="Подзаголовок (опц.)">
+            <Textarea rows={2} v={d.subtitle} onC={v => set('subtitle', v)} onBlur={commit} />
+          </Field>
+          <Field label="Уровень">
+            <Select v={d.level || 'h2'} onC={v => set('level', v)}
+                    opts={[{v:'h1',l:'H1 (самый главный)'}, {v:'h2',l:'H2 (основной)'}, {v:'h3',l:'H3'}]} />
+          </Field>
+          <Field label="Размер">
+            <Select v={d.size || 'xl'} onC={v => set('size', v)}
+                    opts={[{v:'sm',l:'S'}, {v:'md',l:'M'}, {v:'lg',l:'L'}, {v:'xl',l:'XL'}, {v:'2xl',l:'2XL'}]} />
+          </Field>
+          <Field label="Выравнивание">
+            <Select v={d.align || 'center'} onC={v => set('align', v)}
+                    opts={[{v:'left',l:'Влево'}, {v:'center',l:'По центру'}, {v:'right',l:'Вправо'}]} />
+          </Field>
+          <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={!!d.gradient} onChange={e => set('gradient', e.target.checked)} />
+            🌈 Градиентная заливка текста
+          </label>
+        </>
+      )}
+
+      {/* Text */}
+      {block.type === 'text' && (
+        <>
+          <Field label="Текст (двойной перенос = новый абзац)">
+            <Textarea rows={8} v={d.content} onC={v => set('content', v)} onBlur={commit} />
+          </Field>
+          <Field label="Размер шрифта">
+            <Select v={d.size || 'md'} onC={v => set('size', v)}
+                    opts={[{v:'sm',l:'S'}, {v:'md',l:'M'}, {v:'lg',l:'L'}]} />
+          </Field>
+          <Field label="Ширина">
+            <Select v={d.maxWidth || 'md'} onC={v => set('maxWidth', v)}
+                    opts={[{v:'sm',l:'Узкая (576px)'}, {v:'md',l:'Средняя (672px)'}, {v:'lg',l:'Широкая (768px)'}, {v:'full',l:'На всю ширину'}]} />
+          </Field>
+          <Field label="Выравнивание">
+            <Select v={d.align || 'left'} onC={v => set('align', v)}
+                    opts={[{v:'left',l:'Влево'}, {v:'center',l:'По центру'}, {v:'right',l:'Вправо'}]} />
+          </Field>
+          <Field label="Цвет текста (опц.)">
+            <div className="flex gap-2">
+              <input type="color" value={d.color || '#94a3b8'} onChange={e => set('color', e.target.value)}
+                     onBlur={commit} className="h-9 w-14 rounded cursor-pointer" />
+              <Input v={d.color || ''} onC={v => set('color', v || undefined)} onBlur={commit} placeholder="auto" />
+            </div>
+          </Field>
+        </>
+      )}
+
+      {/* Quote */}
+      {block.type === 'quote' && (
+        <>
+          <Field label="Текст цитаты">
+            <Textarea rows={4} v={d.text} onC={v => set('text', v)} onBlur={commit} />
+          </Field>
+          <Field label="Автор"><Input v={d.author} onC={v => set('author', v)} onBlur={commit} /></Field>
+          <Field label="Роль / должность"><Input v={d.role} onC={v => set('role', v)} onBlur={commit} /></Field>
+          <Field label="URL аватара (опц.)"><Input v={d.avatar} onC={v => set('avatar', v)} onBlur={commit} /></Field>
+        </>
+      )}
+
+      {/* News */}
+      {block.type === 'news' && (
+        <>
+          <Field label="Заголовок секции"><Input v={d.title} onC={v => set('title', v)} onBlur={commit} /></Field>
+          <Field label="Сколько новостей показать">
+            <Input type="number" v={d.limit || 3} onC={v => set('limit', Number(v))} onBlur={commit} />
+          </Field>
+          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+            Новости редактируются в разделе «Новости» админки.
+          </p>
+        </>
+      )}
+
+      {/* Divider */}
+      {block.type === 'divider' && (
+        <>
+          <Field label="Стиль">
+            <Select v={d.variant || 'gradient'} onC={v => set('variant', v)}
+                    opts={[
+                      {v:'gradient',l:'Градиентная линия'},
+                      {v:'solid',l:'Тонкая линия'},
+                      {v:'dots',l:'••• Точки'},
+                      {v:'diamond',l:'─◆─ Ромб'},
+                    ]} />
+          </Field>
+          <Field label="Ширина">
+            <Select v={d.width || 'normal'} onC={v => set('width', v)}
+                    opts={[
+                      {v:'narrow',l:'Узкая (120px)'},
+                      {v:'normal',l:'Обычная (320px)'},
+                      {v:'wide',l:'Широкая (600px)'},
+                      {v:'full',l:'На всю ширину'},
+                    ]} />
+          </Field>
+        </>
       )}
     </div>
   )

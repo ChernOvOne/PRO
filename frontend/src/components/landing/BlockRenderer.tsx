@@ -409,50 +409,77 @@ export function BlockRenderer({ block, ctx }: { block: LandingBlock; ctx: Render
     case 'newsletter':    content = <NewsletterBlock data={d} style={s} />; break
     case 'pricing_table': content = <PricingTableBlock data={d} style={s} onCta={ctx.onCta} />; break
     case 'telegram_widget': content = <TelegramWidgetBlock data={d} style={s} />; break
+    case 'heading':       content = <HeadingBlock data={d} style={s} />; break
+    case 'text':          content = <TextBlock data={d} style={s} />; break
+    case 'quote':         content = <QuoteBlock data={d} style={s} />; break
+    case 'news':          content = <NewsBlock data={d} style={s} />; break
+    case 'divider':       content = <DividerBlock data={d} style={s} />; break
     default: return null
   }
   return <StyledBlock block={block} ctx={ctx}>{content}</StyledBlock>
 }
 
-// ═══ 1. Hero ═════════════════════════════════════════════════
+// ═══ 1. Hero (premium) ═══════════════════════════════════════
 function HeroBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   const align = data.align || 'center'
-  const variant = data.variant || 'center'   // center / split / left-image-right
-  const titleSize = { ...style, titleSize: style.titleSize || 'xl' } as BlockStyle
+  const variant = data.variant || 'center'
+  const titleSize = { ...style, titleSize: style.titleSize || '2xl' } as BlockStyle
+  const showDeco = data.showDecoration !== false
+
+  // Decorative blurred blobs for premium glow effect
+  const Deco = () => showDeco ? (
+    <>
+      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full pointer-events-none z-0 opacity-30"
+           style={{ background: 'radial-gradient(circle, var(--accent-1), transparent 70%)', filter: 'blur(80px)' }} />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] rounded-full pointer-events-none z-0 opacity-30"
+           style={{ background: 'radial-gradient(circle, var(--accent-2), transparent 70%)', filter: 'blur(80px)' }} />
+    </>
+  ) : null
 
   if (variant === 'split' && data.image) {
     return (
-      <section className="relative z-10 px-6 lg:px-16 py-20 overflow-hidden">
-        <div className="grid md:grid-cols-2 gap-10 items-center">
+      <section className="relative z-10 px-6 lg:px-16 py-24 md:py-32 overflow-hidden">
+        <Deco />
+        <div className="grid md:grid-cols-2 gap-12 items-center relative z-10">
           <div>
-            {data.badge && <div className="inline-block px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>{data.badge}</div>}
-            <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-4" />
-            {data.subtitle && <p className="text-lg md:text-xl mb-8" style={{ color: 'var(--text-secondary)' }}>{data.subtitle}</p>}
-            {data.ctaText && <BrandButton onClick={onCta} style={style} icon={<ChevronRight className="w-4 h-4" />}>{data.ctaText}</BrandButton>}
+            {data.badge && (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-7 backdrop-blur-sm"
+                   style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)', border: '1px solid rgba(6,182,212,0.2)' }}>
+                ✨ {data.badge}
+              </div>
+            )}
+            <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-5" />
+            {data.subtitle && <p className="text-lg md:text-xl mb-8 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{data.subtitle}</p>}
+            {data.ctaText && <BrandButton onClick={onCta} style={{ ...style, buttonSize: style.buttonSize || 'lg' }} icon={<ChevronRight className="w-5 h-5" />}>{data.ctaText}</BrandButton>}
           </div>
-          <img src={data.image} alt={data.title} className="w-full rounded-2xl" />
+          <div className="relative">
+            <div className="absolute -inset-2 rounded-3xl opacity-40" style={{ background: 'var(--accent-gradient)', filter: 'blur(40px)' }} />
+            <img src={data.image} alt={data.title} className="relative w-full rounded-3xl" />
+          </div>
         </div>
       </section>
     )
   }
 
   return (
-    <section className="relative z-10 px-6 lg:px-16 py-20 overflow-hidden">
-      <div className={align === 'center' ? 'text-center' : ''}>
+    <section className="relative z-10 px-6 lg:px-16 py-24 md:py-36 overflow-hidden">
+      <Deco />
+      <div className={`relative z-10 ${align === 'center' ? 'text-center' : ''}`}>
         {data.badge && (
-          <div className="inline-block px-4 py-1.5 rounded-full text-sm font-medium mb-6"
-               style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-7 backdrop-blur-sm"
+               style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)', border: '1px solid rgba(6,182,212,0.2)' }}>
             {data.badge}
           </div>
         )}
-        <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-4" />
+        <StyledTitle style={titleSize} text={data.title || 'Заголовок'} className="tracking-tight mb-6 leading-[1.05]" />
         {data.subtitle && (
-          <p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
             {data.subtitle}
           </p>
         )}
         {data.ctaText && (
-          <BrandButton onClick={onCta} style={style} icon={<ChevronRight className="w-4 h-4" />}>
+          <BrandButton onClick={onCta} style={{ ...style, buttonSize: style.buttonSize || 'lg' }}
+                       icon={<ChevronRight className="w-5 h-5" />}>
             {data.ctaText}
           </BrandButton>
         )}
@@ -492,11 +519,11 @@ function FeaturesBlock({ data, style }: { data: any; style: BlockStyle }) {
               cardStyle.transitionDelay = (i * 100) + 'ms'
             }
             return (
-              <CardWrap key={i} className={`${cardCls} ${iconsLeft ? 'flex gap-4 items-start' : ''}`}
-                        style={cardStyle} cardHover={style.cardHover}>
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${iconsLeft ? '' : 'mb-4'}`}
-                     style={{ background: 'rgba(6,182,212,0.12)' }}>
-                  <Icon className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+              <CardWrap key={i} className={`${cardCls} ${iconsLeft ? 'flex gap-4 items-start' : ''} backdrop-blur-sm`}
+                        style={cardStyle} cardHover={style.cardHover || 'lift'}>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 relative ${iconsLeft ? '' : 'mb-5'}`}
+                     style={{ background: 'var(--accent-gradient)', boxShadow: '0 6px 20px rgba(6,182,212,0.25)' }}>
+                  <Icon className="w-5 h-5 text-white relative z-10" />
                 </div>
                 <div className={iconsLeft ? 'flex-1' : ''}>
                   <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
@@ -634,18 +661,31 @@ function StatsBlock({ data, style }: { data: any; style: BlockStyle }) {
   )
 }
 
-// ═══ 7. CTA ══════════════════════════════════════════════════
+// ═══ 7. CTA (premium) ════════════════════════════════════════
 function CtaBlock({ data, style, onCta }: { data: any; style: BlockStyle; onCta?: () => void }) {
   return (
-    <section className="relative z-10 px-6 lg:px-16 py-16">
-      <div className="max-w-4xl mx-auto p-10 md:p-14 rounded-3xl text-center"
-           style={{ background: data.bgColor || 'var(--accent-gradient)' }}>
-        <h2 className="text-3xl md:text-4xl font-bold mb-3 text-white">{data.title || 'Начните прямо сейчас'}</h2>
-        {data.subtitle && <p className="text-white opacity-90 mb-6">{data.subtitle}</p>}
-        <BrandButton onClick={onCta} style={{ ...style, buttonVariant: style.buttonVariant || 'solid' }}
-                     icon={<ChevronRight className="w-4 h-4" />}>
-          {data.buttonText || 'Попробовать'}
-        </BrandButton>
+    <section className="relative z-10 px-6 lg:px-16 py-20">
+      <div className="max-w-4xl mx-auto relative">
+        {/* Glow behind the CTA card */}
+        <div className="absolute -inset-4 rounded-3xl opacity-40" style={{ background: 'var(--accent-gradient)', filter: 'blur(40px)' }} />
+        <div className="relative p-10 md:p-16 rounded-3xl text-center overflow-hidden"
+             style={{
+               background: data.bgColor || 'var(--accent-gradient)',
+               boxShadow: '0 20px 60px rgba(6,182,212,0.3)',
+             }}>
+          {/* Subtle pattern overlay */}
+          <div className="absolute inset-0 opacity-10 pointer-events-none"
+               style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+          <div className="relative">
+            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-white tracking-tight">{data.title || 'Начните прямо сейчас'}</h2>
+            {data.subtitle && <p className="text-white opacity-90 mb-8 text-lg max-w-xl mx-auto">{data.subtitle}</p>}
+            <BrandButton onClick={onCta}
+                         style={{ ...style, buttonVariant: style.buttonVariant || 'solid', buttonSize: style.buttonSize || 'lg' }}
+                         icon={<ChevronRight className="w-5 h-5" />}>
+              {data.buttonText || 'Попробовать'}
+            </BrandButton>
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -1097,6 +1137,163 @@ function TelegramWidgetBlock({ data, style }: { data: any; style: BlockStyle }) 
           </a>
         )}
       </div>
+    </section>
+  )
+}
+
+// ═══ 22. Heading ═════════════════════════════════════════════
+// Standalone large heading — good as section separator.
+function HeadingBlock({ data, style }: { data: any; style: BlockStyle }) {
+  const level = data.level || 'h2'
+  const align = data.align || 'center'
+  const size = data.size || 'xl'
+  const sizeMap: Record<string, string> = {
+    sm: 'text-2xl md:text-3xl',
+    md: 'text-3xl md:text-4xl',
+    lg: 'text-4xl md:text-5xl',
+    xl: 'text-5xl md:text-6xl',
+    '2xl': 'text-6xl md:text-7xl',
+  }
+  const Tag = level as any
+  const kicker = data.kicker   // small uppercase text above heading
+  return (
+    <section className="relative z-10 px-6 lg:px-16 py-10" style={{ textAlign: align }}>
+      {kicker && (
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] mb-3"
+             style={{ color: 'var(--accent-1)' }}>
+          {kicker}
+        </div>
+      )}
+      <Tag className={`${sizeMap[size]} font-bold tracking-tight ${data.gradient ? 'lb-text-gradient' : ''}`}
+           style={{ color: data.gradient ? undefined : 'var(--text-primary)' }}>
+        {data.text || 'Заголовок'}
+      </Tag>
+      {data.subtitle && (
+        <p className="mt-4 text-lg md:text-xl max-w-2xl"
+           style={{ color: 'var(--text-secondary)', margin: align === 'center' ? '16px auto 0' : '16px 0 0' }}>
+          {data.subtitle}
+        </p>
+      )}
+    </section>
+  )
+}
+
+// ═══ 23. Text (paragraph) ════════════════════════════════════
+function TextBlock({ data, style }: { data: any; style: BlockStyle }) {
+  const align = data.align || 'left'
+  const size = data.size || 'md'
+  const sizeMap: Record<string, string> = {
+    sm: 'text-sm', md: 'text-base md:text-lg', lg: 'text-lg md:text-xl',
+  }
+  const maxWidthMap: Record<string, string> = { sm: 'max-w-xl', md: 'max-w-2xl', lg: 'max-w-3xl', full: 'max-w-full' }
+  const maxWidth = maxWidthMap[(data.maxWidth as string) || 'md'] || 'max-w-2xl'
+  // Split content by double newline into paragraphs
+  const paragraphs = (data.content || '').split(/\n\n+/).filter(Boolean)
+  return (
+    <section className="relative z-10 px-6 lg:px-16 py-8">
+      <div className={`${maxWidth} mx-auto space-y-4`} style={{ textAlign: align }}>
+        {paragraphs.map((p: string, i: number) => (
+          <p key={i} className={sizeMap[size]} style={{ color: data.color || 'var(--text-secondary)', lineHeight: 1.75 }}>
+            {p}
+          </p>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ═══ 24. Quote ═══════════════════════════════════════════════
+function QuoteBlock({ data, style }: { data: any; style: BlockStyle }) {
+  return (
+    <section className="relative z-10 px-6 lg:px-16 py-14">
+      <div className="max-w-3xl mx-auto text-center">
+        <div className="text-6xl md:text-8xl font-black leading-none opacity-20 mb-2"
+             style={{ color: 'var(--accent-1)' }}>"</div>
+        <blockquote className="text-xl md:text-3xl font-medium leading-relaxed mb-6"
+                    style={{ color: 'var(--text-primary)' }}>
+          {data.text || 'Вдохновляющая цитата'}
+        </blockquote>
+        {(data.author || data.role) && (
+          <div className="flex items-center justify-center gap-3">
+            {data.avatar && (
+              <img src={data.avatar} alt={data.author} className="w-12 h-12 rounded-full object-cover" />
+            )}
+            <div className="text-left">
+              {data.author && <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{data.author}</div>}
+              {data.role && <div className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{data.role}</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ═══ 25. News feed ═══════════════════════════════════════════
+function NewsBlock({ data, style }: { data: any; style: BlockStyle }) {
+  const [news, setNews] = useState<any[]>([])
+  useEffect(() => {
+    fetch(`/api/public/news?limit=${data.limit || 3}`)
+      .then(r => r.json()).then(setNews).catch(() => {})
+  }, [data.limit])
+  if (!news.length) return null
+  return (
+    <section className="relative z-10 px-6 lg:px-16 py-16">
+      <div>
+        {data.title && <div className="text-center mb-10"><StyledTitle style={style} text={data.title} /></div>}
+        <div className="grid md:grid-cols-3 gap-5">
+          {news.map((n, i) => (
+            <CardWrap key={n.id} className="p-6 rounded-2xl"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+                      cardHover={style.cardHover || 'lift'}>
+              {n.category && (
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider mb-3"
+                      style={{ background: 'rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
+                  {n.category}
+                </span>
+              )}
+              <h3 className="font-semibold mb-2 text-lg" style={{ color: 'var(--text-primary)' }}>{n.title}</h3>
+              {n.summary && <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>{n.summary}</p>}
+              {n.publishedAt && (
+                <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                  {new Date(n.publishedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+                </div>
+              )}
+            </CardWrap>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ═══ 26. Divider (decorative line) ═══════════════════════════
+function DividerBlock({ data, style }: { data: any; style: BlockStyle }) {
+  const variant = data.variant || 'gradient'
+  const widthMap = { narrow: '120px', normal: '320px', wide: '600px', full: '100%' }
+  const w = widthMap[data.width as keyof typeof widthMap] || '320px'
+  return (
+    <section className="relative z-10 px-6 lg:px-16 py-8 flex justify-center">
+      {variant === 'gradient' && (
+        <div style={{ width: w, height: '2px', background: 'linear-gradient(90deg, transparent, var(--accent-1), transparent)' }} />
+      )}
+      {variant === 'solid' && (
+        <div style={{ width: w, height: '1px', background: 'var(--glass-border)' }} />
+      )}
+      {variant === 'dots' && (
+        <div className="flex items-center gap-2">
+          {[1,2,3].map(i => (
+            <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-1)' }} />
+          ))}
+        </div>
+      )}
+      {variant === 'diamond' && (
+        <div className="flex items-center gap-3" style={{ color: 'var(--accent-1)' }}>
+          <div style={{ width: '60px', height: '1px', background: 'currentColor' }} />
+          <div style={{ width: '8px', height: '8px', background: 'currentColor', transform: 'rotate(45deg)' }} />
+          <div style={{ width: '60px', height: '1px', background: 'currentColor' }} />
+        </div>
+      )}
     </section>
   )
 }
