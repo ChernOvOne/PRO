@@ -113,9 +113,23 @@ export async function registerPlugins(app: FastifyInstance) {
   })
 
   // ── Rate limiting ────────────────────────────────────────
+  // Key by userId when authenticated (cookie or Bearer), else by IP.
+  // This prevents one authenticated user from draining the shared IP budget
+  // when the app sits behind a reverse proxy (nginx).
   await app.register(fastifyRateLimit, {
-    max:        100,
+    max:        300,
     timeWindow: '1 minute',
+    keyGenerator: (req: any) => {
+      try {
+        const token = (req.headers.authorization as string | undefined)?.replace(/^Bearer /, '')
+          || req.cookies?.token
+        if (token) {
+          const decoded = app.jwt.decode(token) as { sub?: string } | null
+          if (decoded?.sub) return `user:${decoded.sub}`
+        }
+      } catch { /* fall through */ }
+      return `ip:${req.ip}`
+    },
     errorResponseBuilder: () => ({
       error: 'Too many requests, please slow down.',
     }),

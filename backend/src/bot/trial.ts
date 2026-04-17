@@ -85,5 +85,17 @@ export async function createTrialForUser(
     `Trial created for user ${userId}: ${trialDays} days, tariff "${tariff.name}", RM uuid ${rmUser.uuid}`,
   )
 
+  // Fire referral_trial event for the referrer (if user was referred)
+  if (user.referredById) {
+    try {
+      const { triggerEvent } = await import('../services/funnel-engine')
+      await triggerEvent('referral_trial', user.referredById, {
+        refName: user.telegramName || user.email || 'друг',
+      })
+    } catch (e: any) {
+      logger.warn(`[Referral] referral_trial event failed: ${e.message}`)
+    }
+  }
+
   return { days: trialDays, tariffName: tariff.name }
 }

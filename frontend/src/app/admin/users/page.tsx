@@ -829,9 +829,14 @@ export default function AdminUsers() {
               className="glass-input py-2 text-sm w-auto">
               <option value="created_desc">Сначала новые</option>
               <option value="created_asc">Сначала старые</option>
-              <option value="paid_desc">По сумме (больше)</option>
-              <option value="paid_asc">По сумме (меньше)</option>
-              <option value="payments_desc">По кол-ву платежей</option>
+              <option value="paid_desc">Принёс ↓</option>
+              <option value="paid_asc">Принёс ↑</option>
+              <option value="payments_desc">Платежей ↓</option>
+              <option value="payments_asc">Платежей ↑</option>
+              <option value="refs_desc">Рефералов ↓</option>
+              <option value="refs_asc">Рефералов ↑</option>
+              <option value="expires_desc">Истекает ↓</option>
+              <option value="expires_asc">Истекает ↑</option>
               <option value="last_login_desc">По последнему входу</option>
             </select>
           </div>
@@ -925,13 +930,41 @@ export default function AdminUsers() {
                           }}
                           className="rounded" />
                       </th>
-                      {['Пользователь','Источник','Статус','Истекает','Принёс','Платежи','Рефералы','Действия']
-                        .map(h => (
-                          <th key={h} className="text-left px-4 py-3 font-medium text-xs"
-                              style={{ color: 'var(--text-tertiary)' }}>
-                            {h}
-                          </th>
-                        ))}
+                      {(() => {
+                        const columns: Array<{ label: string; key: string | null }> = [
+                          { label: 'Пользователь', key: 'email' },
+                          { label: 'Источник',     key: 'source' },
+                          { label: 'Статус',       key: 'status' },
+                          { label: 'Истекает',     key: 'expires' },
+                          { label: 'Принёс',       key: 'paid' },
+                          { label: 'Платежи',      key: 'payments' },
+                          { label: 'Рефералы',     key: 'refs' },
+                          { label: 'Действия',     key: null },
+                        ]
+                        const toggleSort = (key: string) => {
+                          const desc = `${key}_desc`
+                          const asc  = `${key}_asc`
+                          setSort(sort === desc ? asc : desc)
+                          setPage(1)
+                        }
+                        return columns.map(col => {
+                          const isActive = col.key && (sort === `${col.key}_desc` || sort === `${col.key}_asc`)
+                          const isDesc   = sort === `${col.key}_desc`
+                          return (
+                            <th key={col.label}
+                                onClick={col.key ? () => toggleSort(col.key!) : undefined}
+                                className={`text-left px-4 py-3 font-medium text-xs ${col.key ? 'cursor-pointer select-none hover:text-white' : ''}`}
+                                style={{ color: isActive ? 'var(--accent-1)' : 'var(--text-tertiary)' }}>
+                              {col.label}
+                              {col.key && (
+                                <span className="ml-1 inline-block" style={{ opacity: isActive ? 1 : 0.3 }}>
+                                  {isActive ? (isDesc ? '↓' : '↑') : '↕'}
+                                </span>
+                              )}
+                            </th>
+                          )
+                        })
+                      })()}
                     </tr>
                   </thead>
                   <tbody>

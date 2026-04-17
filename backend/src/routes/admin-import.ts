@@ -1794,6 +1794,29 @@ async function runYukassaSync(jobId: string, dateFrom?: string, dateTo?: string)
               }
             }
 
+            // ── Re-match userId for payments imported before users were loaded ──
+            // If we already have the payment but no user linked, try to resolve now.
+            // User counters are recomputed in one pass at the end of the sync to avoid
+            // double-counting on repeated runs.
+            if (!existing.userId) {
+              const desc = yp.description || ''
+              const m = desc.match(idRegex)
+              const leadtehId = m ? m[1] : null
+              if (leadtehId) {
+                const user = await prisma.user.findUnique({
+                  where: { leadtehId },
+                  select: { id: true },
+                })
+                if (user) {
+                  await prisma.payment.update({
+                    where: { id: existing.id },
+                    data: { userId: user.id },
+                  })
+                  job.updated++
+                }
+              }
+            }
+
             job.skipped++
             job.processed++
             continue
@@ -1931,6 +1954,34 @@ async function runYukassaSync(jobId: string, dateFrom?: string, dateTo?: string)
 
       refundCursor = res.nextCursor
     } while (refundCursor)
+
+    // ── Recompute user counters (totalPaid, paymentsCount, lastPaymentAt) ──
+    // Idempotent — runs over all matched payments after sync is complete.
+    // Necessary because we re-match userId for old imports where user
+    // counters weren't incremented (userId was null during initial sync).
+    try {
+      await prisma.$executeRawUnsafe(`
+        UPDATE users u SET
+          total_paid      = COALESCE(agg.total, 0),
+          payments_count  = COALESCE(agg.cnt, 0),
+          last_payment_at = agg.last_at
+        FROM (
+          SELECT user_id,
+                 SUM(amount)      AS total,
+                 COUNT(*)         AS cnt,
+                 MAX(COALESCE(confirmed_at, created_at)) AS last_at
+          FROM payments
+          WHERE user_id IS NOT NULL
+            AND status = 'PAID'
+            AND provider IN ('YUKASSA','CRYPTOPAY')
+          GROUP BY user_id
+        ) agg
+        WHERE u.id = agg.user_id
+      `)
+      logger.info('YuKassa sync: user counters recomputed')
+    } catch (err: any) {
+      logger.error(`User counters recompute failed: ${err.message}`)
+    }
 
   } catch (err: any) {
     job.errors++

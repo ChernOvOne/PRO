@@ -8,6 +8,7 @@ import { inAppNotifications } from '../services/notification-service'
 import { notifications } from '../services/notifications'
 import { logger }   from '../utils/logger'
 import { config }   from '../config'
+import { logAudit } from '../services/audit'
 import { parseYukassaStatus, buildActivityLog } from './users'
 
 // GeoIP cache (in-memory, TTL 1 hour)
@@ -113,6 +114,31 @@ export async function buildUsersWhere(q: Record<string, any>): Promise<any> {
   // Referrals (count-based)
   if (q.has_referrals === 'yes') where.referrals = { some: {} }
   if (q.has_referrals === 'no') where.referrals = { none: {} }
+
+  // referrals_min — N+ referrals in total (paid + unpaid)
+  if (q.referrals_min) {
+    const min = Number(q.referrals_min)
+    if (!Number.isNaN(min) && min > 0) {
+      const grouped = await prisma.user.groupBy({
+        by: ['referredById'],
+        where: { referredById: { not: null } },
+        _count: { _all: true },
+      })
+      const qualifyingIds = grouped
+        .filter(g => g._count._all >= min)
+        .map(g => g.referredById!)
+        .filter(Boolean)
+      if (qualifyingIds.length === 0) {
+        where.id = { in: ['__none__'] }
+      } else if (where.id && typeof where.id === 'object' && 'in' in where.id) {
+        // Intersect with existing id filter
+        const existing = (where.id as any).in as string[]
+        where.id = { in: existing.filter(i => qualifyingIds.includes(i)) }
+      } else {
+        where.id = { in: qualifyingIds }
+      }
+    }
+  }
 
   // Date ranges
   if (q.created_from || q.created_to) {
@@ -436,11 +462,24 @@ export async function adminRoutes(app: FastifyInstance) {
     if (refsPaidMin !== null) delete (where as any).__refsPaidMin
 
     let orderBy: any = { createdAt: 'desc' }
-    if (q.sort === 'created_asc') orderBy = { createdAt: 'asc' }
-    if (q.sort === 'paid_desc') orderBy = { totalPaid: 'desc' }
-    if (q.sort === 'paid_asc') orderBy = { totalPaid: 'asc' }
-    if (q.sort === 'payments_desc') orderBy = { paymentsCount: 'desc' }
-    if (q.sort === 'last_login_desc') orderBy = { lastLoginAt: 'desc' }
+    if (q.sort === 'created_asc')      orderBy = { createdAt: 'asc' }
+    if (q.sort === 'created_desc')     orderBy = { createdAt: 'desc' }
+    if (q.sort === 'paid_desc')        orderBy = { totalPaid: 'desc' }
+    if (q.sort === 'paid_asc')         orderBy = { totalPaid: 'asc' }
+    if (q.sort === 'payments_desc')    orderBy = { paymentsCount: 'desc' }
+    if (q.sort === 'payments_asc')     orderBy = { paymentsCount: 'asc' }
+    if (q.sort === 'last_login_desc')  orderBy = { lastLoginAt: 'desc' }
+    if (q.sort === 'last_login_asc')   orderBy = { lastLoginAt: 'asc' }
+    if (q.sort === 'expires_desc')     orderBy = { subExpireAt: 'desc' }
+    if (q.sort === 'expires_asc')      orderBy = { subExpireAt: 'asc' }
+    if (q.sort === 'status_asc')       orderBy = { subStatus: 'asc' }
+    if (q.sort === 'status_desc')      orderBy = { subStatus: 'desc' }
+    if (q.sort === 'source_asc')       orderBy = { customerSource: 'asc' }
+    if (q.sort === 'source_desc')      orderBy = { customerSource: 'desc' }
+    if (q.sort === 'email_asc')        orderBy = { email: 'asc' }
+    if (q.sort === 'email_desc')       orderBy = { email: 'desc' }
+    if (q.sort === 'refs_desc')        orderBy = { referrals: { _count: 'desc' } }
+    if (q.sort === 'refs_asc')         orderBy = { referrals: { _count: 'asc' } }
 
     // If we need to apply post-filters in memory (avg_check / refs_paid_min),
     // fetch a wider window and slice client-side. Otherwise normal pagination.
@@ -586,6 +625,24 @@ export async function adminRoutes(app: FastifyInstance) {
           firstConnectedAt:   rm.userTraffic?.firstConnectedAt,
           lastConnectedNodeUuid: rm.userTraffic?.lastConnectedNodeUuid,
           activeInternalSquads: rm.activeInternalSquads,
+        }
+
+        // Lazy sync: refresh local subStatus / subExpireAt / subLink from REMNAWAVE.
+        // This keeps the admin page accurate without waiting for hourly sync.
+        const newStatus = rm.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE'
+        const newExpire = rm.expireAt ? new Date(rm.expireAt) : null
+        const newSubLink = remnawave.getSubscriptionUrl(rm.uuid, rm.subscriptionUrl)
+        const statusChanged  = newStatus !== user.subStatus
+        const expireChanged  = newExpire?.toISOString() !== user.subExpireAt?.toISOString()
+        const subLinkChanged = newSubLink !== user.subLink
+        if (statusChanged || expireChanged || subLinkChanged) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data:  { subStatus: newStatus, subExpireAt: newExpire, subLink: newSubLink },
+          }).catch(() => {})
+          ;(safe as any).subStatus   = newStatus
+          ;(safe as any).subExpireAt = newExpire
+          ;(safe as any).subLink     = newSubLink
         }
       } catch {
         // REMNAWAVE unavailable, continue without
@@ -742,12 +799,34 @@ export async function adminRoutes(app: FastifyInstance) {
       if (existing && existing.id !== id) return reply.status(409).send({ error: 'Telegram ID уже занят' })
     }
 
+    const oldEmail = user.email
     // Update local user
     const updateData: any = {}
     if (body.email !== undefined) updateData.email = body.email || null
     if (body.telegramId !== undefined) updateData.telegramId = body.telegramId || null
 
     const updated = await prisma.user.update({ where: { id }, data: updateData })
+
+    // Audit log (who changed, before/after)
+    await logAudit({
+      userId:   (req.user as any).sub,
+      action:   'update',
+      entity:   'user',
+      entityId: id,
+      oldData:  { email: user.email, telegramId: user.telegramId },
+      newData:  { email: updated.email, telegramId: updated.telegramId },
+      ipAddress: req.ip,
+    })
+
+    // Notify old email if it was changed (security alert + undo window)
+    if (oldEmail && body.email !== undefined && body.email !== oldEmail) {
+      try {
+        const { emailService } = await import('../services/email')
+        await emailService.sendEmailChangedAlert(oldEmail, updated.email || '—')
+      } catch (e: any) {
+        logger.warn(`Email-changed alert failed: ${e.message}`)
+      }
+    }
 
     // Sync to REMNAWAVE
     if (user.remnawaveUuid) {
@@ -764,6 +843,51 @@ export async function adminRoutes(app: FastifyInstance) {
 
     logger.info(`Admin updated profile for user ${id}: email=${updated.email}, tg=${updated.telegramId}`)
     return { ok: true, user: { id: updated.id, email: updated.email, telegramId: updated.telegramId } }
+  })
+
+  // ── Reset password: generate random password, save hash, email it ──
+  app.post('/users/:id/reset-password', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await prisma.user.findUnique({ where: { id } })
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    if (!user.email) return reply.status(400).send({ error: 'У пользователя нет email — сначала привяжите' })
+
+    // Generate 12-char password without lookalikes (I, l, 1, O, 0)
+    const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+    let plain = ''
+    const randomBytes = await import('crypto').then(m => m.randomBytes(24))
+    for (let i = 0; i < 12; i++) plain += ALPHABET[randomBytes[i] % ALPHABET.length]
+
+    const bcrypt = await import('bcryptjs')
+    const hash = await bcrypt.default.hash(plain, 12)
+
+    await prisma.user.update({
+      where: { id },
+      data:  { passwordHash: hash, passwordSetAt: new Date() },
+    })
+
+    // Send welcome email with password
+    try {
+      const { emailService } = await import('../services/email')
+      await emailService.sendAdminPasswordReset(user.email, plain)
+    } catch (e: any) {
+      logger.error(`Failed to send password email to ${user.email}: ${e.message}`)
+      return reply.status(500).send({ error: 'Пароль сохранён, но email не отправлен: ' + e.message, password: plain })
+    }
+
+    // Audit log
+    await logAudit({
+      userId:   (req.user as any).sub,
+      action:   'update',
+      entity:   'user.password',
+      entityId: id,
+      newData:  { resetBy: 'admin', emailTo: user.email },
+      ipAddress: req.ip,
+    })
+
+    logger.info(`Admin reset password for user ${id} (${user.email})`)
+    // Show password to admin once — so it can be communicated if email gets lost
+    return { ok: true, password: plain, sentTo: user.email }
   })
 
   // ─────────────────────────────────────────────────────────

@@ -216,6 +216,240 @@ const CONDITION_TYPES = [
   { value: 'language_is', label: 'Язык равен' },
 ]
 
+// Smart node presets — one-click chains of connected nodes
+type PresetNode = {
+  refId: string
+  nodeType: string
+  name?: string
+  offsetX?: number
+  offsetY?: number
+  next?: string
+  trueNext?: string
+  falseNext?: string
+  data?: Record<string, any>
+}
+type NodePreset = {
+  id: string
+  name: string
+  description: string
+  icon: string
+  nodes: PresetNode[]
+}
+
+const NODE_PRESETS: NodePreset[] = [
+  {
+    id: 'delay_message',
+    name: 'Задержка + Сообщение',
+    description: 'Через N времени отправить TG-сообщение',
+    icon: '⏱️',
+    nodes: [
+      {
+        refId: 'd', nodeType: 'delay', name: 'Задержка 1 час', offsetX: 0, offsetY: 0,
+        data: { delayType: 'hours', delayValue: 1 },
+        next: 'm',
+      },
+      {
+        refId: 'm', nodeType: 'message', name: 'Сообщение', offsetX: 320, offsetY: 0,
+        data: { channelTg: true, tgText: '👋 {name}, ...', tgParseMode: 'Markdown' },
+      },
+    ],
+  },
+  {
+    id: 'check_paid',
+    name: 'Проверить оплату → 2 ветки',
+    description: 'Условие (оплачивал?) с двумя ветками для TRUE/FALSE',
+    icon: '💳',
+    nodes: [
+      {
+        refId: 'c', nodeType: 'condition', name: 'Оплачивал?', offsetX: 0, offsetY: 0,
+        data: { conditions: { logic: 'AND', rules: [{ field: 'payments_count', op: 'gt', value: 0 }] } },
+        trueNext: 'y', falseNext: 'n',
+      },
+      {
+        refId: 'y', nodeType: 'message', name: 'Спасибо клиент', offsetX: 320, offsetY: -100,
+        data: { channelTg: true, tgText: '💎 Спасибо за оплаты, {name}!' },
+      },
+      {
+        refId: 'n', nodeType: 'message', name: 'Первое предложение', offsetX: 320, offsetY: 100,
+        data: { channelTg: true, tgText: '🎁 {name}, попробуйте — первая неделя бесплатно' },
+      },
+    ],
+  },
+  {
+    id: 'retention_3step',
+    name: 'Ретеншен 3 шага',
+    description: 'Напоминание + задержка 1д + скидка 10% + задержка 3д + скидка 20%',
+    icon: '🎯',
+    nodes: [
+      {
+        refId: 'm1', nodeType: 'message', name: 'Напоминание', offsetX: 0, offsetY: 0,
+        data: { channelTg: true, tgText: '⏰ {name}, не забывайте продлить подписку' },
+        next: 'd1',
+      },
+      {
+        refId: 'd1', nodeType: 'delay', name: '1 день', offsetX: 320, offsetY: 0,
+        data: { delayType: 'days', delayValue: 1 },
+        next: 'm2',
+      },
+      {
+        refId: 'm2', nodeType: 'message', name: 'Скидка 10%', offsetX: 640, offsetY: 0,
+        data: { channelTg: true, tgText: '🎁 Скидка **10%** промокод SAVE10', actionType: 'promo_discount', actionValue: '10', actionPromoExpiry: 3 },
+        next: 'd2',
+      },
+      {
+        refId: 'd2', nodeType: 'delay', name: '3 дня', offsetX: 960, offsetY: 0,
+        data: { delayType: 'days', delayValue: 3 },
+        next: 'm3',
+      },
+      {
+        refId: 'm3', nodeType: 'message', name: 'Скидка 20%', offsetX: 1280, offsetY: 0,
+        data: { channelTg: true, tgText: '🔥 Финал: скидка **20%** промокод LAST20', actionType: 'promo_discount', actionValue: '20', actionPromoExpiry: 1 },
+      },
+    ],
+  },
+  {
+    id: 'wait_pay_recover',
+    name: 'Ждём оплату → возврат',
+    description: 'Ждать событие payment_success 24ч, если не дождались — напомнить',
+    icon: '⏳',
+    nodes: [
+      {
+        refId: 'w', nodeType: 'wait_event', name: 'Ждём оплату 24ч', offsetX: 0, offsetY: 0,
+        data: { waitEvent: 'payment_success', waitTimeout: 86400 },
+        next: 'ok', falseNext: 'no',
+      },
+      {
+        refId: 'ok', nodeType: 'message', name: 'Спасибо за оплату', offsetX: 320, offsetY: -100,
+        data: { channelTg: true, tgText: '✅ {name}, оплата получена! Подписка активна.' },
+      },
+      {
+        refId: 'no', nodeType: 'message', name: 'Напоминание', offsetX: 320, offsetY: 100,
+        data: { channelTg: true, tgText: '⏰ {name}, вы не завершили оплату — нужна помощь?' },
+      },
+    ],
+  },
+  {
+    id: 'ab_test',
+    name: 'A/B тест 50/50',
+    description: 'Split 50% на 2 разных сообщения',
+    icon: '🔬',
+    nodes: [
+      {
+        refId: 's', nodeType: 'split', name: 'A/B 50/50', offsetX: 0, offsetY: 0,
+        data: { splitPercent: 50 },
+        trueNext: 'a', falseNext: 'b',
+      },
+      {
+        refId: 'a', nodeType: 'message', name: 'Вариант А', offsetX: 320, offsetY: -100,
+        data: { channelTg: true, tgText: '🅰️ Вариант А, {name}' },
+      },
+      {
+        refId: 'b', nodeType: 'message', name: 'Вариант B', offsetX: 320, offsetY: 100,
+        data: { channelTg: true, tgText: '🅱️ Вариант B, {name}' },
+      },
+    ],
+  },
+  // ── State-check пресеты (готовые цепочки для типовых сценариев) ──
+  {
+    id: 'state_not_connected_24h',
+    name: 'Не подключился 24ч — напомнить',
+    description: 'Триггер state_not_connected 24ч + сообщение с инструкцией',
+    icon: '🔌',
+    nodes: [
+      {
+        refId: 't', nodeType: 'trigger', name: 'Не подключился 24ч', offsetX: 0, offsetY: 0,
+        data: { triggerType: 'state_not_connected', triggerParam: 24, delayType: 'hours', channelTg: true,
+          tgText: '🔌 {name}, вижу вы не подключились.\n\nВот инструкции по вашему устройству:',
+          tgButtons: [{ label: '📱 Инструкции', type: 'webapp', url: '{appUrl}/dashboard/instructions' }] },
+      },
+    ],
+  },
+  {
+    id: 'state_inactive_14d',
+    name: 'Неактивен 14 дней — вернуть',
+    description: 'Триггер state_inactive 14 дней + промо-напоминание',
+    icon: '🌟',
+    nodes: [
+      {
+        refId: 't', nodeType: 'trigger', name: 'Неактивен 14 дней', offsetX: 0, offsetY: 0,
+        data: { triggerType: 'state_inactive', triggerParam: 14, delayType: 'days', channelTg: true,
+          tgText: '🌟 {name}, мы скучаем!\n\nПродлите подписку и получите бонус:',
+          actionType: 'promo_discount', actionValue: '20', actionPromoExpiry: 7 },
+      },
+    ],
+  },
+  {
+    id: 'state_winback_7d',
+    name: 'Winback 7 дней',
+    description: 'Истекла 7 дней назад → промо 30%',
+    icon: '💔',
+    nodes: [
+      {
+        refId: 't', nodeType: 'trigger', name: 'Winback 7 дней', offsetX: 0, offsetY: 0,
+        data: { triggerType: 'state_winback', triggerParam: 7, delayType: 'days', channelTg: true,
+          tgText: '💔 {name}, вернитесь со скидкой 30%!',
+          actionType: 'promo_discount', actionValue: '30', actionPromoExpiry: 7 },
+      },
+    ],
+  },
+  {
+    id: 'state_anniversary_365d',
+    name: 'Годовщина 1 год',
+    description: 'Ровно 365 дней после регистрации + бонус +14 дней',
+    icon: '🎂',
+    nodes: [
+      {
+        refId: 't', nodeType: 'trigger', name: 'Годовщина 1 год', offsetX: 0, offsetY: 0,
+        data: { triggerType: 'state_anniversary', triggerParam: 365, delayType: 'days', channelTg: true,
+          tgText: '🎂 {name}, год с нами!\n\n+14 дней в подарок 🎁',
+          actionType: 'bonus_days', actionValue: '14' },
+      },
+    ],
+  },
+]
+
+// Visual condition builder — fields, operators, rules
+const CONDITION_FIELDS: Array<{ value: string; label: string; type: 'number' | 'string' | 'boolean' | 'array' }> = [
+  { value: 'sub_status',            label: 'Статус подписки',       type: 'string' },
+  { value: 'days_left',             label: 'Дней до окончания',    type: 'number' },
+  { value: 'has_subscription',      label: 'Есть подписка',         type: 'boolean' },
+  { value: 'is_connected',          label: 'Подключён к VPN',       type: 'boolean' },
+  { value: 'devices_count',         label: 'Устройств',             type: 'number' },
+  { value: 'traffic_used_gb',       label: 'Использовано GB',       type: 'number' },
+  { value: 'payments_count',        label: 'Кол-во оплат',          type: 'number' },
+  { value: 'payments_sum',          label: 'Сумма оплат ₽',         type: 'number' },
+  { value: 'last_payment_days',     label: 'Дней с последней оплаты', type: 'number' },
+  { value: 'referrals_count',       label: 'Рефералов',             type: 'number' },
+  { value: 'balance',               label: 'Баланс ₽',              type: 'number' },
+  { value: 'bonus_days',            label: 'Бонус-дней',            type: 'number' },
+  { value: 'days_since_registration', label: 'Дней с регистрации', type: 'number' },
+  { value: 'has_email',             label: 'Есть email',            type: 'boolean' },
+  { value: 'has_telegram',          label: 'Есть Telegram',         type: 'boolean' },
+  { value: 'tags',                  label: 'Теги',                  type: 'array' },
+]
+
+const CONDITION_OPS: Record<string, Array<{ value: string; label: string }>> = {
+  number: [
+    { value: 'eq', label: '=' }, { value: 'ne', label: '≠' },
+    { value: 'gt', label: '>' }, { value: 'lt', label: '<' },
+    { value: 'gte', label: '≥' }, { value: 'lte', label: '≤' },
+    { value: 'is_empty', label: 'не задано' }, { value: 'is_not_empty', label: 'задано' },
+  ],
+  string: [
+    { value: 'eq', label: '=' }, { value: 'ne', label: '≠' },
+    { value: 'contains', label: 'содержит' }, { value: 'not_contains', label: 'не содержит' },
+    { value: 'is_empty', label: 'пусто' }, { value: 'is_not_empty', label: 'не пусто' },
+  ],
+  boolean: [
+    { value: 'is_true', label: 'да' },
+    { value: 'is_false', label: 'нет' },
+  ],
+  array: [
+    { value: 'contains', label: 'содержит' }, { value: 'not_contains', label: 'не содержит' },
+    { value: 'is_empty', label: 'пусто' }, { value: 'is_not_empty', label: 'не пусто' },
+  ],
+}
+
 const ACTION_TYPES = [
   { value: 'none', label: 'Нет' },
   { value: 'bonus_days', label: 'Бонус дней' },
@@ -288,6 +522,40 @@ export default function FunnelBuilderPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
   const [showNewGroup, setShowNewGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templates, setTemplates] = useState<any[]>([])
+  const [installingId, setInstallingId] = useState<string | null>(null)
+  const [showAnalytics, setShowAnalytics] = useState(false)
+  const [analytics, setAnalytics] = useState<any>(null)
+  const [analyticsDays, setAnalyticsDays] = useState(30)
+  const [showSimulator, setShowSimulator] = useState(false)
+  const [simulation, setSimulation] = useState<any>(null)
+  const [simUserId, setSimUserId] = useState('')
+  const [validation, setValidation] = useState<any>(null)
+  const [showValidation, setShowValidation] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+  const [wizStep, setWizStep] = useState(0)
+  const [wizData, setWizData] = useState<{
+    name: string
+    triggerType: string
+    messageText: string
+    delayValue: number
+    delayType: 'minutes' | 'hours' | 'days'
+    addCondition: boolean
+    conditionField: string
+    conditionOp: string
+    conditionValue: string
+  }>({
+    name: '',
+    triggerType: 'registration',
+    messageText: '👋 Привет, {name}!',
+    delayValue: 0,
+    delayType: 'minutes',
+    addCondition: false,
+    conditionField: 'has_subscription',
+    conditionOp: 'is_false',
+    conditionValue: '',
+  })
   const [showAddNodeMenu, setShowAddNodeMenu] = useState(false)
   const [variablePopupOpen, setVariablePopupOpen] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -317,7 +585,7 @@ export default function FunnelBuilderPage() {
 
   /* ── Button form ──────────────────────────────────────── */
   const [showButtonForm, setShowButtonForm] = useState(false)
-  const [buttonForm, setButtonForm] = useState({ label: '', type: 'url' as string, url: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 })
+  const [buttonForm, setButtonForm] = useState({ label: '', type: 'url' as string, url: '', copyText: '', callbackData: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 })
   const [editingBtnIdx, setEditingBtnIdx] = useState<number | null>(null)
 
   /* ── Condition check state ────────────────────────────── */
@@ -485,6 +753,174 @@ export default function FunnelBuilderPage() {
     } catch (e: any) { toast.error('Ошибка: ' + (e.message || '')) }
   }
 
+  /* ── Templates ─────────────────────────────────────────── */
+  const openTemplates = async () => {
+    setShowTemplates(true)
+    try {
+      const list = await adminApi.funnelTemplates()
+      setTemplates(list || [])
+    } catch (e: any) { toast.error('Ошибка загрузки шаблонов: ' + (e.message || '')) }
+  }
+
+  const openAnalytics = async () => {
+    if (!activeGroupId) return
+    setShowAnalytics(true)
+    setAnalytics(null)
+    try {
+      const data = await adminApi.funnelAnalytics(activeGroupId, analyticsDays)
+      setAnalytics(data)
+    } catch (e: any) { toast.error('Ошибка аналитики: ' + (e.message || '')) }
+  }
+
+  const reloadAnalytics = async (days: number) => {
+    if (!activeGroupId) return
+    setAnalyticsDays(days)
+    setAnalytics(null)
+    try {
+      const data = await adminApi.funnelAnalytics(activeGroupId, days)
+      setAnalytics(data)
+    } catch {}
+  }
+
+  const wizardFinish = async () => {
+    try {
+      const group = await adminApi.createFunnelGroup({
+        name: wizData.name || 'Новая воронка',
+        description: 'Создано через Wizard',
+      })
+      const baseX = 200
+      const baseY = 200
+      // Step 1: create trigger
+      const trigger = await adminApi.createFunnelNode(group.id, {
+        nodeType: 'trigger',
+        name: 'Триггер',
+        posX: baseX,
+        posY: baseY,
+        triggerType: wizData.triggerType,
+        channelTg: wizData.delayValue === 0 && !wizData.addCondition,
+        tgText: wizData.delayValue === 0 && !wizData.addCondition ? wizData.messageText : null,
+        tgParseMode: 'Markdown',
+      })
+      let prevId = trigger.id
+      let currentX = baseX + 320
+
+      // Optional delay
+      if (wizData.delayValue > 0) {
+        const delay = await adminApi.createFunnelNode(group.id, {
+          nodeType: 'delay',
+          name: `Задержка ${wizData.delayValue} ${wizData.delayType}`,
+          posX: currentX,
+          posY: baseY,
+          delayType: wizData.delayType,
+          delayValue: wizData.delayValue,
+        })
+        await adminApi.updateFunnelNode(prevId, { nextNodeId: delay.id })
+        prevId = delay.id
+        currentX += 320
+      }
+
+      // Optional condition
+      if (wizData.addCondition) {
+        const rules = [{
+          field: wizData.conditionField,
+          op: wizData.conditionOp,
+          value: ['is_true', 'is_false', 'is_empty', 'is_not_empty'].includes(wizData.conditionOp)
+            ? undefined
+            : wizData.conditionValue,
+        }]
+        const cond = await adminApi.createFunnelNode(group.id, {
+          nodeType: 'condition',
+          name: 'Условие',
+          posX: currentX,
+          posY: baseY,
+          conditions: { logic: 'AND', rules },
+        })
+        await adminApi.updateFunnelNode(prevId, { nextNodeId: cond.id })
+        // Message on TRUE branch
+        const msg = await adminApi.createFunnelNode(group.id, {
+          nodeType: 'message',
+          name: 'Сообщение',
+          posX: currentX + 320,
+          posY: baseY - 100,
+          channelTg: true,
+          tgText: wizData.messageText,
+          tgParseMode: 'Markdown',
+        })
+        await adminApi.updateFunnelNode(cond.id, { trueNodeId: msg.id })
+        prevId = msg.id
+      } else if (wizData.delayValue > 0) {
+        // Message after delay
+        const msg = await adminApi.createFunnelNode(group.id, {
+          nodeType: 'message',
+          name: 'Сообщение',
+          posX: currentX,
+          posY: baseY,
+          channelTg: true,
+          tgText: wizData.messageText,
+          tgParseMode: 'Markdown',
+        })
+        await adminApi.updateFunnelNode(prevId, { nextNodeId: msg.id })
+      }
+
+      toast.success('✨ Воронка создана через Wizard')
+      setShowWizard(false)
+      setWizStep(0)
+      setActiveGroupId(group.id)
+      fetchData()
+    } catch (e: any) { toast.error('Ошибка: ' + (e.message || '')) }
+  }
+
+  const runValidation = async () => {
+    if (!activeGroupId) return
+    setShowValidation(true)
+    try {
+      const result = await adminApi.validateFunnel(activeGroupId)
+      setValidation(result)
+    } catch (e: any) { toast.error('Ошибка валидации: ' + (e.message || '')) }
+  }
+
+  const runSimulation = async () => {
+    if (!activeGroupId || !simUserId.trim()) {
+      toast.error('Укажите ID юзера')
+      return
+    }
+    setSimulation(null)
+    try {
+      const result = await adminApi.simulateFunnel(activeGroupId, simUserId.trim())
+      setSimulation(result)
+    } catch (e: any) { toast.error('Ошибка симуляции: ' + (e.message || '')) }
+  }
+
+  const installTemplate = async (id: string) => {
+    setInstallingId(id)
+    try {
+      const funnel = await adminApi.installFunnelTemplate(id)
+      toast.success('Шаблон установлен — проверьте и включите воронку')
+      setShowTemplates(false)
+      setActiveGroupId(funnel.id)
+      await fetchData()
+    } catch (e: any) {
+      toast.error('Ошибка установки: ' + (e.message || ''))
+    } finally {
+      setInstallingId(null)
+    }
+  }
+
+  const installAllTemplates = async () => {
+    if (!confirm('Установить ВСЕ шаблоны? Уже существующие с таким же триггером будут пропущены. Воронки создадутся выключенными — включите нужные вручную.')) return
+    setInstallingId('__all__')
+    try {
+      const result = await adminApi.installAllFunnelTemplates()
+      toast.success(`✨ Установлено: ${result.installed}, пропущено: ${result.skipped}`)
+      setShowTemplates(false)
+      await fetchData()
+    } catch (e: any) {
+      toast.error('Ошибка: ' + (e.message || ''))
+    } finally {
+      setInstallingId(null)
+    }
+  }
+
   const deleteGroup = async (id: string) => {
     if (!confirm('Удалить воронку и все её ноды?')) return
     try {
@@ -528,6 +964,45 @@ export default function FunnelBuilderPage() {
       setShowAddNodeMenu(false)
       fetchData()
     } catch (e: any) { toast.error('Ошибка: ' + (e.message || '')) }
+  }
+
+  /* ── Smart presets (combiners) ─────────────────────────── */
+  const createPreset = async (presetId: string) => {
+    if (!activeGroupId) return
+    const preset = NODE_PRESETS.find(p => p.id === presetId)
+    if (!preset) return
+
+    const baseX = 300
+    const baseY = nodes.length > 0 ? Math.max(...nodes.map(n => n.posY)) + 140 : 100
+    try {
+      // Step 1: create all nodes
+      const refToId = new Map<string, string>()
+      for (const tn of preset.nodes) {
+        const created = await adminApi.createFunnelNode(activeGroupId, {
+          nodeType: tn.nodeType,
+          name: tn.name || tn.nodeType,
+          posX: baseX + (tn.offsetX ?? 0),
+          posY: baseY + (tn.offsetY ?? 0),
+          ...tn.data,
+        })
+        refToId.set(tn.refId, created.id)
+      }
+      // Step 2: wire up connections
+      for (const tn of preset.nodes) {
+        const realId = refToId.get(tn.refId)
+        if (!realId) continue
+        const update: any = {}
+        if (tn.next && refToId.has(tn.next)) update.nextNodeId = refToId.get(tn.next)
+        if (tn.trueNext && refToId.has(tn.trueNext)) update.trueNodeId = refToId.get(tn.trueNext)
+        if (tn.falseNext && refToId.has(tn.falseNext)) update.falseNodeId = refToId.get(tn.falseNext)
+        if (Object.keys(update).length > 0) {
+          await adminApi.updateFunnelNode(realId, update)
+        }
+      }
+      toast.success(`${preset.icon} ${preset.name} — создано ${preset.nodes.length} нод`)
+      setShowAddNodeMenu(false)
+      fetchData()
+    } catch (e: any) { toast.error('Ошибка пресета: ' + (e.message || '')) }
   }
 
   const duplicateNode = async (id: string) => {
@@ -965,11 +1440,28 @@ export default function FunnelBuilderPage() {
                 </div>
               </div>
             ) : (
-              <button onClick={() => setShowNewGroup(true)}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] transition-colors hover:bg-white/5"
-                      style={{ color: 'var(--text-tertiary)' }}>
-                <Plus className="w-3.5 h-3.5" /> Создать воронку
-              </button>
+              <div className="space-y-1">
+                <button onClick={() => setShowNewGroup(true)}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] transition-colors hover:bg-white/5"
+                        style={{ color: 'var(--text-tertiary)' }}>
+                  <Plus className="w-3.5 h-3.5" /> Создать воронку
+                </button>
+                <button onClick={openTemplates}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium transition-colors hover:bg-white/10"
+                        style={{ color: 'var(--accent-1)', background: 'var(--surface-2)' }}>
+                  📚 Готовые шаблоны
+                </button>
+                <button onClick={() => { setShowWizard(true); setWizStep(0) }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium transition-colors hover:bg-white/10"
+                        style={{ color: '#a855f7', background: 'var(--surface-2)' }}>
+                  ✨ Wizard (пошаговый)
+                </button>
+                <a href="/admin/communications/funnel-builder/guide"
+                   className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] transition-colors hover:bg-white/10"
+                   style={{ color: 'var(--text-tertiary)' }}>
+                  📖 Гайд по воронкам
+                </a>
+              </div>
             )}
           </div>
         </div>
@@ -987,8 +1479,31 @@ export default function FunnelBuilderPage() {
                 <Plus className="w-3.5 h-3.5" /> Нода
               </button>
               {showAddNodeMenu && (
-                <div className="absolute top-full left-0 mt-1 w-72 rounded-xl shadow-xl z-50 p-2 max-h-[70vh] overflow-y-auto"
+                <div className="absolute top-full left-0 mt-1 w-80 rounded-xl shadow-xl z-50 p-2 max-h-[70vh] overflow-y-auto"
                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', boxShadow: '0 12px 40px rgba(0,0,0,0.4)' }}>
+                  {/* Smart Presets */}
+                  <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: '#a855f7' }}>
+                    ⚡ Умные пресеты (готовые цепочки)
+                  </div>
+                  {NODE_PRESETS.map(p => (
+                    <button key={p.id}
+                            onClick={() => createPreset(p.id)}
+                            className="flex items-start gap-2.5 w-full px-2 py-2 rounded-lg text-left hover:bg-white/[0.06] transition-colors"
+                            style={{ color: 'var(--text-primary)' }}>
+                      <div className="text-[18px] leading-none shrink-0 mt-0.5">{p.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium truncate">{p.name}</div>
+                        <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>
+                          {p.description}
+                        </div>
+                      </div>
+                      <span className="text-[9px] shrink-0 px-1.5 py-0.5 rounded-full mt-0.5"
+                            style={{ background: '#a855f722', color: '#a855f7' }}>
+                        {p.nodes.length}
+                      </span>
+                    </button>
+                  ))}
+                  <div className="my-2 border-t" style={{ borderColor: 'var(--glass-border)' }} />
                   {/* Triggers */}
                   <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: '#ef4444' }}>
                     <Zap className="w-3 h-3" /> Триггеры (начало цепочки)
@@ -1056,6 +1571,15 @@ export default function FunnelBuilderPage() {
             </button>
             <button onClick={autoLayout} className="p-1.5 rounded-lg hover:bg-white/10" title="Авто-раскладка">
               <LayoutGrid className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
+            </button>
+            <button onClick={openAnalytics} className="p-1.5 rounded-lg hover:bg-white/10" title="Аналитика">
+              📊
+            </button>
+            <button onClick={runValidation} className="p-1.5 rounded-lg hover:bg-white/10" title="Валидация">
+              ✓
+            </button>
+            <button onClick={() => { setShowSimulator(true); setSimulation(null) }} className="p-1.5 rounded-lg hover:bg-white/10" title="Симулятор">
+              🧪
             </button>
             <div className="w-px h-5 mx-1" style={{ background: 'var(--glass-border)' }} />
             <span className="text-[10px] px-1.5" style={{ color: 'var(--text-tertiary)' }}>{nodes.length} нод</span>
@@ -1297,15 +1821,31 @@ export default function FunnelBuilderPage() {
                     ))}
                   </select>
                   {(() => {
-                    const t = triggerConfig?.triggers?.find(tr => tr.id === editForm.triggerType)
+                    const t: any = triggerConfig?.triggers?.find((tr: any) => tr.id === editForm.triggerType)
                     if (!t?.hasParam) return null
+                    const defaultUnit = t.defaultUnit || 'hours'
                     return (
-                      <div>
-                        <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>{t.paramLabel || 'Параметр N'}</label>
-                        <input type="number" value={editForm.triggerParam ?? ''}
-                               onChange={e => updateField('triggerParam', e.target.value ? Number(e.target.value) : null)}
-                               className="w-full px-3 py-2 rounded-lg text-[14px]"
-                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>{t.paramLabel || 'N'}</label>
+                          <input type="number" value={editForm.triggerParam ?? ''}
+                                 onChange={e => updateField('triggerParam', e.target.value ? Number(e.target.value) : null)}
+                                 placeholder={String(t.defaultParam ?? '')}
+                                 className="w-full px-3 py-2 rounded-lg text-[14px]"
+                                 style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                        </div>
+                        <div>
+                          <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Единица</label>
+                          <select value={editForm.delayType || defaultUnit}
+                                  onChange={e => updateField('delayType', e.target.value)}
+                                  className="w-full px-3 py-2 rounded-lg text-[14px]"
+                                  style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                            <option value="minutes">минут</option>
+                            <option value="hours">часов</option>
+                            <option value="days">дней</option>
+                            <option value="weeks">недель</option>
+                          </select>
+                        </div>
                       </div>
                     )
                   })()}
@@ -1321,13 +1861,15 @@ export default function FunnelBuilderPage() {
                           className="w-full px-3 py-2 rounded-lg text-[14px]"
                           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                     <option value="immediate">Сразу</option>
+                    <option value="seconds">Через N секунд</option>
                     <option value="minutes">Через N минут</option>
                     <option value="hours">Через N часов</option>
                     <option value="days">Через N дней</option>
+                    <option value="weeks">Через N недель</option>
                     <option value="exact_time">В точное время</option>
                     <option value="weekdays">По дням недели</option>
                   </select>
-                  {['minutes', 'hours', 'days'].includes(editForm.delayType || '') && (
+                  {['seconds', 'minutes', 'hours', 'days', 'weeks'].includes(editForm.delayType || '') && (
                     <div>
                       <label className="text-[13px] font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Значение</label>
                       <input type="number" value={editForm.delayValue ?? 0}
@@ -1645,7 +2187,7 @@ export default function FunnelBuilderPage() {
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <label className="text-[13px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Кнопки</label>
-                          <button onClick={() => { setEditingBtnIdx(null); setButtonForm({ label: '', type: 'url', url: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 }); setShowButtonForm(true) }}
+                          <button onClick={() => { setEditingBtnIdx(null); setButtonForm({ label: '', type: 'url', url: '', copyText: '', callbackData: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 }); setShowButtonForm(true) }}
                                   className="flex items-center gap-1 px-2 py-1 rounded text-[13px] font-medium"
                                   style={{ background: 'rgba(6,182,212,0.13)', color: '#a78bfa' }}>
                             <Plus className="w-3 h-3" /> Добавить
@@ -1673,7 +2215,7 @@ export default function FunnelBuilderPage() {
                                         if (editingBtnIdx === idx) { setEditingBtnIdx(null) }
                                         else {
                                           setEditingBtnIdx(idx)
-                                          setButtonForm({ label: btn.label, type: btn.type, url: btn.url || '', botBlockId: btn.botBlockId || '', style: btn.style || 'default', iconEmojiId: btn.iconEmojiId || '', row: btn.row ?? 0, col: btn.col ?? 0 })
+                                          setButtonForm({ label: btn.label, type: btn.type, url: btn.url || '', copyText: btn.copyText || '', callbackData: btn.callbackData || btn.callback_data || '', botBlockId: btn.botBlockId || '', style: btn.style || 'default', iconEmojiId: btn.iconEmojiId || '', row: btn.row ?? 0, col: btn.col ?? 0 })
                                         }
                                       }}
                                            className="flex-1 py-1.5 px-2 rounded-lg text-center text-[13px] font-medium cursor-pointer transition-all hover:brightness-110 truncate"
@@ -1716,8 +2258,11 @@ export default function FunnelBuilderPage() {
                                       <select value={buttonForm.type} onChange={e => setButtonForm(p => ({ ...p, type: e.target.value }))}
                                               className="px-2 py-1 rounded text-[14px]"
                                               style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
-                                        <option value="url">Ссылка</option>
-                                        <option value="bot_block">Блок бота</option>
+                                        <option value="url">🔗 Ссылка</option>
+                                        <option value="webapp">🪟 Mini App</option>
+                                        <option value="copy_text">📋 Копировать текст</option>
+                                        <option value="callback">⚙️ Callback</option>
+                                        <option value="bot_block">🧩 Блок бота</option>
                                       </select>
                                       <select value={buttonForm.style} onChange={e => setButtonForm(p => ({ ...p, style: e.target.value }))}
                                               className="px-2 py-1 rounded text-[14px]"
@@ -1728,9 +2273,22 @@ export default function FunnelBuilderPage() {
                                         <option value="primary">Синий</option>
                                       </select>
                                     </div>
-                                    {buttonForm.type === 'url' && (
+                                    {(buttonForm.type === 'url' || buttonForm.type === 'webapp') && (
                                       <input type="text" value={buttonForm.url} onChange={e => setButtonForm(p => ({ ...p, url: e.target.value }))}
-                                             placeholder="https://..." className="w-full px-2 py-1 rounded text-[14px]"
+                                             placeholder={buttonForm.type === 'webapp' ? 'https://lkpro.hideyou.top/dashboard' : 'https://...'}
+                                             className="w-full px-2 py-1 rounded text-[14px]"
+                                             style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                    )}
+                                    {buttonForm.type === 'copy_text' && (
+                                      <input type="text" value={buttonForm.copyText} onChange={e => setButtonForm(p => ({ ...p, copyText: e.target.value }))}
+                                             placeholder="Что скопировать ({subLink}, {referralUrl}, {email}...)"
+                                             className="w-full px-2 py-1 rounded text-[14px]"
+                                             style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                                    )}
+                                    {buttonForm.type === 'callback' && (
+                                      <input type="text" value={buttonForm.callbackData} onChange={e => setButtonForm(p => ({ ...p, callbackData: e.target.value }))}
+                                             placeholder="callback_data (напр. blk:xxx или menu:tariffs)"
+                                             className="w-full px-2 py-1 rounded text-[14px]"
                                              style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
                                     )}
                                     {buttonForm.type === 'bot_block' && (
@@ -1784,9 +2342,22 @@ export default function FunnelBuilderPage() {
                                 <option value="primary">Синий</option>
                               </select>
                             </div>
-                            {buttonForm.type === 'url' && (
+                            {(buttonForm.type === 'url' || buttonForm.type === 'webapp') && (
                               <input type="text" value={buttonForm.url} onChange={e => setButtonForm(p => ({ ...p, url: e.target.value }))}
-                                     placeholder="https://..." className="w-full px-2 py-1.5 rounded text-[14px]"
+                                     placeholder={buttonForm.type === 'webapp' ? 'https://lkpro.hideyou.top/dashboard' : 'https://...'}
+                                     className="w-full px-2 py-1.5 rounded text-[14px]"
+                                     style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                            )}
+                            {buttonForm.type === 'copy_text' && (
+                              <input type="text" value={buttonForm.copyText} onChange={e => setButtonForm(p => ({ ...p, copyText: e.target.value }))}
+                                     placeholder="Что скопировать ({subLink}, {referralUrl}...)"
+                                     className="w-full px-2 py-1.5 rounded text-[14px]"
+                                     style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                            )}
+                            {buttonForm.type === 'callback' && (
+                              <input type="text" value={buttonForm.callbackData} onChange={e => setButtonForm(p => ({ ...p, callbackData: e.target.value }))}
+                                     placeholder="callback_data"
+                                     className="w-full px-2 py-1.5 rounded text-[14px]"
                                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
                             )}
                             {buttonForm.type === 'bot_block' && (
@@ -1820,7 +2391,7 @@ export default function FunnelBuilderPage() {
                                 if (!buttonForm.label.trim()) { toast.error('Введите текст кнопки'); return }
                                 const btns = [...(editForm.tgButtons as any[] || []), { ...buttonForm }]
                                 updateField('tgButtons', btns)
-                                setButtonForm({ label: '', type: 'url', url: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 })
+                                setButtonForm({ label: '', type: 'url', url: '', copyText: '', callbackData: '', botBlockId: '', style: 'default', iconEmojiId: '', row: 0, col: 0 })
                                 setShowButtonForm(false)
                               }} className="flex-1 px-2 py-1.5 rounded text-[13px] font-medium text-white" style={{ background: 'var(--accent-1)' }}>
                                 Создать кнопку
@@ -2043,6 +2614,19 @@ export default function FunnelBuilderPage() {
                       )}
                     </>
                   )}
+
+                  {/* ── Визуальный builder правил (расширенные условия) ── */}
+                  <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
+                    <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                      ⚙️ Расширенные правила (для ноды condition)
+                    </div>
+                    <ConditionsBuilder
+                      value={(editForm.conditions && !Array.isArray(editForm.conditions)
+                        ? editForm.conditions
+                        : { logic: 'AND', rules: [] }) as any}
+                      onChange={v => updateField('conditions', v)}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -2125,6 +2709,505 @@ export default function FunnelBuilderPage() {
         </div>
       )}
 
+      {/* ═══════ TEMPLATES CATALOG ═══════ */}
+      {showTemplates && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-[960px] max-w-full max-h-[90vh] rounded-2xl flex flex-col"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <div>
+                <h3 className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>📚 Готовые шаблоны воронок</h3>
+                <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  Выберите шаблон — установится выключенной, вы сможете отредактировать и включить
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={installAllTemplates}
+                        disabled={installingId === '__all__'}
+                        className="px-4 py-2 rounded-lg text-[12px] font-bold text-white disabled:opacity-50"
+                        style={{ background: 'linear-gradient(135deg, #a855f7, #ec4899)' }}>
+                  {installingId === '__all__' ? '⏳ Установка...' : '✨ Установить ВСЕ'}
+                </button>
+                <button onClick={() => setShowTemplates(false)} className="p-1.5 rounded-lg hover:bg-white/10">
+                  <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {templates.length === 0 ? (
+                <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+                  Загрузка шаблонов...
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {templates.map(t => (
+                    <div key={t.id} className="rounded-xl p-4 flex gap-3"
+                         style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                      <div className="text-[32px] leading-none shrink-0">{t.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-[13px] mb-1" style={{ color: 'var(--text-primary)' }}>
+                          {t.name}
+                        </div>
+                        <p className="text-[11px] mb-2 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>
+                          {t.description}
+                        </p>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full"
+                                style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)' }}>
+                            {t.nodesCount} нод
+                          </span>
+                          {t.triggerType && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full"
+                                  style={{ background: '#ef444422', color: '#ef4444' }}>
+                              {t.triggerType}
+                            </span>
+                          )}
+                        </div>
+                        <button onClick={() => installTemplate(t.id)}
+                                disabled={installingId === t.id}
+                                className="w-full px-3 py-1.5 rounded-lg text-[12px] font-medium text-white disabled:opacity-50"
+                                style={{ background: 'var(--accent-1)' }}>
+                          {installingId === t.id ? 'Установка...' : 'Установить'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ ANALYTICS ═══════ */}
+      {showAnalytics && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-[800px] max-w-full max-h-[85vh] rounded-2xl flex flex-col"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <div>
+                <h3 className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>📊 Аналитика воронки</h3>
+                <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  {activeGroup?.name} — drop-off и конверсия по нодам
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {[7, 30, 90].map(d => (
+                  <button key={d} onClick={() => reloadAnalytics(d)}
+                          className="px-3 py-1 rounded-lg text-[11px] font-medium"
+                          style={{
+                            background: analyticsDays === d ? 'var(--accent-1)' : 'var(--surface-2)',
+                            color: analyticsDays === d ? '#fff' : 'var(--text-tertiary)',
+                          }}>
+                    {d}д
+                  </button>
+                ))}
+                <button onClick={() => setShowAnalytics(false)} className="p-1.5 rounded-lg hover:bg-white/10 ml-2">
+                  <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {!analytics ? (
+                <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+                  Загрузка...
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Всего юзеров</div>
+                      <div className="text-[20px] font-bold" style={{ color: 'var(--text-primary)' }}>{analytics.totalUsers}</div>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Событий</div>
+                      <div className="text-[20px] font-bold" style={{ color: 'var(--text-primary)' }}>{analytics.totalLogs}</div>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Нод в воронке</div>
+                      <div className="text-[20px] font-bold" style={{ color: 'var(--text-primary)' }}>{analytics.nodes.length}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                      По нодам (конверсия относительно входа)
+                    </div>
+                    {analytics.nodes.map((n: any) => {
+                      const pct = n.conversionPct
+                      const barColor = pct > 70 ? '#10b981' : pct > 30 ? '#f59e0b' : '#ef4444'
+                      return (
+                        <div key={n.id} className="p-3 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                                    style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
+                                {n.nodeType}
+                              </span>
+                              <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                {n.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 text-[11px]">
+                              <span style={{ color: 'var(--text-secondary)' }}>
+                                {n.usersReached} юзеров
+                              </span>
+                              {n.failed > 0 && <span style={{ color: '#ef4444' }}>❌{n.failed}</span>}
+                              <span className="font-bold" style={{ color: barColor }}>{pct}%</span>
+                            </div>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-1)' }}>
+                            <div className="h-full transition-all"
+                                 style={{ width: `${pct}%`, background: barColor }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {analytics.nodes.length === 0 && (
+                    <div className="text-center py-8 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+                      Пока нет данных — воронка не запускалась за выбранный период
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ WIZARD ═══════ */}
+      {showWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-[640px] max-w-full rounded-2xl"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <div>
+                <h3 className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>✨ Wizard — создать сценарий</h3>
+                <div className="flex items-center gap-1 mt-2">
+                  {[0, 1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-1 flex-1 rounded-full transition-all"
+                         style={{ background: i <= wizStep ? '#a855f7' : 'var(--surface-2)' }} />
+                  ))}
+                </div>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>Шаг {wizStep + 1} из 5</p>
+              </div>
+              <button onClick={() => { setShowWizard(false); setWizStep(0) }} className="p-1.5 rounded-lg hover:bg-white/10">
+                <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+            </div>
+
+            <div className="p-6 min-h-[280px]">
+              {wizStep === 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[12px] font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                      1. Название воронки
+                    </label>
+                    <input value={wizData.name} onChange={e => setWizData(d => ({ ...d, name: e.target.value }))}
+                           placeholder="Напр.: Приветствие новичков"
+                           className="w-full px-3 py-2.5 rounded-lg text-[13px]"
+                           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    Как назовёте — такой и увидите в списке воронок
+                  </p>
+                </div>
+              )}
+
+              {wizStep === 1 && (
+                <div className="space-y-3">
+                  <label className="text-[12px] font-medium block" style={{ color: 'var(--text-secondary)' }}>
+                    2. Когда запускается? (триггер)
+                  </label>
+                  <select value={wizData.triggerType}
+                          onChange={e => setWizData(d => ({ ...d, triggerType: e.target.value }))}
+                          className="w-full px-3 py-2.5 rounded-lg text-[13px]"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                    <optgroup label="Регистрация и подключение">
+                      <option value="registration">👋 Регистрация</option>
+                      <option value="first_connection">🎉 Первое подключение</option>
+                    </optgroup>
+                    <optgroup label="Подписка (от REMNAWAVE)">
+                      <option value="expiring_3d">⚠️ Истекает через 3 дня</option>
+                      <option value="expiring_1d">🔴 Истекает через 1 день</option>
+                      <option value="expired">❌ Подписка истекла</option>
+                      <option value="traffic_80">📊 Трафик 80%</option>
+                      <option value="traffic_100">🚫 Трафик исчерпан</option>
+                    </optgroup>
+                    <optgroup label="Оплата">
+                      <option value="payment_success">✅ Оплата прошла</option>
+                      <option value="payment_pending">⏳ Оплата не завершена</option>
+                      <option value="payment_renewal">🔄 Повторная оплата</option>
+                    </optgroup>
+                    <optgroup label="Рефералы / Бонусы">
+                      <option value="referral_paid">💰 Реферал оплатил</option>
+                      <option value="bonus_days_granted">🎁 Бонус-дни начислены</option>
+                      <option value="promo_activated">🎫 Промокод применён</option>
+                    </optgroup>
+                    <optgroup label="⏰ Проверка состояния (с интервалом)">
+                      <option value="state_trial_not_activated">⏰ Не активировал триал N времени</option>
+                      <option value="state_not_connected">⏰ Не подключился N времени</option>
+                      <option value="state_inactive">⏰ Не заходил N времени</option>
+                      <option value="state_no_referrals">⏰ 0 рефералов N времени</option>
+                      <option value="state_winback">⏰ Winback — истекла N назад</option>
+                      <option value="state_anniversary">⏰ Годовщина через N времени</option>
+                      <option value="state_feedback_request">⏰ Попросить отзыв через N</option>
+                    </optgroup>
+                  </select>
+                </div>
+              )}
+
+              {wizStep === 2 && (
+                <div className="space-y-3">
+                  <label className="text-[12px] font-medium block" style={{ color: 'var(--text-secondary)' }}>
+                    3. Задержка перед сообщением
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="number" value={wizData.delayValue}
+                           onChange={e => setWizData(d => ({ ...d, delayValue: Number(e.target.value) }))}
+                           className="w-24 px-3 py-2.5 rounded-lg text-[13px]"
+                           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                    <select value={wizData.delayType}
+                            onChange={e => setWizData(d => ({ ...d, delayType: e.target.value as any }))}
+                            className="flex-1 px-3 py-2.5 rounded-lg text-[13px]"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                      <option value="minutes">минут</option>
+                      <option value="hours">часов</option>
+                      <option value="days">дней</option>
+                    </select>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    0 = отправить сразу при срабатывании триггера
+                  </p>
+                </div>
+              )}
+
+              {wizStep === 3 && (
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={wizData.addCondition}
+                           onChange={e => setWizData(d => ({ ...d, addCondition: e.target.checked }))}
+                           className="w-4 h-4 rounded" />
+                    <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      4. Добавить условие (опционально)
+                    </span>
+                  </label>
+                  {wizData.addCondition && (
+                    <div className="space-y-2 pl-6">
+                      <select value={wizData.conditionField}
+                              onChange={e => setWizData(d => ({ ...d, conditionField: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg text-[12px]"
+                              style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                        {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                      <select value={wizData.conditionOp}
+                              onChange={e => setWizData(d => ({ ...d, conditionOp: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-lg text-[12px]"
+                              style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                        {(CONDITION_OPS[CONDITION_FIELDS.find(f => f.value === wizData.conditionField)?.type || 'string'] || [])
+                          .map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {!['is_true', 'is_false', 'is_empty', 'is_not_empty'].includes(wizData.conditionOp) && (
+                        <input value={wizData.conditionValue}
+                               onChange={e => setWizData(d => ({ ...d, conditionValue: e.target.value }))}
+                               placeholder="Значение"
+                               className="w-full px-3 py-2 rounded-lg text-[12px]"
+                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {wizStep === 4 && (
+                <div className="space-y-3">
+                  <label className="text-[12px] font-medium block" style={{ color: 'var(--text-secondary)' }}>
+                    5. Текст сообщения (Telegram)
+                  </label>
+                  <textarea value={wizData.messageText}
+                            onChange={e => setWizData(d => ({ ...d, messageText: e.target.value }))}
+                            rows={6}
+                            className="w-full px-3 py-2 rounded-lg text-[13px] font-mono"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                  <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    Доступны переменные: {'{name}, {tariffName}, {daysLeft}, {referralUrl}, {subExpireDate}'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t" style={{ borderColor: 'var(--glass-border)' }}>
+              <button onClick={() => setWizStep(s => Math.max(0, s - 1))}
+                      disabled={wizStep === 0}
+                      className="px-4 py-2 rounded-lg text-[12px] font-medium disabled:opacity-40"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                ← Назад
+              </button>
+              {wizStep < 4 ? (
+                <button onClick={() => setWizStep(s => Math.min(4, s + 1))}
+                        disabled={wizStep === 0 && !wizData.name.trim()}
+                        className="px-4 py-2 rounded-lg text-[12px] font-medium text-white disabled:opacity-40"
+                        style={{ background: '#a855f7' }}>
+                  Далее →
+                </button>
+              ) : (
+                <button onClick={wizardFinish}
+                        className="px-4 py-2 rounded-lg text-[12px] font-medium text-white"
+                        style={{ background: '#a855f7' }}>
+                  ✨ Создать воронку
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ VALIDATION ═══════ */}
+      {showValidation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-[640px] max-w-full max-h-[80vh] rounded-2xl flex flex-col"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <h3 className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>
+                {validation?.ok ? '✅ Валидация пройдена' : '⚠️ Найдены проблемы'}
+              </h3>
+              <button onClick={() => setShowValidation(false)} className="p-1.5 rounded-lg hover:bg-white/10">
+                <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {!validation ? (
+                <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Загрузка...</div>
+              ) : (
+                <>
+                  <div className="flex gap-3 mb-4">
+                    <div className="flex-1 rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Ошибки</div>
+                      <div className="text-[20px] font-bold" style={{ color: validation.errors > 0 ? '#ef4444' : '#10b981' }}>
+                        {validation.errors}
+                      </div>
+                    </div>
+                    <div className="flex-1 rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Предупреждения</div>
+                      <div className="text-[20px] font-bold" style={{ color: validation.warns > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
+                        {validation.warns}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {validation.issues.length === 0 ? (
+                      <div className="text-center py-6 text-[13px]" style={{ color: '#10b981' }}>
+                        ✨ Всё в порядке!
+                      </div>
+                    ) : validation.issues.map((iss: any, i: number) => {
+                      const color = iss.severity === 'error' ? '#ef4444' : iss.severity === 'warn' ? '#f59e0b' : '#06b6d4'
+                      const icon = iss.severity === 'error' ? '❌' : iss.severity === 'warn' ? '⚠️' : 'ℹ️'
+                      return (
+                        <div key={i} className="p-3 rounded-lg flex gap-2 items-start"
+                             style={{ background: 'var(--surface-2)', borderLeft: `3px solid ${color}` }}>
+                          <span className="text-[14px]">{icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px]" style={{ color: 'var(--text-primary)' }}>{iss.message}</div>
+                            {iss.nodeId && (
+                              <button onClick={() => {
+                                const n = nodes.find(x => x.id === iss.nodeId)
+                                if (n) { selectNode(n); setShowValidation(false) }
+                              }} className="text-[10px] mt-1" style={{ color: 'var(--accent-1)' }}>
+                                Перейти к ноде →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ SIMULATOR ═══════ */}
+      {showSimulator && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-[720px] max-w-full max-h-[85vh] rounded-2xl flex flex-col"
+               style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <h3 className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>🧪 Симулятор воронки</h3>
+              <button onClick={() => setShowSimulator(false)} className="p-1.5 rounded-lg hover:bg-white/10">
+                <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+              </button>
+            </div>
+            <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <label className="text-[11px] block mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                ID юзера (сухой запуск — без реальной отправки)
+              </label>
+              <div className="flex gap-2">
+                <input value={simUserId} onChange={e => setSimUserId(e.target.value)}
+                       placeholder="user_id или скопируйте из /admin/users"
+                       className="flex-1 px-3 py-2 rounded-lg text-[13px]"
+                       style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }} />
+                <button onClick={runSimulation}
+                        className="px-4 py-2 rounded-lg text-[12px] font-medium text-white"
+                        style={{ background: 'var(--accent-1)' }}>
+                  Запустить
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {!simulation ? (
+                <div className="text-center py-8 text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+                  Укажите юзера и нажмите "Запустить" — будет построена цепочка без реальной отправки
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                    Юзер <b>{simulation.userName}</b> — {simulation.totalSteps} шагов
+                  </div>
+                  <div className="space-y-2">
+                    {simulation.steps.map((s: any, i: number) => (
+                      <div key={i} className="p-3 rounded-lg"
+                           style={{ background: 'var(--surface-2)', borderLeft: '3px solid var(--accent-1)' }}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded"
+                                style={{ background: 'var(--surface-1)', color: 'var(--text-tertiary)' }}>
+                            #{s.order} {s.nodeType}
+                          </span>
+                          <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {s.name || s.nodeType}
+                          </span>
+                          {s.branch && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                                  style={{ background: s.branch === 'TRUE' ? '#10b98122' : '#ef444422',
+                                           color: s.branch === 'TRUE' ? '#10b981' : '#ef4444' }}>
+                              {s.branch}
+                            </span>
+                          )}
+                        </div>
+                        {s.channels?.tg && (
+                          <div className="text-[11px] mt-1 px-2 py-1 rounded"
+                               style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)' }}>
+                            📱 {s.channels.tg.slice(0, 140)}{s.channels.tg.length > 140 ? '...' : ''}
+                          </div>
+                        )}
+                        {s.delay && <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>⏱ {s.delay}</div>}
+                        {s.action && <div className="text-[11px]" style={{ color: '#a855f7' }}>✨ {s.action}</div>}
+                        {s.note && <div className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{s.note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════ DELETE CONFIRM ═══════ */}
       {deleteConfirmId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
@@ -2139,6 +3222,111 @@ export default function FunnelBuilderPage() {
               <button onClick={() => deleteNode(deleteConfirmId)} className="flex-1 px-4 py-2 rounded-xl text-[13px] font-medium text-white bg-red-500">Удалить</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ================================================================
+   Visual Conditions Builder (sub-component)
+   Edits { logic: 'AND'|'OR', rules: [{field, op, value}] }
+   ================================================================ */
+
+type CondValue = { logic: 'AND' | 'OR'; rules: Array<{ field: string; op: string; value?: any }> }
+
+function ConditionsBuilder({ value, onChange }: { value: CondValue; onChange: (v: CondValue) => void }) {
+  const safe: CondValue = value && Array.isArray(value.rules) ? value : { logic: 'AND', rules: [] }
+
+  const addRule = () => {
+    onChange({ ...safe, rules: [...safe.rules, { field: 'days_left', op: 'lte', value: 7 }] })
+  }
+  const removeRule = (idx: number) => {
+    onChange({ ...safe, rules: safe.rules.filter((_, i) => i !== idx) })
+  }
+  const updateRule = (idx: number, patch: Partial<{ field: string; op: string; value: any }>) => {
+    onChange({
+      ...safe,
+      rules: safe.rules.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
+    })
+  }
+  const fieldType = (fieldId: string): 'number' | 'string' | 'boolean' | 'array' =>
+    CONDITION_FIELDS.find(f => f.value === fieldId)?.type || 'string'
+
+  const needsValue = (op: string) => !['is_true', 'is_false', 'is_empty', 'is_not_empty'].includes(op)
+
+  return (
+    <div className="space-y-2">
+      {/* Logic toggle */}
+      {safe.rules.length > 1 && (
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Логика:</span>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
+            {(['AND', 'OR'] as const).map(l => (
+              <button key={l} onClick={() => onChange({ ...safe, logic: l })}
+                      className="px-3 py-1 text-[11px] font-medium"
+                      style={{
+                        background: safe.logic === l ? 'var(--accent-1)' : 'var(--surface-2)',
+                        color: safe.logic === l ? '#fff' : 'var(--text-tertiary)',
+                      }}>
+                {l === 'AND' ? 'ВСЕ (И)' : 'ЛЮБОЕ (ИЛИ)'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Rules */}
+      {safe.rules.map((rule, idx) => {
+        const ft = fieldType(rule.field)
+        const ops = CONDITION_OPS[ft] || []
+        return (
+          <div key={idx} className="p-2 rounded-lg space-y-1.5"
+               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+            <div className="flex gap-1.5">
+              <select value={rule.field}
+                      onChange={e => {
+                        const newType = fieldType(e.target.value)
+                        const firstOp = CONDITION_OPS[newType]?.[0]?.value || 'eq'
+                        updateRule(idx, { field: e.target.value, op: firstOp })
+                      }}
+                      className="flex-1 min-w-0 px-2 py-1 rounded text-[11px]"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+              <select value={rule.op} onChange={e => updateRule(idx, { op: e.target.value })}
+                      className="w-24 shrink-0 px-2 py-1 rounded text-[11px]"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
+                {ops.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button onClick={() => removeRule(idx)}
+                      className="shrink-0 w-7 h-7 rounded flex items-center justify-center hover:bg-red-500/20">
+                <Trash2 className="w-3 h-3 text-red-400" />
+              </button>
+            </div>
+            {needsValue(rule.op) && (
+              <input
+                type={ft === 'number' ? 'number' : 'text'}
+                value={rule.value ?? ''}
+                onChange={e => updateRule(idx, { value: ft === 'number' ? Number(e.target.value) : e.target.value })}
+                placeholder="Значение"
+                className="w-full px-2 py-1 rounded text-[11px]"
+                style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+              />
+            )}
+          </div>
+        )
+      })}
+
+      <button onClick={addRule}
+              className="w-full px-2 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1"
+              style={{ background: 'var(--surface-2)', border: '1px dashed var(--glass-border)', color: 'var(--accent-1)' }}>
+        <Plus className="w-3 h-3" /> Добавить правило
+      </button>
+
+      {safe.rules.length === 0 && (
+        <div className="text-[10px] text-center py-1" style={{ color: 'var(--text-tertiary)' }}>
+          Без правил условие всегда истинно
         </div>
       )}
     </div>

@@ -505,9 +505,19 @@ export class PaymentService {
       },
     })
 
-    // Handle referral bonus
+    // Handle referral bonus (uses new referral service with admin settings)
     if (user.referredById) {
-      await this.applyReferralBonus(user.referredById, payment.id)
+      try {
+        const { applyReferralOnPayment } = await import('./referral')
+        await applyReferralOnPayment({
+          inviteeUserId: user.id,
+          referrerId:    user.referredById,
+          paymentId:     payment.id,
+          paymentAmount: Number(payment.amount),
+        })
+      } catch (err: any) {
+        logger.warn(`Referral bonus failed: ${err.message}`)
+      }
     }
 
     logger.info(`Payment confirmed: ${orderId}, user: ${user.id}, +${effectiveDays} days`)
@@ -550,81 +560,7 @@ export class PaymentService {
     )
   }
 
-  // ── Referral bonus ─────────────────────────────────────────
-  private async applyReferralBonus(referrerId: string, paymentId: string) {
-    try {
-      const referrer = await prisma.user.findUnique({ where: { id: referrerId } })
-      if (!referrer) return
-
-      // Check if bonus already applied for this payment
-      const existing = await prisma.referralBonus.findUnique({
-        where: { triggeredByPaymentId: paymentId },
-      })
-      if (existing) return
-
-      const rewardType = config.referral.rewardType // 'days' | 'balance' | 'both'
-
-      // Accumulate days bonus (NOT applied to REMNAWAVE — user redeems manually)
-      const applyDays = rewardType === 'days' || rewardType === 'both'
-      if (applyDays) {
-        await prisma.referralBonus.create({
-          data: {
-            referrerId,
-            triggeredByPaymentId: paymentId,
-            bonusType:  'DAYS',
-            bonusDays:  config.referral.bonusDays,
-          },
-        })
-
-        await notifications.referralBonus(referrerId, config.referral.bonusDays).catch(err =>
-          logger.warn('Referral bonus notification failed:', err)
-        )
-
-        // Trigger referral_paid funnel
-        import('./funnel-engine').then(({ triggerEvent }) =>
-          triggerEvent('referral_paid', referrerId, { refBonusDays: String(config.referral.bonusDays) }).catch(() => {})
-        )
-
-        logger.info(`Referral days accumulated: +${config.referral.bonusDays} days for ${referrerId}`)
-      }
-
-      // Apply money bonus
-      const applyMoney = rewardType === 'balance' || rewardType === 'both'
-      if (applyMoney) {
-        const amount = config.referral.rewardAmount
-
-        if (!applyDays) {
-          // If only money, create the bonus record with MONEY type
-          await prisma.referralBonus.create({
-            data: {
-              referrerId,
-              triggeredByPaymentId: paymentId,
-              bonusType:    'MONEY',
-              bonusDays:    0,
-              bonusAmount:  amount,
-              bonusCurrency: 'RUB',
-            },
-          })
-        }
-
-        await balanceService.credit({
-          userId:      referrerId,
-          amount,
-          type:        'REFERRAL_REWARD',
-          description: `Реферальный бонус ${amount} ₽`,
-          paymentId,
-        })
-
-        await notifications.referralBonusMoney(referrerId, amount).catch(err =>
-          logger.warn('Referral money bonus notification failed:', err)
-        )
-
-        logger.info(`Referral money bonus applied: +${amount} RUB to ${referrerId}`)
-      }
-    } catch (err) {
-      logger.error('Failed to apply referral bonus:', err)
-    }
-  }
+  // Old applyReferralBonus removed — replaced by services/referral.ts (full impl with admin settings).
 }
 
 export const paymentService = new PaymentService()

@@ -227,6 +227,8 @@ export const adminApi = {
     apiFetch<{ ok: boolean; user: { id: string; email: string | null; telegramId: string | null } }>(`/admin/users/${id}/profile`, {
       method: 'PATCH', body: JSON.stringify(data),
     }),
+  resetUserPassword: (id: string) =>
+    apiFetch<{ ok: boolean; password: string; sentTo: string }>(`/admin/users/${id}/reset-password`, { method: 'POST' }),
 
   // User actions
   revokeUser:      (id: string) => apiFetch<{ ok: boolean }>(`/admin/users/${id}/revoke`, { method: 'POST' }),
@@ -587,6 +589,12 @@ export const adminApi = {
   funnelVariables: () => apiFetch<any>('/admin/funnel-builder/variables'),
   funnelBotBlocks: () => apiFetch<any>('/admin/funnel-builder/bot-blocks'),
   funnelLogs: (groupId: string, skip = 0) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/logs?skip=${skip}`),
+  funnelTemplates: () => apiFetch<any[]>('/admin/funnel-builder/templates'),
+  installFunnelTemplate: (id: string) => apiFetch<any>(`/admin/funnel-builder/templates/${id}/install`, { method: 'POST' }),
+  installAllFunnelTemplates: () => apiFetch<any>('/admin/funnel-builder/templates/install-all', { method: 'POST' }),
+  funnelAnalytics: (groupId: string, days = 30) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/analytics?days=${days}`),
+  validateFunnel: (groupId: string) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/validate`, { method: 'POST' }),
+  simulateFunnel: (groupId: string, userId: string) => apiFetch<any>(`/admin/funnel-builder/groups/${groupId}/simulate`, { method: 'POST', body: JSON.stringify({ userId }) }),
 
   // ── Bot Constructor ─────────────────────────────────────
   botBlockGroups: () => apiFetch<any[]>('/admin/bot-blocks/groups'),

@@ -83,23 +83,31 @@ export async function setupCronJobs() {
     },
   })
 
-  // Expiry notifications daily at ~09:00
-  scheduler.register({
-    name:     'expiry-notifications',
-    interval: 24 * 60 * 60_000,
-    fn:       async () => {
-      const { runExpiryNotifications } = await import('../scripts/notify-expiry')
-      await runExpiryNotifications()
-    },
-  })
+  // Expiry notifications — DISABLED.
+  // Superseded by funnel-engine triggers (expiring_7d/3d/1d) which fire via
+  // auto-funnels cron every 15min. The legacy hardcoded notifier caused
+  // duplicate/ungovernable messages. Managed via /admin/communications/funnel-builder instead.
 
-  // Auto-funnels every 15 minutes
+  // Auto-funnels every 1 minute. State-check triggers (state_*) need this to be
+  // responsive for short intervals (e.g. trigger=1 minute). Dedup via funnel_logs
+  // ensures no spam — each user fires each scenario once.
   scheduler.register({
     name:     'auto-funnels',
-    interval: 15 * 60_000,
+    interval: 60_000,
     fn:       async () => {
       const { runCronFunnels } = await import('../services/funnel-engine')
       await runCronFunnels()
+    },
+  })
+
+  // Pending funnel node steps every 30 seconds (delayed nodes, wait_event timeouts, repeats).
+  // Combined with in-process setTimeout for delays <5min, this gives sub-minute precision.
+  scheduler.register({
+    name:     'funnel-pending-steps',
+    interval: 30_000,
+    fn:       async () => {
+      const { processPendingNodeSteps } = await import('../services/funnel-engine')
+      await processPendingNodeSteps()
     },
   })
 

@@ -361,6 +361,12 @@ function LoginContent() {
                       style={{ color: 'var(--text-tertiary)' }}>
                 Забыли пароль?
               </button>
+
+              <Link href="/recover"
+                    className="block w-full text-center text-xs transition-colors px-3 py-2 rounded-lg"
+                    style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                🆘 Не могу войти — потерял Telegram
+              </Link>
             </div>
           )}
 

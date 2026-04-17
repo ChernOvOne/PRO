@@ -33,6 +33,8 @@ export default function AdminUserDetail() {
   const [showDelete, setShowDelete]     = useState(false)
   const [showEditProfile, setShowEditProfile] = useState(false)
   const [editEmail, setEditEmail] = useState('')
+  const [showResetPw, setShowResetPw] = useState(false)
+  const [resetResult, setResetResult] = useState<{ password: string; sentTo: string } | null>(null)
   const [editTgId, setEditTgId] = useState('')
   const [devicesOpen, setDevicesOpen]   = useState(false)
   const [activityFilter, setActivityFilter] = useState<string>('all')
@@ -188,8 +190,10 @@ export default function AdminUserDetail() {
     </div>
   )
 
-  const daysLeft = user.subExpireAt
-    ? Math.max(0, Math.ceil((new Date(user.subExpireAt).getTime() - Date.now()) / 86400_000))
+  // Prefer live REMNAWAVE data over cached DB fields
+  const liveExpireAt = user.rmData?.expireAt || user.subExpireAt
+  const daysLeft = liveExpireAt
+    ? Math.max(0, Math.ceil((new Date(liveExpireAt).getTime() - Date.now()) / 86400_000))
     : null
 
   const statusColor: Record<string, string> = {
@@ -337,15 +341,30 @@ export default function AdminUserDetail() {
             <div className="space-y-2 pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Контакты</span>
-                <button onClick={() => {
-                  setEditEmail(user.email || '')
-                  setEditTgId(user.telegramId || '')
-                  setShowEditProfile(true)
-                }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-white/5"
-                        style={{ color: '#a78bfa' }}>
-                  <Edit2 className="w-3 h-3" /> Изменить
-                </button>
+                <div className="flex gap-1">
+                  <button onClick={() => {
+                    setEditEmail(user.email || '')
+                    setEditTgId(user.telegramId || '')
+                    setShowEditProfile(true)
+                  }} className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-white/5"
+                          style={{ color: '#a78bfa' }}>
+                    <Edit2 className="w-3 h-3" /> Изменить
+                  </button>
+                  {user.email && (
+                    <button onClick={() => { setResetResult(null); setShowResetPw(true) }}
+                            className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-white/5"
+                            title="Сгенерировать новый пароль и отправить на email"
+                            style={{ color: '#f59e0b' }}>
+                      🔑 Пароль
+                    </button>
+                  )}
+                </div>
               </div>
+              {user.passwordSetAt && (
+                <div className="text-[10px] px-2 py-1 rounded" style={{ background: 'rgba(16,185,129,0.08)', color: '#34d399' }}>
+                  ✓ Веб-пароль установлен {new Date(user.passwordSetAt).toLocaleDateString('ru')}
+                </div>
+              )}
               {user.rmData?.username && <CopyField label="RW Username" value={user.rmData.username} />}
               {user.email && <CopyField label="Email" value={user.email} />}
               {user.telegramId && <CopyField label="Telegram ID" value={user.telegramId} />}
@@ -452,7 +471,7 @@ export default function AdminUserDetail() {
               {[
                 { label: 'Статус', value: user.rmData?.status || user.subStatus, color: statusColor[user.rmData?.status || user.subStatus] },
                 { label: 'Осталось', value: daysLeft !== null ? `${daysLeft} дней` : '—' },
-                { label: 'Истекает', value: user.subExpireAt ? new Date(user.subExpireAt).toLocaleDateString('ru') : '—' },
+                { label: 'Истекает', value: liveExpireAt ? new Date(liveExpireAt).toLocaleDateString('ru') : '—' },
                 { label: 'Трафик', value: user.rmData ? formatTraffic(user.rmData.usedTrafficBytes, user.rmData.trafficLimitBytes) : '—' },
                 { label: 'Устройств лимит', value: user.rmData?.hwidDeviceLimit === 0 ? 'Безлимит' : String(user.rmData?.hwidDeviceLimit ?? '—') },
                 { label: 'Тег', value: user.rmData?.tag || '—' },
@@ -945,6 +964,84 @@ export default function AdminUserDetail() {
               </button>
             </div>
           </div>
+        </ModalOverlay>
+      )}
+
+      {showResetPw && (
+        <ModalOverlay onClose={() => setShowResetPw(false)} title="🔑 Перевыпустить пароль">
+          {!resetResult ? (
+            <div className="space-y-3">
+              <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                Будет сгенерирован новый случайный пароль (12 символов) и отправлен на email:
+              </p>
+              <div className="px-3 py-2 rounded-lg text-sm font-mono"
+                   style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
+                {user.email}
+              </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                Это действие логируется. Старый пароль (если был) перестанет работать.
+                После генерации пароль показывается один раз — сохраните его если нужно продиктовать.
+              </p>
+              <div className="flex gap-2 pt-2">
+                <button disabled={acting}
+                        onClick={async () => {
+                          setActing(true)
+                          try {
+                            const r = await adminApi.resetUserPassword(id)
+                            setResetResult({ password: r.password, sentTo: r.sentTo })
+                            toast.success('Пароль сгенерирован и отправлен')
+                          } catch (e: any) {
+                            toast.error(e.message || 'Ошибка')
+                          }
+                          setActing(false)
+                        }}
+                        className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                        style={{ background: '#f59e0b' }}>
+                  Сгенерировать
+                </button>
+                <button onClick={() => setShowResetPw(false)}
+                        className="px-4 py-2 rounded-lg text-sm"
+                        style={{ color: 'var(--text-tertiary)' }}>
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="px-3 py-2 rounded-lg text-[12px]"
+                   style={{ background: 'rgba(16,185,129,0.12)', color: '#34d399' }}>
+                ✓ Письмо отправлено на <b>{resetResult.sentTo}</b>
+              </div>
+              <div>
+                <label className="text-[11px] block mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                  Новый пароль (показывается один раз):
+                </label>
+                <div className="flex gap-2">
+                  <code className="flex-1 px-3 py-2 rounded-lg text-base font-mono font-bold"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
+                    {resetResult.password}
+                  </code>
+                  <button onClick={() => {
+                            navigator.clipboard.writeText(resetResult.password)
+                            toast.success('Скопировано')
+                          }}
+                          className="px-3 rounded-lg text-sm"
+                          style={{ background: 'var(--accent-1)', color: '#fff' }}>
+                    📋
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                Юзер сможет войти на <b>{window.location.origin}/auth</b> с этим паролем.
+                Письмо могло попасть в спам — если нужно, продиктуйте пароль устно.
+              </p>
+              <button onClick={() => { setShowResetPw(false); load() }}
+                      className="w-full py-2 rounded-lg text-sm font-medium"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
+                Закрыть
+              </button>
+            </div>
+          )}
         </ModalOverlay>
       )}
 

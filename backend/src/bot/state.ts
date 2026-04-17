@@ -16,7 +16,11 @@ export interface UserState {
 
 // ── Redis key helpers ────────────────────────────────────────
 
-const STATE_PREFIX   = 'bot:state:'
+// NOTE: prefix must NOT collide with legacy hardcoded handlers in index.ts
+// which use `bot:state:${chatId}` to store plain strings like "awaiting_email".
+// Engine state is JSON — if the two prefixes overlap, JSON.parse crashes on
+// the legacy string and the engine thinks there's no pending input.
+const STATE_PREFIX   = 'bot:engine:state:'
 const DELAYED_KEY    = 'bot:delayed'
 
 function stateKey(userId: string): string {

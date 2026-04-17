@@ -43,6 +43,8 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   lastLoginAt   DateTime? @map("last_login_at")
+  firstConnectedAt DateTime? @map("first_connected_at")
+  passwordSetAt DateTime? @map("password_set_at")
 
   // ── Buhgalteria fields (merged from Customer) ───────────
   avatarColor     String?   @map("avatar_color")
@@ -191,7 +193,7 @@ model Payment {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  referralBonus      ReferralBonus?
+  referralBonuses    ReferralBonus[]
   giftSubscription   GiftSubscription?
   balanceTransactions BalanceTransaction[]
 
@@ -203,14 +205,18 @@ model ReferralBonus {
   id                   String            @id @default(uuid())
   referrerId           String            @map("referrer_id")
   referrer             User              @relation(fields: [referrerId], references: [id])
-  triggeredByPaymentId String            @unique @map("triggered_by_payment_id")
-  triggeredByPayment   Payment           @relation(fields: [triggeredByPaymentId], references: [id])
+  inviteeUserId        String?           @map("invitee_user_id")
+  triggeredByPaymentId String?           @map("triggered_by_payment_id")
+  triggeredByPayment   Payment?          @relation(fields: [triggeredByPaymentId], references: [id])
   bonusType            ReferralBonusType @default(DAYS) @map("bonus_type")
+  bonusReason          String            @default("INVITER") @map("bonus_reason") // INVITER | INVITEE | INVITER_L2
   bonusDays            Int               @default(0) @map("bonus_days")
   bonusAmount          Decimal?          @db.Decimal(10, 2) @map("bonus_amount")
   bonusCurrency        String?           @default("RUB") @map("bonus_currency")
   appliedAt            DateTime          @default(now()) @map("applied_at")
 
+  @@unique([triggeredByPaymentId, referrerId, bonusReason])
+  @@index([referrerId, inviteeUserId, bonusReason])
   @@map("referral_bonuses")
 }
 
@@ -781,6 +787,35 @@ model FunnelLog {
   @@index([funnelId, userId, nodeId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("funnel_logs")
+}
+
+// ============================================================
+//  Pending Funnel Steps — для отложенного выполнения нод
+//  (delays >24h, wait_event, repeat, workHours scheduling)
+// ============================================================
+model PendingFunnelStep {
+  id          String   @id @default(uuid())
+  funnelId    String   @map("funnel_id")
+  userId      String   @map("user_id")
+  nodeId      String   @map("node_id")
+  // type: 'delayed' | 'wait_event' | 'repeat'
+  type        String   @default("delayed")
+  // when to execute (timeout for wait_event)
+  executeAt   DateTime @map("execute_at")
+  // for wait_event: which event we're waiting for
+  waitEvent   String?  @map("wait_event")
+  // for repeat: current iteration count
+  repeatCount Int      @default(0) @map("repeat_count")
+  // chain depth for cycle protection
+  depth       Int      @default(0)
+  // serialized vars from previous nodes (for resuming chain context)
+  varsJson    Json?    @map("vars_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([executeAt])
+  @@index([userId, waitEvent])
+  @@index([funnelId, userId])
+  @@map("pending_funnel_steps")
 }
 
 // ============================================================
@@ -1430,6 +1465,7 @@ enum TicketCategory {
   TECH
   REFUND
   SUBSCRIPTION
+  RECOVERY
   OTHER
 }
 

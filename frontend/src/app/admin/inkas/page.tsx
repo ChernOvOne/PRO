@@ -41,8 +41,9 @@ const TYPE_MAP: Record<string, typeof TYPE_OPTIONS[number]> = Object.fromEntries
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
-function fmtMoney(amount: number) {
-  return new Intl.NumberFormat('ru-RU').format(amount) + ' ₽'
+function fmtMoney(amount: number | string) {
+  const n = Number(amount) || 0
+  return new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
 }
 
 function fmtDate(iso: string) {
@@ -129,9 +130,11 @@ export default function AdminInkasPage() {
   /* ── Summary ──────────────────────────────── */
 
   const summary = useMemo(() => {
-    const dividends   = records.filter(r => r.type === 'DIVIDEND').reduce((s, r) => s + r.amount, 0)
-    const returns     = records.filter(r => r.type === 'RETURN_INV').reduce((s, r) => s + r.amount, 0)
-    const investments = records.filter(r => r.type === 'INVESTMENT').reduce((s, r) => s + r.amount, 0)
+    const sum = (type: string) =>
+      records.filter(r => r.type === type).reduce((s, r) => s + (Number(r.amount) || 0), 0)
+    const dividends   = sum('DIVIDEND')
+    const returns     = sum('RETURN_INV')
+    const investments = sum('INVESTMENT')
     return { dividends, returns, investments }
   }, [records])
 

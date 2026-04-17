@@ -37,12 +37,20 @@ export async function remnawaveWebhookRoutes(app: FastifyInstance) {
     const event = body.event as string
     const data = body.data || body
 
-    logger.info(`Remnawave webhook received: ${event} uuid=${data?.uuid}`)
+    // REMNAWAVE кладёт UUID юзера в разные поля в зависимости от типа события:
+    // - user.*        → data.uuid
+    // - user_hwid_*   → data.userUuid
+    // - nested user   → data.user.uuid
+    const uuid = data?.uuid
+      || data?.userUuid
+      || data?.user_uuid
+      || data?.user?.uuid
+      || null
 
-    // Find user by remnawave UUID
-    const uuid = data?.uuid || data?.userUuid
+    logger.info(`Remnawave webhook received: ${event} uuid=${uuid}`)
+
     if (!uuid) {
-      logger.warn(`Remnawave webhook: no UUID in payload, event=${event}`)
+      logger.warn(`Remnawave webhook: no UUID in payload, event=${event}, payload keys=${Object.keys(data || {}).join(',')}`)
       return { ok: true, skipped: true, reason: 'no UUID' }
     }
 
@@ -56,16 +64,44 @@ export async function remnawaveWebhookRoutes(app: FastifyInstance) {
       return { ok: true, skipped: true, reason: 'user not found' }
     }
 
-    // Map events to funnel triggers
+    // Map REMNAWAVE events to funnel triggers.
+    // Real event names verified from incoming webhook logs.
     const EVENT_MAP: Record<string, string> = {
-      'user.created': 'registration',
-      'user.first_connection': 'first_connection',
-      'user.expired': 'expired',
-      'user.expiration_72h': 'expiring_72h',
-      'user.expiration_48h': 'expiring_48h',
-      'user.expiration_24h': 'expiring_24h',
-      'user.limited': 'traffic_limit',
-      'user.inactive': 'inactive',
+      'user.created':              'registration',
+      'user.first_connected':      'first_connection',
+      'user.expired':              'expired',
+      'user.expired_24_hours_ago': 'expired',
+      'user.expires_in_72_hours':  'expiring_3d',
+      'user.expires_in_48_hours':  'expiring_3d',
+      'user.expires_in_24_hours':  'expiring_1d',
+      'user.limited':              'traffic_100',
+      'user.traffic_reset':        'traffic_reset',
+      'user.disabled':             'inactive',
+      'user_hwid_devices.added':   'new_device',
+      'user_hwid_devices.deleted': 'device_removed',
+    }
+
+    // Special handling: bandwidth threshold reached — reroute by percentage
+    // to different triggers (traffic_50 / traffic_80 / traffic_95).
+    // Also pass threshold as {trafficPercent} variable for the funnel message.
+    if (event === 'user.bandwidth_usage_threshold_reached') {
+      // REMNAWAVE passes threshold in various possible fields — try them all
+      const threshold = Number(
+        data?.threshold ?? data?.thresholdPct ?? data?.percent ?? data?.pct ?? 0
+      )
+      let triggerId = 'traffic_80' // safe default
+      if (threshold >= 95) triggerId = 'traffic_95'
+      else if (threshold >= 80) triggerId = 'traffic_80'
+      else if (threshold >= 50) triggerId = 'traffic_50'
+
+      logger.info(`Remnawave webhook: bandwidth threshold ${threshold}% → trigger ${triggerId}`)
+      try {
+        await triggerEvent(triggerId, user.id, { trafficPercent: String(threshold) })
+        logger.info(`Remnawave webhook: funnel triggered ${triggerId} for user ${user.id}`)
+      } catch (e: any) {
+        logger.error(`Remnawave webhook: trigger failed ${triggerId} for user ${user.id}: ${e.message}`)
+      }
+      return { ok: true }
     }
 
     const triggerId = EVENT_MAP[event]

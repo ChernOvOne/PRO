@@ -115,6 +115,14 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
       )
     }
 
+    // Invalidate referral config cache so new settings take effect immediately
+    if (settingsArray.some(s => s.key.startsWith('referral_'))) {
+      try {
+        const { invalidateReferralCache } = await import('../services/referral')
+        invalidateReferralCache()
+      } catch { /* ignore */ }
+    }
+
     // Sync to .env
     if (settingsArray.length > 0) {
       const envUpdates: Record<string, string> = {}

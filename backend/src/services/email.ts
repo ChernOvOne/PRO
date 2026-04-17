@@ -210,6 +210,70 @@ class EmailService {
     return this.send({ to: email, subject: 'Сброс пароля — HIDEYOU VPN', html: this.wrap(content) })
   }
 
+  // Password set/reset by admin — sends plain password to user's email.
+  // Used for bot-first users who need a web fallback in case Telegram is blocked.
+  async sendAdminPasswordReset(email: string, plainPassword: string) {
+    const content = `
+      <h2>🔑 Доступ к HIDEYOU VPN через сайт</h2>
+      <p>Администратор сгенерировал для вас пароль от личного кабинета на сайте <b>${config.appUrl}</b>.</p>
+      <p style="margin-top:18px;">Ваши данные для входа:</p>
+      <div style="padding:16px; background:rgba(85,105,255,0.15); border-radius:12px; color:#f1f5f9;">
+        <div><b>Email:</b> ${email}</div>
+        <div style="margin-top:8px;"><b>Пароль:</b>
+          <code style="font-size:18px; letter-spacing:1px; padding:4px 8px; background:rgba(0,0,0,0.3); border-radius:6px;">${plainPassword}</code>
+        </div>
+      </div>
+      <p style="margin-top:18px;">
+        <b>Зачем это нужно?</b> Если Telegram вдруг заблокируют или у вас нет доступа к боту —
+        вы всегда сможете зайти на сайт, проверить подписку, оплатить и продлить доступ.
+        Это резервный способ.
+      </p>
+      <p>
+        ⚠️ <b>Это письмо могло попасть в папку «Спам»</b> — добавьте нас в контакты,
+        чтобы важные письма приходили вовремя.
+      </p>
+      <p>
+        <b>Сохраните письмо</b> или измените пароль на более удобный в
+        <a href="${config.appUrl}/dashboard">личном кабинете</a> после первого входа.
+      </p>
+      <p style="margin-top:20px; color:#94a3b8; font-size:13px;">
+        Если вы не просили сгенерировать пароль — срочно сообщите в поддержку.
+      </p>
+      <a href="${config.appUrl}/auth" class="btn">Войти в личный кабинет</a>
+    `
+    return this.send({
+      to: email,
+      subject: '🔑 Ваш пароль от HIDEYOU VPN — резервный доступ',
+      html: this.wrap(content),
+    })
+  }
+
+  // Security alert: sent to the OLD email when address is changed by admin.
+  // Gives the original owner a chance to notice unauthorized changes.
+  async sendEmailChangedAlert(oldEmail: string, newEmail: string) {
+    const content = `
+      <h2>⚠️ Ваш email был изменён</h2>
+      <p>Администратор HIDEYOU VPN сменил адрес электронной почты на вашем аккаунте:</p>
+      <div style="padding:14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:10px; color:#fecaca;">
+        <div>Был: <code>${oldEmail}</code></div>
+        <div style="margin-top:6px;">Стал: <code>${newEmail}</code></div>
+      </div>
+      <p style="margin-top:18px;">
+        Если вы обращались в поддержку и просили это сделать — всё в порядке, игнорируйте письмо.
+      </p>
+      <p>
+        <b>Если вы не просили менять email</b> — немедленно напишите в поддержку.
+        Ваш аккаунт, возможно, скомпрометирован.
+      </p>
+      <a href="${config.appUrl}/dashboard/support" class="btn">Связаться с поддержкой</a>
+    `
+    return this.send({
+      to: oldEmail,
+      subject: '⚠️ Email на аккаунте HIDEYOU VPN был изменён',
+      html: this.wrap(content),
+    })
+  }
+
   // Send broadcast email with optional template and CTA button
   async sendBroadcastEmail(params: {
     to: string; subject: string; html: string;

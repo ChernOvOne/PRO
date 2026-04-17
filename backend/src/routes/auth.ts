@@ -231,6 +231,16 @@ export async function authRoutes(app: FastifyInstance) {
 
     logger.info(`New user registered via email: ${email}${utmSource ? ' (utm: ' + utmSource + ')' : ''}`)
 
+    // Apply referral on registration
+    if (referredById) {
+      try {
+        const { applyReferralOnRegistration } = await import('../services/referral')
+        await applyReferralOnRegistration(user.id)
+      } catch (e: any) {
+        logger.warn(`[Referral] registration hook failed: ${e.message}`)
+      }
+    }
+
     // Create UTM lead if user came from campaign
     if (utmSource) {
       prisma.buhUtmLead.create({

@@ -45,6 +45,7 @@ import { adminFunnelNodeRoutes }   from './admin-funnel-nodes'
 import { remnawaveWebhookRoutes }  from './webhook-remnawave'
 import { emailTrackingRoutes }     from './email-tracking'
 import { ticketRoutes }            from './tickets'
+import { publicTicketRoutes }      from './tickets-public'
 import { adminTicketRoutes }       from './admin-tickets'
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -58,6 +59,7 @@ export async function registerRoutes(app: FastifyInstance) {
   // Public
   await app.register(publicRoutes,             { prefix: '/api/public'              })
   await app.register(newsRoutes,               { prefix: '/api/news'                })
+  await app.register(publicTicketRoutes,       { prefix: '/api/public/tickets'      })
 
   // Auth
   await app.register(authRoutes,               { prefix: '/api/auth'                })

@@ -124,10 +124,11 @@ export async function resolveVariables(text: string, userId: string): Promise<st
   let referralPaidCount = 0
   if (text.includes('{referralPaidCount}')) {
     try {
+      // Считаем только тех, у кого есть РЕАЛЬНЫЙ платёж (не триал/INACTIVE)
       referralPaidCount = await prisma.user.count({
         where: {
           referredById: user.id,
-          subStatus: { not: 'INACTIVE' },
+          payments: { some: { status: 'PAID', amount: { gt: 0 }, provider: { in: ['YUKASSA', 'CRYPTOPAY'] } } },
         },
       })
     } catch { /* default 0 */ }
@@ -187,6 +188,13 @@ export async function resolveVariables(text: string, userId: string): Promise<st
     '{referralCount}':    String(referralCount),
     '{referralPaidCount}': String(referralPaidCount),
     '{appUrl}':           config.appUrl,
+    '{subLink}':          user.subLink || '—',
+    '{trialDays}':        String(config.features.trialDays || 3),
+    '{totalPaid}':        String(Number((user as any).totalPaid || 0)),
+    '{paymentsCount}':    String((user as any).paymentsCount || 0),
+    '{lastPaymentDate}':  formatDate((user as any).lastPaymentAt),
+    '{supportUrl}':       `${config.appUrl}/dashboard/support`,
+    '{channelUrl}':       'https://t.me/hideyou_channel',
     '{admin_button}':     '', // handled separately — generates admin webapp button for staff
   }
 
@@ -217,6 +225,20 @@ export async function resolveVariables(text: string, userId: string): Promise<st
 
   // Custom user variables: {user:keyName}
   result = result.replace(/\{user:(\w+)\}/g, (_, key) => customVars[key] ?? '')
+
+  // Fallback: any remaining {word} — look up in UserVariable (e.g. {pending_email}, {ticket_body})
+  const remainingVars = [...result.matchAll(/\{(\w+)\}/g)].map(m => m[1])
+  if (remainingVars.length > 0) {
+    const uniqueKeys = [...new Set(remainingVars)]
+    const fallbackVars = await prisma.userVariable.findMany({
+      where: { userId, key: { in: uniqueKeys } },
+    })
+    const fallbackMap: Record<string, string> = {}
+    for (const v of fallbackVars) fallbackMap[v.key] = v.value
+    result = result.replace(/\{(\w+)\}/g, (match, key) => {
+      return fallbackMap[key] !== undefined ? fallbackMap[key] : match
+    })
+  }
 
   return result
 }
@@ -270,8 +292,23 @@ async function evaluateSingle(type: string, value: string, userId: string): Prom
       case 'has_email':
         return !!user.email
 
+      case 'no_email':
+        return !user.email
+
       case 'has_referrer':
         return !!user.referredById
+
+      case 'has_referrals': {
+        const count = await prisma.user.count({ where: { referredById: userId } })
+        return count > 0
+      }
+
+      case 'trial_used':
+        // Used trial = has any remnawaveUuid assignment in history OR current sub
+        return !!user.remnawaveUuid || (user.paymentsCount ?? 0) > 0
+
+      case 'has_password':
+        return !!(user as any).passwordHash
 
       default:
         break
@@ -378,9 +415,10 @@ function parseHHMM(s: string): number {
 // 4. Action Performer
 // ══════════════════════════════════════════════════════════════
 
-export async function performAction(block: any, userId: string): Promise<void> {
+export async function performAction(block: any, userId: string): Promise<{ ok: boolean }> {
   const actionType = block.actionType
   const actionValue = block.actionValue ?? ''
+  let actionFailed = false
 
   try {
     switch (actionType) {
@@ -453,12 +491,420 @@ export async function performAction(block: any, userId: string): Promise<void> {
         break
       }
 
+      // ── Generate random password, save hash, email it to user ──
+      case 'reset_password': {
+        const user = await prisma.user.findUnique({ where: { id: userId } })
+        if (!user?.email) {
+          logger.warn(`reset_password: user ${userId} has no email`)
+          break
+        }
+        const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+        const { randomBytes } = await import('crypto')
+        const buf = randomBytes(24)
+        let plain = ''
+        for (let i = 0; i < 12; i++) plain += ALPHABET[buf[i] % ALPHABET.length]
+
+        const bcrypt = await import('bcryptjs')
+        const hash = await bcrypt.default.hash(plain, 12)
+
+        await prisma.user.update({
+          where: { id: userId },
+          data:  { passwordHash: hash, passwordSetAt: new Date() },
+        })
+
+        try {
+          const { emailService } = await import('../services/email')
+          await emailService.sendAdminPasswordReset(user.email, plain)
+          logger.info(`Action reset_password: email with password sent to ${user.email}`)
+        } catch (e: any) {
+          logger.error(`reset_password email failed: ${e.message}`)
+        }
+        break
+      }
+
+      // ── Send 6-digit verification code to pending_email variable ──
+      case 'send_email_code': {
+        const { resolveVariables } = await import('./engine')
+        const emailRaw = actionValue || '{pending_email}'
+        const email = (await resolveVariables(emailRaw, userId)).trim().toLowerCase()
+
+        // Get telegramId for error feedback
+        const userForMsg = await prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true } })
+        const tgId = userForMsg?.telegramId
+
+        if (!email || !email.includes('@')) {
+          logger.warn(`send_email_code: invalid email "${email}" for user ${userId}`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              '❌ Не удалось прочитать email. Попробуйте снова через /email',
+            ).catch(() => {})
+          }
+          actionFailed = true
+          break
+        }
+
+        // Pre-check: is this email already used?
+        // - Not used → OK (new email)
+        // - Used by THIS user → OK (re-confirming)
+        // - Used by orphan web-account (no telegramId) → OK (legitimate merge via code)
+        // - Used by different TG user → REJECT (someone else's account)
+        const taken = await prisma.user.findUnique({ where: { email } })
+        if (taken && taken.id !== userId && taken.telegramId && taken.telegramId !== tgId) {
+          logger.warn(`send_email_code: email ${email} owned by different TG user ${taken.telegramId}`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              `❌ *Email \`${email}\` привязан к другому Telegram-аккаунту.*\n\n` +
+              `Если это ваш старый email и доступ утерян — напишите в поддержку:\n` +
+              `${config.appUrl}/recover\n\n` +
+              `Или введите другой email — /email`,
+              { parse_mode: 'Markdown' },
+            ).catch(() => {})
+          }
+          actionFailed = true
+          break
+        }
+        // taken && taken.id !== userId && taken.telegramId === null — это merge scenario,
+        // продолжаем отправку кода. Фактическое слияние произойдёт при verify_email_code.
+
+        try {
+          const { verificationService } = await import('../services/verification')
+          await verificationService.sendCode({ userId, email, type: 'EMAIL_CHANGE' })
+          logger.info(`Action send_email_code: code sent to ${email}`)
+        } catch (e: any) {
+          logger.error(`send_email_code failed: ${e.message}`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              `❌ Не удалось отправить код на \`${email}\`\n\nОшибка: ${e.message}\n\nПопробуйте позже или другой email (/email)`,
+              { parse_mode: 'Markdown' },
+            ).catch(() => {})
+          }
+          actionFailed = true
+        }
+        break
+      }
+
+      // ── Verify code; on success attach email to user; then issue password ──
+      case 'verify_email_code': {
+        const { resolveVariables } = await import('./engine')
+        const codeRaw = actionValue || '{email_code}'
+        const code = (await resolveVariables(codeRaw, userId)).trim()
+        const pendingEmail = (await resolveVariables('{pending_email}', userId)).trim().toLowerCase()
+
+        const userForMsg = await prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true } })
+        const tgId = userForMsg?.telegramId
+
+        if (!code || !pendingEmail) {
+          logger.warn(`verify_email_code: missing code or email for user ${userId}`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              '❌ Нет кода или email в сессии. Начните заново через /email',
+            ).catch(() => {})
+          }
+          actionFailed = true
+          break
+        }
+
+        const { verificationService } = await import('../services/verification')
+        const ok = await verificationService.verifyCode({ email: pendingEmail, code, type: 'EMAIL_CHANGE' })
+        if (!ok) {
+          logger.warn(`verify_email_code: invalid code for ${pendingEmail}`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              '❌ *Неверный или просроченный код.*\n\nПроверьте email (и папку «Спам»). Для повтора — /email',
+              { parse_mode: 'Markdown' },
+            ).catch(() => {})
+          }
+          actionFailed = true
+          break
+        }
+
+        // Check if email belongs to another account
+        const taken = await prisma.user.findUnique({
+          where: { email: pendingEmail },
+          include: { payments: { take: 1 } },
+        })
+
+        // Case 1: email belongs to a different TG user → reject
+        if (taken && taken.id !== userId && taken.telegramId && taken.telegramId !== tgId) {
+          logger.warn(`verify_email_code: email ${pendingEmail} owned by different TG`)
+          if (tgId) {
+            await bot.api.sendMessage(tgId,
+              `❌ Email привязан к другому Telegram. Для восстановления: ${config.appUrl}/recover`,
+              { parse_mode: 'Markdown' },
+            ).catch(() => {})
+          }
+          actionFailed = true
+          break
+        }
+
+        // Case 2: MERGE — email belongs to an orphan web-account (no TG) → link TG + migrate
+        if (taken && taken.id !== userId && !taken.telegramId) {
+          logger.info(`verify_email_code: MERGE — linking TG ${tgId} to web-account ${taken.id}`)
+
+          // Migrate relations that might conflict (cascaded unique constraints are minimal,
+          // but we clear session/notifications/vars from the orphan TG record)
+          const orphanId = userId
+          try {
+            await prisma.$transaction([
+              prisma.session.deleteMany({ where: { userId: orphanId } }),
+              prisma.botMessage.deleteMany({ where: { userId: orphanId } }),
+              prisma.notification.deleteMany({ where: { userId: orphanId } }),
+              prisma.notificationRead.deleteMany({ where: { userId: orphanId } }),
+              prisma.userVariable.deleteMany({ where: { userId: orphanId } }),
+              prisma.funnelLog.deleteMany({ where: { userId: orphanId } }),
+              prisma.user.delete({ where: { id: orphanId } }),
+              // Attach TG to the web-account
+              prisma.user.update({
+                where: { id: taken.id },
+                data: {
+                  telegramId:   tgId,
+                  telegramName: (await prisma.user.findUnique({ where: { id: orphanId } }).catch(() => null))?.telegramName,
+                  emailVerified: true,
+                },
+              }),
+            ])
+          } catch (mergeErr: any) {
+            // If transaction fails (e.g. orphan user.delete couldn't happen because of FK),
+            // fall back to non-destructive update: just attach TG to web-account and unlink orphan
+            logger.warn(`verify_email_code: MERGE tx failed: ${mergeErr.message} — using fallback`)
+            try {
+              await prisma.user.update({
+                where: { id: orphanId },
+                data:  { telegramId: null },
+              })
+              await prisma.user.update({
+                where: { id: taken.id },
+                data: { telegramId: tgId, emailVerified: true },
+              })
+            } catch (e: any) {
+              logger.error(`verify_email_code: fallback merge failed: ${e.message}`)
+              if (tgId) {
+                await bot.api.sendMessage(tgId,
+                  `⚠️ Не удалось объединить аккаунты: ${e.message}\n\nНапишите в поддержку.`,
+                ).catch(() => {})
+              }
+              actionFailed = true
+              break
+            }
+          }
+
+          // Sync telegramId to REMNAWAVE (so the panel has the new TG bound)
+          if (taken.remnawaveUuid && tgId) {
+            try {
+              await remnawave.updateUser({
+                uuid: taken.remnawaveUuid,
+                telegramId: parseInt(tgId, 10),
+              } as any)
+            } catch (e: any) {
+              logger.warn(`verify_email_code merge: REMNAWAVE tg sync failed: ${e.message}`)
+            }
+          }
+
+          // Generate password for the merged account, email it
+          const ALPHABET_M = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+          const { randomBytes: rb } = await import('crypto')
+          const bufM = rb(24)
+          let plainM = ''
+          for (let i = 0; i < 12; i++) plainM += ALPHABET_M[bufM[i] % ALPHABET_M.length]
+          const bcryptM = await import('bcryptjs')
+          const hashM = await bcryptM.default.hash(plainM, 12)
+          await prisma.user.update({
+            where: { id: taken.id },
+            data:  { passwordHash: hashM, passwordSetAt: new Date() },
+          })
+          try {
+            const { emailService: es } = await import('../services/email')
+            await es.sendAdminPasswordReset(pendingEmail, plainM)
+          } catch (e: any) {
+            logger.warn(`verify_email_code merge: password email failed: ${e.message}`)
+          }
+
+          // Notify user via Telegram
+          if (tgId) {
+            const hasSub = !!taken.remnawaveUuid
+            const paymentsInfo = taken.payments.length > 0
+              ? `\n💳 У вас уже есть история оплат на этом аккаунте.`
+              : ''
+            await bot.api.sendMessage(tgId,
+              `✅ *Аккаунты объединены!*\n\n` +
+              `📧 Email \`${pendingEmail}\` привязан к вашему Telegram.\n` +
+              (hasSub ? `🔑 Подписка подтянута автоматически.` : `🔓 Пока нет активной подписки — выберите тариф.`) +
+              paymentsInfo +
+              `\n\n🔑 На email отправлен пароль для входа в веб-ЛК:\n${config.appUrl}/login\n\n⚠️ Проверьте папку *«Спам»*.`,
+              { parse_mode: 'Markdown' },
+            ).catch(() => {})
+          }
+
+          // Chain must halt — userId is now invalid (record deleted)
+          actionFailed = true
+          break
+        }
+
+        await prisma.user.update({
+          where: { id: userId },
+          data:  { email: pendingEmail, emailVerified: true },
+        })
+        logger.info(`Action verify_email_code: email ${pendingEmail} attached to user ${userId}`)
+
+        // Sync email to REMNAWAVE if user has one — keeps panels in sync
+        const updatedUser = await prisma.user.findUnique({ where: { id: userId } })
+        if (updatedUser?.remnawaveUuid) {
+          try {
+            await remnawave.updateUser({ uuid: updatedUser.remnawaveUuid, email: pendingEmail } as any)
+          } catch (e: any) {
+            logger.warn(`verify_email_code: REMNAWAVE email sync failed: ${e.message}`)
+          }
+        }
+
+        // Immediately generate + email a password — same as reset_password
+        const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+        const { randomBytes } = await import('crypto')
+        const buf = randomBytes(24)
+        let plain = ''
+        for (let i = 0; i < 12; i++) plain += ALPHABET[buf[i] % ALPHABET.length]
+        const bcrypt = await import('bcryptjs')
+        const hash = await bcrypt.default.hash(plain, 12)
+        await prisma.user.update({
+          where: { id: userId },
+          data:  { passwordHash: hash, passwordSetAt: new Date() },
+        })
+        try {
+          const { emailService } = await import('../services/email')
+          await emailService.sendAdminPasswordReset(pendingEmail, plain)
+        } catch (e: any) {
+          logger.error(`verify_email_code: welcome email failed: ${e.message}`)
+        }
+        break
+      }
+
+      // ── Force-resync user's subscription from REMNAWAVE ──
+      // With fallback: if UUID is 404 or absent → try lookup by telegramId and relink.
+      // Used as the very first step in /start to guarantee fresh state for imported users.
+      case 'refresh_subscription': {
+        const user = await prisma.user.findUnique({ where: { id: userId } })
+        if (!user) break
+        const statusMap: Record<string, string> = { ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED' }
+
+        const tryRelinkByTg = async () => {
+          if (!user.telegramId) return false
+          const rmUser = await remnawave.getUserByTelegramId(user.telegramId).catch(() => null)
+          if (!rmUser) return false
+          await prisma.user.update({
+            where: { id: userId },
+            data: {
+              remnawaveUuid: rmUser.uuid,
+              subStatus:     (statusMap[rmUser.status] ?? 'INACTIVE') as any,
+              subExpireAt:   rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+              subLink:       remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl),
+            },
+          })
+          logger.info(`refresh_subscription: relinked ${userId} → RW ${rmUser.uuid}`)
+          return true
+        }
+
+        // No UUID yet — try relink by tg
+        if (!user.remnawaveUuid) {
+          await tryRelinkByTg()
+          break
+        }
+
+        // Has UUID — try sync
+        try {
+          const synced = await remnawave.syncUserSubscription(user.remnawaveUuid)
+          if (synced) {
+            await prisma.user.update({
+              where: { id: userId },
+              data: {
+                subStatus:   (statusMap[synced.status] ?? 'INACTIVE') as any,
+                subExpireAt: synced.expireAt ? new Date(synced.expireAt) : null,
+                subLink:     synced.subscriptionUrl,
+              },
+            })
+          } else {
+            // syncUserSubscription returned null (silent 404 etc) — try relink
+            await tryRelinkByTg()
+          }
+        } catch (e: any) {
+          logger.warn(`refresh_subscription primary failed: ${e.message} — trying relink`)
+          await tryRelinkByTg()
+        }
+        break
+      }
+
+      // ── Revoke subscription URL (generate new one) ──
+      case 'revoke_sub': {
+        const user = await prisma.user.findUnique({ where: { id: userId } })
+        if (!user?.remnawaveUuid) break
+        try {
+          const revoked = await remnawave.revokeSubscription(user.remnawaveUuid)
+          if (revoked) {
+            const newUrl = remnawave.getSubscriptionUrl(revoked.uuid, revoked.subscriptionUrl)
+            await prisma.user.update({
+              where: { id: userId },
+              data:  { subLink: newUrl },
+            })
+            logger.info(`Action revoke_sub: ${userId}`)
+          }
+        } catch (e: any) {
+          logger.error(`revoke_sub failed: ${e.message}`)
+        }
+        break
+      }
+
+      // ── Unlink telegram from user account ──
+      case 'unlink_telegram': {
+        await prisma.user.update({
+          where: { id: userId },
+          data:  { telegramId: null, telegramName: null },
+        }).catch(() => {})
+        logger.info(`Action unlink_telegram: ${userId}`)
+        break
+      }
+
+      // ── Create a support ticket from {ticket_subject} + {ticket_body} vars ──
+      case 'create_ticket': {
+        const { resolveVariables } = await import('./engine')
+        const subject = (await resolveVariables('{ticket_subject}', userId)).trim() || 'Обращение из бота'
+        const body    = (await resolveVariables('{ticket_body}', userId)).trim()
+        if (!body) {
+          logger.warn(`create_ticket: empty body for ${userId}`)
+          break
+        }
+        try {
+          await prisma.ticket.create({
+            data: {
+              userId,
+              subject:  subject.slice(0, 200),
+              category: 'OTHER',
+              priority: 'NORMAL',
+              source:   'BOT',
+              messages: {
+                create: {
+                  authorType: 'USER',
+                  authorId:   userId,
+                  body:       body.slice(0, 5000),
+                  source:     'BOT',
+                },
+              },
+              unreadByAdmin: 1,
+              lastMessageAt: new Date(),
+            },
+          })
+          logger.info(`Action create_ticket: ${userId}`)
+        } catch (e: any) {
+          logger.error(`create_ticket failed: ${e.message}`)
+        }
+        break
+      }
+
       default:
         logger.warn(`Unknown action type: ${actionType}`)
     }
   } catch (e) {
     logger.error(`Action ${actionType} failed for user ${userId}`, e)
+    actionFailed = true
   }
+  return { ok: !actionFailed }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -807,7 +1253,13 @@ async function handleCondition(block: any, ctx: Context | null, userId: string, 
 }
 
 async function handleAction(block: any, ctx: Context | null, userId: string, chatId: string) {
-  await performAction(block, userId)
+  const { ok } = await performAction(block, userId)
+
+  // Halt the chain on action failure — user already got an explicit error message
+  if (!ok) {
+    logger.info(`Action ${block.name || block.id} failed — chain stopped`)
+    return
+  }
 
   if (block.nextBlockId) {
     await executeBlock(block.nextBlockId, ctx, userId, chatId)
@@ -827,8 +1279,8 @@ async function handleInput(block: any, ctx: Context | null, userId: string, chat
     }
   }
 
-  // Set user state to waiting for input
-  await setUserState(userId, {
+  // Set user state to waiting for input — key by chatId (telegramId) to match text handler
+  await setUserState(chatId, {
     waitingInput: true,
     blockId: block.id,
     inputVar: block.inputVar || 'input',
@@ -1385,13 +1837,20 @@ function buildKeyboard(buttons: any[], resolvedVars?: Record<string, string>): {
       // Build raw InlineKeyboardButton with style support (Bot API 9.4)
       const button: any = { text: btn.label }
 
-      // Set action
+      // Set action — skip button entirely if its resolved payload is empty
+      // (Telegram rejects empty URL / empty copy_text with BUTTON_* errors)
       if (btn.type === 'url' && btn.url) {
-        button.url = resolve(btn.url)
+        const resolved = resolve(btn.url)
+        if (!resolved || resolved === '—') continue
+        button.url = resolved
       } else if (btn.type === 'webapp' && btn.url) {
-        button.web_app = { url: resolve(btn.url) }
+        const resolved = resolve(btn.url)
+        if (!resolved || resolved === '—') continue
+        button.web_app = { url: resolved }
       } else if (btn.type === 'copy_text' && btn.copyText) {
-        button.copy_text = { text: resolve(btn.copyText) }
+        const resolved = resolve(btn.copyText)
+        if (!resolved || resolved === '—') continue
+        button.copy_text = { text: resolved }
       } else {
         button.callback_data = `blk:${btn.id}`
       }
