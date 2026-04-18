@@ -470,36 +470,61 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ═══════ 2. TARIFF BUTTON ═══════ */}
-      <div className="animate-slide-up" style={{ animationDelay: '50ms' }}>
+      {/* ═══════ 2. ACTION BUTTONS ═══════ */}
+      <div className="animate-slide-up space-y-2.5" style={{ animationDelay: '50ms' }}>
+        {/* Primary: Выбрать тариф — polished glow + inner-icon bubble + arrow */}
         <button onClick={() => setShowTariffs(true)}
-                className="w-full py-4 rounded-2xl text-base font-semibold transition-all duration-300 flex items-center justify-center gap-3"
+                className="dash-btn-primary group w-full py-4 px-5 rounded-2xl text-base font-semibold flex items-center justify-between gap-3 relative overflow-hidden"
                 style={{
                   background: 'var(--accent-gradient)',
-                  boxShadow: '0 4px 20px rgba(6,182,212,0.3), 0 0 60px rgba(6,182,212,0.08)',
+                  boxShadow: '0 8px 28px rgba(6,182,212,0.3), 0 0 60px rgba(6,182,212,0.1)',
                   color: '#fff',
                 }}>
-          <CreditCard className="w-5 h-5" />
-          Выбрать тариф
+          {/* subtle shine on hover */}
+          <span className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out"
+                style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)' }} />
+          <span className="flex items-center gap-3 relative z-10">
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)' }}>
+              <CreditCard className="w-4 h-4" />
+            </span>
+            <span className="text-[15px]">Выбрать тариф</span>
+          </span>
+          <ChevronRight className="w-5 h-5 relative z-10 transition-transform group-hover:translate-x-0.5" />
         </button>
-        <Link href="/dashboard/instructions"
-              className="w-full py-3.5 rounded-2xl text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2 mt-2"
-              style={{
-                background: 'rgba(139,92,246,0.08)',
-                border: '1px solid rgba(139,92,246,0.2)',
-                color: '#a78bfa',
-              }}>
-          <Smartphone className="w-[18px] h-[18px]" /> Подключить VPN
-        </Link>
-        <button onClick={() => setShowShare(true)}
-                className="w-full py-3.5 rounded-2xl text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2 mt-2"
+
+        {/* Secondary row — 2 cols on sm+, stacks on mobile */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <Link href="/dashboard/instructions"
+                className="dash-btn-ghost group flex items-center gap-3 p-3.5 rounded-2xl transition-all"
                 style={{
-                  background: 'rgba(6,182,212,0.06)',
-                  border: '1px solid rgba(6,182,212,0.15)',
-                  color: 'var(--accent-1)',
+                  background: 'rgba(139,92,246,0.08)',
+                  border: '1px solid rgba(139,92,246,0.2)',
+                  color: '#a78bfa',
                 }}>
-          <Share2 className="w-[18px] h-[18px]" /> Поделиться подпиской
-        </button>
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                  style={{ background: 'rgba(139,92,246,0.18)' }}>
+              <Smartphone className="w-4 h-4" />
+            </span>
+            <span className="flex-1 text-sm font-semibold">Подключить VPN</span>
+            <ChevronRight className="w-4 h-4 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
+          </Link>
+
+          <button onClick={() => setShowShare(true)}
+                  className="dash-btn-ghost group flex items-center gap-3 p-3.5 rounded-2xl transition-all"
+                  style={{
+                    background: 'rgba(6,182,212,0.08)',
+                    border: '1px solid rgba(6,182,212,0.2)',
+                    color: 'var(--accent-1)',
+                  }}>
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                  style={{ background: 'rgba(6,182,212,0.18)' }}>
+              <Share2 className="w-4 h-4" />
+            </span>
+            <span className="flex-1 text-sm font-semibold text-left">Поделиться</span>
+            <ChevronRight className="w-4 h-4 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
+          </button>
+        </div>
       </div>
 
       {/* ═══════ 3. REFERRALS + BALANCE — single column ═══════ */}
