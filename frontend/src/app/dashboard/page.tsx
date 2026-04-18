@@ -515,11 +515,25 @@ export default function DashboardPage() {
               const u = user as any
               const isTrial = u.subStatus === 'TRIAL'
               const tariff  = u.currentPlan
-              // Bonuses decrement naturally: cap what we show by daysLeft, so as
-              // days are consumed, the displayed bonus portion shrinks too.
               const remaining = daysLeft ?? 0
-              const refBonus  = Math.min(u.referralBonusDays || 0, remaining)
-              const myBonus   = Math.min(u.bonusDays || 0, Math.max(0, remaining - refBonus))
+
+              // Bonus-first consumption model:
+              // bonusTotal (earned) spent first, then paidTotal.
+              // daysConsumed = totalEverAdded - remaining.
+              const refEarned   = u.referralBonusDays || 0
+              const grantEarned = u.bonusDays || 0
+              const paidEver    = u.paidDaysEver || 0
+              const bonusTotal  = refEarned + grantEarned
+              const totalEver   = bonusTotal + paidEver
+              const daysConsumed = Math.max(0, totalEver - remaining)
+              const bonusConsumed = Math.min(bonusTotal, daysConsumed)
+              const bonusRemaining = Math.max(0, bonusTotal - bonusConsumed)
+              // Split bonus remaining proportionally across referral vs admin-granted
+              const refBonus = bonusTotal > 0
+                ? Math.round(bonusRemaining * (refEarned   / bonusTotal))
+                : 0
+              const myBonus  = bonusRemaining - refBonus
+              const paidRemaining = Math.max(0, remaining - bonusRemaining)
 
               if (isTrial) {
                 return (
@@ -540,21 +554,28 @@ export default function DashboardPage() {
                     <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{tariff}</div>
                     <div className="text-sm mt-1.5 opacity-85">
                       {remaining > 0
-                        ? <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
+                        ? <>всего осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
                         : <>подписка закончилась</>}
                     </div>
-                    {(refBonus > 0 || myBonus > 0) && (
+                    {/* Split breakdown: bonus-first consumption */}
+                    {(bonusRemaining > 0 || paidRemaining !== remaining) && remaining > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap mt-3">
                         {refBonus > 0 && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                                 style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
-                            👥 +{refBonus} дн. за рефералов
+                            👥 {refBonus} дн. за рефералов
                           </span>
                         )}
                         {myBonus > 0 && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                                 style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
-                            🎁 +{myBonus} бонусных дн.
+                            🎁 {myBonus} бонусных дн.
+                          </span>
+                        )}
+                        {paidRemaining > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                                style={{ background: 'rgba(52,211,153,0.25)', backdropFilter: 'blur(6px)', border: '1px solid rgba(52,211,153,0.4)' }}>
+                            💳 {paidRemaining} оплаченных
                           </span>
                         )}
                       </div>
@@ -602,7 +623,7 @@ export default function DashboardPage() {
 
         {/* ── SECONDARY 1: Подключить VPN ── */}
         <Link href="/dashboard/instructions"
-              className="dash-bento group relative overflow-hidden rounded-2xl p-5 min-h-[100px] sm:min-h-[86px] flex flex-col justify-between"
+              className="dash-bento group relative overflow-hidden rounded-2xl p-4 min-h-[86px] flex items-center gap-3"
               style={{
                 background: 'linear-gradient(135deg, rgba(139,92,246,0.14) 0%, rgba(236,72,153,0.08) 100%)',
                 border: '1px solid rgba(139,92,246,0.25)',
@@ -610,22 +631,20 @@ export default function DashboardPage() {
               }}>
           <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-20 transition-transform duration-500 group-hover:scale-125"
                 style={{ background: 'radial-gradient(circle, #a78bfa 0%, transparent 70%)', filter: 'blur(14px)' }} />
-          <div className="relative z-10 flex items-center justify-between">
-            <span className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
-                  style={{ background: 'rgba(139,92,246,0.25)', border: '1px solid rgba(139,92,246,0.3)' }}>
-              <Smartphone className="w-4 h-4" />
-            </span>
-            <ChevronRight className="w-4 h-4 opacity-40 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
-          </div>
-          <div className="relative z-10">
-            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>Подключить VPN</div>
+          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
+                style={{ background: 'rgba(139,92,246,0.25)', border: '1px solid rgba(139,92,246,0.3)' }}>
+            <Smartphone className="w-5 h-5" />
+          </span>
+          <div className="relative z-10 flex-1 min-w-0">
+            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Подключить VPN</div>
             <div className="text-[11px] mt-0.5 opacity-80">Инструкции для устройств</div>
           </div>
+          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
         </Link>
 
         {/* ── SECONDARY 2: Поделиться ── */}
         <button onClick={() => setShowShare(true)}
-                className="dash-bento group relative overflow-hidden rounded-2xl p-5 text-left min-h-[100px] sm:min-h-[86px] flex flex-col justify-between"
+                className="dash-bento group relative overflow-hidden rounded-2xl p-4 text-left min-h-[86px] flex items-center gap-3"
                 style={{
                   background: 'linear-gradient(135deg, rgba(6,182,212,0.14) 0%, rgba(14,165,233,0.08) 100%)',
                   border: '1px solid rgba(6,182,212,0.25)',
@@ -633,17 +652,15 @@ export default function DashboardPage() {
                 }}>
           <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
                 style={{ background: 'radial-gradient(circle, var(--accent-1) 0%, transparent 70%)', filter: 'blur(14px)' }} />
-          <div className="relative z-10 flex items-center justify-between">
-            <span className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
-                  style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.3)' }}>
-              <Share2 className="w-4 h-4" />
-            </span>
-            <ChevronRight className="w-4 h-4 opacity-40 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
-          </div>
-          <div className="relative z-10">
-            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>Поделиться</div>
+          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
+                style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.3)' }}>
+            <Share2 className="w-5 h-5" />
+          </span>
+          <div className="relative z-10 flex-1 min-w-0">
+            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Поделиться</div>
             <div className="text-[11px] mt-0.5 opacity-80">QR-код и ссылка подписки</div>
           </div>
+          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
         </button>
       </div>
 

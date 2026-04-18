@@ -180,6 +180,14 @@ export async function authRoutes(app: FastifyInstance) {
     })
     safe.referralBonusDays = refDays._sum.bonusDays || 0
 
+    // Total paid days ever (not refunded) — to compute bonus vs paid portion
+    // of daysLeft on the client (bonuses consumed first, then paid).
+    const paidPayments = await prisma.payment.findMany({
+      where: { userId: user.id, status: 'PAID', purpose: 'SUBSCRIPTION' },
+      include: { tariff: { select: { durationDays: true } } },
+    })
+    safe.paidDaysEver = paidPayments.reduce((sum, p: any) => sum + (p.tariff?.durationDays || 0), 0)
+
     return safe
   })
 

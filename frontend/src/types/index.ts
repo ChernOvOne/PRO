@@ -19,6 +19,7 @@ export interface User {
   currentPlanTag?: string
   bonusDays?:     number
   referralBonusDays?: number
+  paidDaysEver?:  number
 }
 
 export type SubStatus = 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'TRIAL'
