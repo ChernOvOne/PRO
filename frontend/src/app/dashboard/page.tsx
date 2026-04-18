@@ -867,25 +867,18 @@ export default function DashboardPage() {
                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                   {n.imageUrl && (() => {
                     const aspect = n.imageAspect || '16/9'
-                    // For "tall" aspects (1:1, 4:3), cap width so the image
-                    // doesn't take the whole card vertically on narrow layouts.
-                    const tallCap: Record<string, string> = { '1/1': '180px', '4/3': '220px' }
-                    const maxWidth = tallCap[aspect]
                     return (
-                      <div className="w-full flex-shrink-0 flex items-center justify-center"
-                           style={{ background: 'var(--surface-2)' }}>
-                        <div className="overflow-hidden w-full"
+                      <div className="w-full overflow-hidden flex-shrink-0"
+                           style={{
+                             background: 'var(--surface-2)',
+                             aspectRatio: aspect === 'auto' ? undefined : aspect,
+                             maxHeight: aspect === 'auto' ? '200px' : undefined,
+                           }}>
+                        <img src={n.imageUrl} alt={n.title} className="w-full h-full"
                              style={{
-                               aspectRatio: aspect === 'auto' ? undefined : aspect,
-                               maxHeight: aspect === 'auto' ? '180px' : '200px',
-                               maxWidth: maxWidth,
-                             }}>
-                          <img src={n.imageUrl} alt={n.title} className="w-full h-full"
-                               style={{
-                                 objectFit: aspect === 'auto' ? 'contain' : 'cover',
-                                 objectPosition: n.imageFocus || '50% 50%',
-                               }} />
-                        </div>
+                               objectFit: aspect === 'auto' ? 'contain' : 'cover',
+                               objectPosition: n.imageFocus || '50% 50%',
+                             }} />
                       </div>
                     )
                   })()}
