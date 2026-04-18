@@ -511,27 +511,92 @@ export default function DashboardPage() {
           </div>
 
           <div className="relative z-10 mt-6">
-            {isActive && (user as any).currentPlan ? (
-              <>
-                <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Текущий тариф</div>
-                <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{(user as any).currentPlan}</div>
-                <div className="text-sm mt-1.5 opacity-85 flex items-center gap-2 flex-wrap">
-                  {daysLeft != null && daysLeft > 0 ? (
-                    <>осталось <b>{daysLeft}</b> {daysLeft === 1 ? 'день' : daysLeft < 5 ? 'дня' : 'дней'}</>
-                  ) : (
-                    <>подписка закончилась</>
-                  )}
-                  <span className="opacity-50">·</span>
-                  <span>продлить →</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Тарифы · Подписка</div>
-                <div className="text-[26px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Выбрать тариф</div>
-                <div className="text-sm mt-1.5 opacity-85">Начните пользоваться сейчас →</div>
-              </>
-            )}
+            {(() => {
+              const u = user as any
+              const isTrial = u.subStatus === 'TRIAL'
+              const tariff  = u.currentPlan
+              // Bonuses decrement naturally: cap what we show by daysLeft, so as
+              // days are consumed, the displayed bonus portion shrinks too.
+              const remaining = daysLeft ?? 0
+              const refBonus  = Math.min(u.referralBonusDays || 0, remaining)
+              const myBonus   = Math.min(u.bonusDays || 0, Math.max(0, remaining - refBonus))
+
+              if (isTrial) {
+                return (
+                  <>
+                    <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">🎁 Пробный период</div>
+                    <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Trial-подписка</div>
+                    <div className="text-sm mt-1.5 opacity-85">
+                      {remaining > 0 && <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>}
+                    </div>
+                  </>
+                )
+              }
+
+              if (isActive && tariff) {
+                return (
+                  <>
+                    <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Текущий тариф</div>
+                    <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{tariff}</div>
+                    <div className="text-sm mt-1.5 opacity-85">
+                      {remaining > 0
+                        ? <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
+                        : <>подписка закончилась</>}
+                    </div>
+                    {(refBonus > 0 || myBonus > 0) && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-3">
+                        {refBonus > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                                style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
+                            👥 +{refBonus} дн. за рефералов
+                          </span>
+                        )}
+                        {myBonus > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                                style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
+                            🎁 +{myBonus} бонусных дн.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )
+              }
+
+              if (isActive) {
+                return (
+                  <>
+                    <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">
+                      {refBonus > 0 ? '👥 Бонус за рефералов' : '🎁 Бонусная подписка'}
+                    </div>
+                    <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">
+                      {refBonus > 0 ? 'Реферальные дни' : 'Активная подписка'}
+                    </div>
+                    <div className="text-sm mt-1.5 opacity-85">
+                      {remaining > 0 && <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>}
+                    </div>
+                  </>
+                )
+              }
+
+              return (
+                <>
+                  <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Тарифы · Подписка</div>
+                  <div className="text-[26px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Выбрать тариф</div>
+                  <div className="text-sm mt-1.5 opacity-85">Начните пользоваться сейчас</div>
+                </>
+              )
+            })()}
+          </div>
+
+          {/* Explicit CTA button — clickable (nested inside the clickable card is ok:
+              both trigger setShowTariffs). Makes the action obvious. */}
+          <div className="relative z-10 mt-5">
+            <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold"
+                  style={{ background: '#fff', color: 'var(--accent-1)', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}>
+              {isActive ? 'Продлить подписку' : 'Выбрать тариф'}
+              <ChevronRight className="w-4 h-4" />
+            </span>
           </div>
         </button>
 

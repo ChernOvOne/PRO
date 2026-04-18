@@ -172,6 +172,14 @@ export async function authRoutes(app: FastifyInstance) {
     })
     if (!user) throw new Error('User not found')
     const { passwordHash, ...safe } = user as any
+
+    // Aggregate referral-bonus days earned (for dashboard "подписка от рефералов" label)
+    const refDays = await prisma.referralBonus.aggregate({
+      where: { referrerId: user.id, bonusType: 'DAYS' },
+      _sum:  { bonusDays: true },
+    })
+    safe.referralBonusDays = refDays._sum.bonusDays || 0
+
     return safe
   })
 

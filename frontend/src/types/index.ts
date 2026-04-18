@@ -17,6 +17,8 @@ export interface User {
   remnawaveUuid?: string
   currentPlan?:   string
   currentPlanTag?: string
+  bonusDays?:     number
+  referralBonusDays?: number
 }
 
 export type SubStatus = 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'TRIAL'
