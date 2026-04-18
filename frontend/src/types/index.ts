@@ -15,6 +15,8 @@ export interface User {
   createdAt:    string
   lastLoginAt?: string
   remnawaveUuid?: string
+  currentPlan?:   string
+  currentPlanTag?: string
 }
 
 export type SubStatus = 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'TRIAL'

@@ -497,16 +497,41 @@ export default function DashboardPage() {
                  style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.25)' }}>
               <CreditCard className="w-6 h-6" />
             </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider"
-                 style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34d399' }} /> Активно
-            </div>
+            {isActive ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                   style={{ background: 'rgba(52,211,153,0.2)', backdropFilter: 'blur(8px)', border: '1px solid rgba(52,211,153,0.4)' }}>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#34d399' }} /> Активно
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                   style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+                Неактивно
+              </div>
+            )}
           </div>
 
           <div className="relative z-10 mt-6">
-            <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Тарифы · Подписка</div>
-            <div className="text-[26px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Выбрать тариф</div>
-            <div className="text-sm mt-1.5 opacity-85">Продлить подписку или апгрейд →</div>
+            {isActive && (user as any).currentPlan ? (
+              <>
+                <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Текущий тариф</div>
+                <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{(user as any).currentPlan}</div>
+                <div className="text-sm mt-1.5 opacity-85 flex items-center gap-2 flex-wrap">
+                  {daysLeft > 0 ? (
+                    <>осталось <b>{daysLeft}</b> {daysLeft === 1 ? 'день' : daysLeft < 5 ? 'дня' : 'дней'}</>
+                  ) : (
+                    <>подписка закончилась</>
+                  )}
+                  <span className="opacity-50">·</span>
+                  <span>продлить →</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Тарифы · Подписка</div>
+                <div className="text-[26px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Выбрать тариф</div>
+                <div className="text-sm mt-1.5 opacity-85">Начните пользоваться сейчас →</div>
+              </>
+            )}
           </div>
         </button>
 

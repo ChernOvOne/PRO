@@ -603,9 +603,11 @@ export class PaymentService {
     await prisma.user.update({
       where: { id: user.id },
       data:  {
-        subStatus:   'ACTIVE',
-        subExpireAt: baseLocal,
+        subStatus:      'ACTIVE',
+        subExpireAt:    baseLocal,
         remnawaveUuid,
+        currentPlan:    tariff.name,
+        currentPlanTag: tariff.remnawaveTag ?? null,
       },
     })
 
