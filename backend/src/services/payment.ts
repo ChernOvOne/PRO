@@ -462,8 +462,10 @@ export class PaymentService {
         logger.error(`REMNAWAVE createUser failed for ${user.id}: ${err?.message}. Proceeding with local DB update only.`)
       }
     } else {
-      // Extend existing subscription + apply tariff settings
-      // Wrap in try/catch — if REMNAWAVE is down, still update local DB
+      // Extend existing subscription + apply tariff settings.
+      // If UUID is orphan (404 = user doesn't exist on current panel — e.g. old
+      // remnawaveUuid left from a previous panel), re-create the user there so
+      // the payment actually activates the VPN instead of silently failing.
       try {
         const rmUser = await remnawave.getUserByUuid(remnawaveUuid)
         const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
@@ -486,7 +488,33 @@ export class PaymentService {
           logger.warn(`Failed to reset traffic for ${remnawaveUuid}:`, err)
         )
       } catch (err: any) {
-        logger.error(`REMNAWAVE update failed for ${remnawaveUuid}: ${err?.message}. Proceeding with local DB update only.`)
+        const is404 = err?.response?.status === 404 || String(err?.message).includes('404')
+        if (is404) {
+          logger.warn(`REMNAWAVE user ${remnawaveUuid} not found (404) — orphan UUID. Re-creating on current panel...`)
+          try {
+            const rmUser = await remnawave.createUser({
+              username:             user.email ? user.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '_') : user.telegramId ? `tg_${user.telegramId}` : `user_${user.id.slice(0, 8)}`,
+              email:                user.email ?? undefined,
+              telegramId:           user.telegramId ? parseInt(user.telegramId, 10) : null,
+              expireAt:             newExpireDate.toISOString(),
+              trafficLimitBytes,
+              trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+              hwidDeviceLimit:      effectiveDeviceLimit ?? 3,
+              tag:                  tariff.remnawaveTag ?? undefined,
+              activeInternalSquads: tariff.remnawaveSquads.length > 0 ? tariff.remnawaveSquads : undefined,
+            })
+            remnawaveUuid = rmUser.uuid
+            await prisma.user.update({
+              where: { id: user.id },
+              data:  { remnawaveUuid, subLink: remnawave.getSubscriptionUrl(rmUser.uuid) },
+            })
+            logger.info(`Re-created REMNAWAVE user for ${user.id}: new UUID ${rmUser.uuid}`)
+          } catch (createErr: any) {
+            logger.error(`Failed to re-create orphan REMNAWAVE user for ${user.id}: ${createErr?.message}`)
+          }
+        } else {
+          logger.error(`REMNAWAVE update failed for ${remnawaveUuid}: ${err?.message}. Proceeding with local DB update only.`)
+        }
       }
     }
 
