@@ -8,6 +8,67 @@ import { notifications } from './notifications'
 import { balanceService }    from './balance'
 import type { Tariff, User } from '@prisma/client'
 
+// Automatically open a support ticket for the admin when a payment succeeds
+// but the VPN subscription couldn't be provisioned/extended on the panel.
+// Deduped by order id — won't create duplicates on retries.
+async function reportSubscriptionIssue(params: {
+  user: User
+  orderId: string
+  tariffName: string
+  errorMessage: string
+  remnawaveUuid?: string | null
+}) {
+  try {
+    const { user, orderId, tariffName, errorMessage, remnawaveUuid } = params
+    const subject = `⚠️ Проблема с подпиской при оплате`
+    // Dedupe: skip if ticket for this order already exists
+    const existing = await prisma.ticket.findFirst({
+      where: { userId: user.id, subject, category: 'BILLING' },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (existing) {
+      const minutesSince = (Date.now() - existing.createdAt.getTime()) / 60_000
+      if (minutesSince < 30) return // recent ticket for same user — don't spam
+    }
+
+    const body = [
+      `Автоматическое уведомление от системы платежей.`,
+      ``,
+      `👤 Пользователь: ${user.email || user.telegramName || user.id}`,
+      `🆔 ID: ${user.id}`,
+      `📋 Order ID: ${orderId}`,
+      `💳 Тариф: ${tariffName}`,
+      `🔗 REMNAWAVE UUID: ${remnawaveUuid || '(нет)'}`,
+      ``,
+      `❌ Ошибка: ${errorMessage}`,
+      ``,
+      `Проверьте синхронизацию подписки вручную.`,
+    ].join('\n')
+
+    await prisma.ticket.create({
+      data: {
+        userId: user.id,
+        subject,
+        category: 'BILLING',
+        source: 'WEB',
+        unreadByAdmin: 1,
+        lastMessageAt: new Date(),
+        messages: {
+          create: {
+            authorType: 'SYSTEM',
+            body,
+            source: 'WEB',
+            isInternal: false,
+          },
+        },
+      },
+    })
+    logger.info(`[Ticket] Subscription issue ticket created for user ${user.id}, order ${orderId}`)
+  } catch (err: any) {
+    logger.error(`[Ticket] Failed to open subscription-issue ticket: ${err?.message}`)
+  }
+}
+
 // ── ЮKassa types ─────────────────────────────────────────────
 interface YukassaAmount {
   value: string
@@ -460,6 +521,11 @@ export class PaymentService {
         })
       } catch (err: any) {
         logger.error(`REMNAWAVE createUser failed for ${user.id}: ${err?.message}. Proceeding with local DB update only.`)
+        await reportSubscriptionIssue({
+          user, orderId, tariffName: tariff.name,
+          errorMessage: `Не удалось создать пользователя на REMNAWAVE: ${err?.message}`,
+          remnawaveUuid,
+        })
       }
     } else {
       // Extend existing subscription + apply tariff settings.
@@ -511,9 +577,19 @@ export class PaymentService {
             logger.info(`Re-created REMNAWAVE user for ${user.id}: new UUID ${rmUser.uuid}`)
           } catch (createErr: any) {
             logger.error(`Failed to re-create orphan REMNAWAVE user for ${user.id}: ${createErr?.message}`)
+            await reportSubscriptionIssue({
+              user, orderId, tariffName: tariff.name,
+              errorMessage: `Orphan UUID (${remnawaveUuid}): 404 на update, пересоздать также не удалось — ${createErr?.message}`,
+              remnawaveUuid,
+            })
           }
         } else {
           logger.error(`REMNAWAVE update failed for ${remnawaveUuid}: ${err?.message}. Proceeding with local DB update only.`)
+          await reportSubscriptionIssue({
+            user, orderId, tariffName: tariff.name,
+            errorMessage: `REMNAWAVE update failed: ${err?.message}`,
+            remnawaveUuid,
+          })
         }
       }
     }
