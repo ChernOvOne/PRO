@@ -516,7 +516,7 @@ export default function DashboardPage() {
                 <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Текущий тариф</div>
                 <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{(user as any).currentPlan}</div>
                 <div className="text-sm mt-1.5 opacity-85 flex items-center gap-2 flex-wrap">
-                  {daysLeft > 0 ? (
+                  {daysLeft != null && daysLeft > 0 ? (
                     <>осталось <b>{daysLeft}</b> {daysLeft === 1 ? 'день' : daysLeft < 5 ? 'дня' : 'дней'}</>
                   ) : (
                     <>подписка закончилась</>
