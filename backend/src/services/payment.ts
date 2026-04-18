@@ -8,6 +8,74 @@ import { notifications } from './notifications'
 import { balanceService }    from './balance'
 import type { Tariff, User } from '@prisma/client'
 
+/**
+ * Process a subscription refund — roll back days, update status, recalculate
+ * currentPlan based on the user's most recent remaining PAID payment.
+ * Shared by admin manual refund and YuKassa webhook.
+ */
+export async function handleSubscriptionRefund(paymentId: string, isFullRefund: boolean): Promise<void> {
+  if (!isFullRefund) return   // partial refund: keep subscription active
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { user: true, tariff: true },
+  })
+  if (!payment || !payment.user || payment.purpose !== 'SUBSCRIPTION') return
+
+  const user = payment.user
+  const daysToRollback = payment.tariff?.durationDays || 0
+
+  // Roll back days in local DB
+  const now = new Date()
+  let newExpire = user.subExpireAt ? new Date(user.subExpireAt) : now
+  if (daysToRollback > 0) newExpire.setDate(newExpire.getDate() - daysToRollback)
+
+  // Find the most recent PAID (not refunded) SUBSCRIPTION payment — its tariff
+  // becomes the new currentPlan. If none → clear plan.
+  const lastPaidPayment = await prisma.payment.findFirst({
+    where: {
+      userId: user.id,
+      status: 'PAID',
+      purpose: 'SUBSCRIPTION',
+      id: { not: payment.id },
+    },
+    orderBy: { paidAt: 'desc' },
+    include: { tariff: true },
+  })
+
+  const isExpired = newExpire <= now
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      subExpireAt:    newExpire,
+      subStatus:      isExpired ? 'EXPIRED' : 'ACTIVE',
+      totalPaid:      { decrement: payment.amount },
+      paymentsCount:  { decrement: 1 },
+      currentPlan:    lastPaidPayment?.tariff?.name     ?? null,
+      currentPlanTag: lastPaidPayment?.tariff?.remnawaveTag ?? null,
+    },
+  })
+
+  // Roll back REMNAWAVE expireAt too
+  if (user.remnawaveUuid && daysToRollback > 0) {
+    try {
+      const rmUser = await remnawave.getUserByUuid(user.remnawaveUuid)
+      if (rmUser?.expireAt) {
+        const rmExpire = new Date(rmUser.expireAt)
+        rmExpire.setDate(rmExpire.getDate() - daysToRollback)
+        await remnawave.updateUser({
+          uuid: user.remnawaveUuid,
+          expireAt: rmExpire.toISOString(),
+          status: rmExpire <= now ? 'DISABLED' : 'ACTIVE',
+        } as any)
+      }
+    } catch (err: any) {
+      logger.warn(`Failed to roll back REMNAWAVE expire for ${user.id}: ${err?.message}`)
+    }
+  }
+
+  logger.info(`Refund processed: payment ${payment.id}, user ${user.id}, -${daysToRollback} days, plan='${lastPaidPayment?.tariff?.name ?? '(none)'}'`)
+}
+
 // Automatically open a support ticket for the admin when a payment succeeds
 // but the VPN subscription couldn't be provisioned/extended on the panel.
 // Deduped by order id — won't create duplicates on retries.

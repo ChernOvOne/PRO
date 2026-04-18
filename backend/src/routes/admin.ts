@@ -988,52 +988,14 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       })
 
-      // Disable subscription on full refund
-      if (isFullRefund && payment.user && payment.purpose === 'SUBSCRIPTION') {
-        // Rollback local sub expire by tariff days
-        const daysToRollback = payment.tariff?.durationDays || 0
-        if (payment.user.subExpireAt && daysToRollback > 0) {
-          const newExpire = new Date(payment.user.subExpireAt)
-          newExpire.setDate(newExpire.getDate() - daysToRollback)
-          const now = new Date()
-          await prisma.user.update({
-            where: { id: payment.user.id },
-            data: {
-              subExpireAt: newExpire,
-              subStatus: newExpire <= now ? 'EXPIRED' : 'ACTIVE',
-              totalPaid: { decrement: payment.amount },
-              paymentsCount: { decrement: 1 },
-            },
-          })
-        }
-
-        // Disable in REMNAWAVE
-        if (payment.user.remnawaveUuid) {
-          try {
-            const rmUser = await remnawave.getUserByUuid(payment.user.remnawaveUuid)
-            const currentExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : new Date()
-            const newExpire = new Date(currentExpire)
-            newExpire.setDate(newExpire.getDate() - daysToRollback)
-            const now = new Date()
-
-            if (newExpire <= now) {
-              // Fully disable
-              await remnawave.updateUser({
-                uuid: payment.user.remnawaveUuid,
-                status: 'DISABLED',
-                expireAt: newExpire.toISOString(),
-              })
-            } else {
-              // Just shorten
-              await remnawave.updateUser({
-                uuid: payment.user.remnawaveUuid,
-                expireAt: newExpire.toISOString(),
-              })
-            }
-          } catch (e: any) {
-            logger.warn(`Failed to rollback REMNAWAVE for user ${payment.user.id}: ${e.message}`)
-          }
-        }
+      // Delegate subscription rollback to shared helper — rolls back days,
+      // updates status, recomputes currentPlan from latest remaining payment,
+      // syncs REMNAWAVE expireAt. Full refund only.
+      try {
+        const { handleSubscriptionRefund } = await import('../services/payment')
+        await handleSubscriptionRefund(payment.id, isFullRefund)
+      } catch (e: any) {
+        logger.warn(`Refund rollback failed for ${payment.id}: ${e?.message}`)
       }
 
       logger.info(`Refund created for payment ${id}: amount=${refundAmt}, full=${isFullRefund}`)

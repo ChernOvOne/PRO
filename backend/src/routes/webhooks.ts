@@ -90,6 +90,14 @@ export async function webhookRoutes(app: FastifyInstance) {
           },
         })
 
+        // Roll back subscription days and reset currentPlan (full refund only)
+        try {
+          const { handleSubscriptionRefund } = await import('../services/payment')
+          await handleSubscriptionRefund(payment.id, isFullRefund)
+        } catch (err: any) {
+          logger.error(`Refund rollback failed for ${payment.id}: ${err?.message}`)
+        }
+
         logger.info(`ЮKassa refund processed: ${payment.id}, amount=${refundAmount}, full=${isFullRefund}`)
         return reply.status(200).send({ ok: true })
       }
