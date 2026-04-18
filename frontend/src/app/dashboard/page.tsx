@@ -560,12 +560,8 @@ export default function DashboardPage() {
               if (isActive) {
                 return (
                   <>
-                    <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">
-                      {bonusInSub > 0 ? '👥 Бонус за рефералов' : '🎁 Бонусная подписка'}
-                    </div>
-                    <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">
-                      {bonusInSub > 0 ? 'Реферальные дни' : 'Активная подписка'}
-                    </div>
+                    <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">🎁 Бонусная подписка</div>
+                    <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Активная подписка</div>
                     <div className="text-sm mt-1.5 opacity-85">
                       {remaining > 0 && <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>}
                     </div>
