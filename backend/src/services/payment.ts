@@ -19,10 +19,11 @@ export async function handleSubscriptionRefund(paymentId: string, isFullRefund: 
     where: { id: paymentId },
     include: { user: true, tariff: true },
   })
-  if (!payment || !payment.user || payment.purpose !== 'SUBSCRIPTION') return
+  const pAny: any = payment
+  if (!payment || !pAny.user || payment.purpose !== 'SUBSCRIPTION') return
 
-  const user = payment.user
-  const daysToRollback = payment.tariff?.durationDays || 0
+  const user = pAny.user
+  const daysToRollback = pAny.tariff?.durationDays || 0
 
   // Roll back days in local DB
   const now = new Date()
@@ -31,16 +32,17 @@ export async function handleSubscriptionRefund(paymentId: string, isFullRefund: 
 
   // Find the most recent PAID (not refunded) SUBSCRIPTION payment — its tariff
   // becomes the new currentPlan. If none → clear plan.
-  const lastPaidPayment = await prisma.payment.findFirst({
+  const lastPaidPayment: any = await prisma.payment.findFirst({
     where: {
       userId: user.id,
       status: 'PAID',
       purpose: 'SUBSCRIPTION',
       id: { not: payment.id },
     },
-    orderBy: { paidAt: 'desc' },
+    orderBy: { updatedAt: 'desc' },
     include: { tariff: true },
   })
+  const paymentFull: any = payment
 
   const isExpired = newExpire <= now
   await prisma.user.update({
