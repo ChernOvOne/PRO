@@ -470,61 +470,91 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ═══════ 2. ACTION BUTTONS ═══════ */}
-      <div className="animate-slide-up space-y-2.5" style={{ animationDelay: '50ms' }}>
-        {/* Primary: Выбрать тариф — polished glow + inner-icon bubble + arrow */}
+      {/* ═══════ 2. ACTION BENTO ═══════
+          Desktop/tablet: 3-col grid where primary spans 2 cols × 2 rows,
+          two secondaries stack on the right. Mobile: everything stacks. */}
+      <div className="animate-slide-up grid grid-cols-1 sm:grid-cols-3 gap-3"
+           style={{ animationDelay: '50ms' }}>
+        {/* ── PRIMARY: Выбрать тариф (big hero card) ── */}
         <button onClick={() => setShowTariffs(true)}
-                className="dash-btn-primary group w-full py-4 px-5 rounded-2xl text-base font-semibold flex items-center justify-between gap-3 relative overflow-hidden"
+                className="dash-bento dash-bento-primary group relative overflow-hidden rounded-2xl p-6 text-left sm:col-span-2 sm:row-span-2 min-h-[180px] flex flex-col justify-between"
                 style={{
-                  background: 'var(--accent-gradient)',
-                  boxShadow: '0 8px 28px rgba(6,182,212,0.3), 0 0 60px rgba(6,182,212,0.1)',
+                  background: 'linear-gradient(135deg, var(--accent-1) 0%, #8b5cf6 50%, #ec4899 100%)',
                   color: '#fff',
+                  boxShadow: '0 12px 40px rgba(6,182,212,0.25), 0 0 80px rgba(139,92,246,0.12)',
                 }}>
-          {/* subtle shine on hover */}
-          <span className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out"
-                style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)' }} />
-          <span className="flex items-center gap-3 relative z-10">
-            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)' }}>
-              <CreditCard className="w-4 h-4" />
-            </span>
-            <span className="text-[15px]">Выбрать тариф</span>
-          </span>
-          <ChevronRight className="w-5 h-5 relative z-10 transition-transform group-hover:translate-x-0.5" />
+          {/* Decorative blobs */}
+          <span aria-hidden className="pointer-events-none absolute -top-20 -right-16 w-56 h-56 rounded-full opacity-30"
+                style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)', filter: 'blur(20px)' }} />
+          <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 w-48 h-48 rounded-full opacity-25"
+                style={{ background: 'radial-gradient(circle, #ec4899 0%, transparent 70%)', filter: 'blur(30px)' }} />
+          {/* Shine on hover */}
+          <span aria-hidden className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-[900ms] ease-out"
+                style={{ background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)' }} />
+
+          <div className="relative z-10 flex items-start justify-between gap-3">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                 style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.25)' }}>
+              <CreditCard className="w-6 h-6" />
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider"
+                 style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34d399' }} /> Активно
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-6">
+            <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">Тарифы · Подписка</div>
+            <div className="text-[26px] sm:text-[28px] font-bold mt-1 leading-[1.1]">Выбрать тариф</div>
+            <div className="text-sm mt-1.5 opacity-85">Продлить подписку или апгрейд →</div>
+          </div>
         </button>
 
-        {/* Secondary row — 2 cols on sm+, stacks on mobile */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <Link href="/dashboard/instructions"
-                className="dash-btn-ghost group flex items-center gap-3 p-3.5 rounded-2xl transition-all"
-                style={{
-                  background: 'rgba(139,92,246,0.08)',
-                  border: '1px solid rgba(139,92,246,0.2)',
-                  color: '#a78bfa',
-                }}>
-            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
-                  style={{ background: 'rgba(139,92,246,0.18)' }}>
+        {/* ── SECONDARY 1: Подключить VPN ── */}
+        <Link href="/dashboard/instructions"
+              className="dash-bento group relative overflow-hidden rounded-2xl p-5 min-h-[100px] sm:min-h-[86px] flex flex-col justify-between"
+              style={{
+                background: 'linear-gradient(135deg, rgba(139,92,246,0.14) 0%, rgba(236,72,153,0.08) 100%)',
+                border: '1px solid rgba(139,92,246,0.25)',
+                color: '#a78bfa',
+              }}>
+          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-20 transition-transform duration-500 group-hover:scale-125"
+                style={{ background: 'radial-gradient(circle, #a78bfa 0%, transparent 70%)', filter: 'blur(14px)' }} />
+          <div className="relative z-10 flex items-center justify-between">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
+                  style={{ background: 'rgba(139,92,246,0.25)', border: '1px solid rgba(139,92,246,0.3)' }}>
               <Smartphone className="w-4 h-4" />
             </span>
-            <span className="flex-1 text-sm font-semibold">Подключить VPN</span>
-            <ChevronRight className="w-4 h-4 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
-          </Link>
+            <ChevronRight className="w-4 h-4 opacity-40 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
+          </div>
+          <div className="relative z-10">
+            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>Подключить VPN</div>
+            <div className="text-[11px] mt-0.5 opacity-80">Инструкции для устройств</div>
+          </div>
+        </Link>
 
-          <button onClick={() => setShowShare(true)}
-                  className="dash-btn-ghost group flex items-center gap-3 p-3.5 rounded-2xl transition-all"
-                  style={{
-                    background: 'rgba(6,182,212,0.08)',
-                    border: '1px solid rgba(6,182,212,0.2)',
-                    color: 'var(--accent-1)',
-                  }}>
-            <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
-                  style={{ background: 'rgba(6,182,212,0.18)' }}>
+        {/* ── SECONDARY 2: Поделиться ── */}
+        <button onClick={() => setShowShare(true)}
+                className="dash-bento group relative overflow-hidden rounded-2xl p-5 text-left min-h-[100px] sm:min-h-[86px] flex flex-col justify-between"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(6,182,212,0.14) 0%, rgba(14,165,233,0.08) 100%)',
+                  border: '1px solid rgba(6,182,212,0.25)',
+                  color: 'var(--accent-1)',
+                }}>
+          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
+                style={{ background: 'radial-gradient(circle, var(--accent-1) 0%, transparent 70%)', filter: 'blur(14px)' }} />
+          <div className="relative z-10 flex items-center justify-between">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
+                  style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.3)' }}>
               <Share2 className="w-4 h-4" />
             </span>
-            <span className="flex-1 text-sm font-semibold text-left">Поделиться</span>
-            <ChevronRight className="w-4 h-4 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
-          </button>
-        </div>
+            <ChevronRight className="w-4 h-4 opacity-40 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
+          </div>
+          <div className="relative z-10">
+            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>Поделиться</div>
+            <div className="text-[11px] mt-0.5 opacity-80">QR-код и ссылка подписки</div>
+          </div>
+        </button>
       </div>
 
       {/* ═══════ 3. REFERRALS + BALANCE — single column ═══════ */}
