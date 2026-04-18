@@ -550,35 +550,9 @@ export default function DashboardPage() {
                     <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">{tariff}</div>
                     <div className="text-sm mt-1.5 opacity-85">
                       {remaining > 0
-                        ? <>всего осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
+                        ? <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
                         : <>подписка закончилась</>}
                     </div>
-                    {/* Breakdown of ACTIVE subscription days — bonus spent first */}
-                    {remaining > 0 && (bonusInSub > 0 || paidRemaining > 0) && (
-                      <div className="flex items-center gap-1.5 flex-wrap mt-3">
-                        {bonusInSub > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                                style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
-                            🎁 {bonusInSub} бонусных
-                          </span>
-                        )}
-                        {paidRemaining > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                                style={{ background: 'rgba(52,211,153,0.25)', backdropFilter: 'blur(6px)', border: '1px solid rgba(52,211,153,0.4)' }}>
-                            💳 {paidRemaining} оплаченных
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {/* Separate pill for unactivated bonus balance */}
-                    {bonusAccount > 0 && (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                              style={{ background: 'rgba(252,211,77,0.25)', backdropFilter: 'blur(6px)', border: '1px solid rgba(252,211,77,0.4)' }}>
-                          💰 На счёте ещё {bonusAccount} бонусных дн.
-                        </span>
-                      </div>
-                    )}
                   </>
                 )
               }
@@ -587,10 +561,10 @@ export default function DashboardPage() {
                 return (
                   <>
                     <div className="text-xs uppercase tracking-[0.2em] opacity-80 font-semibold">
-                      {refBonus > 0 ? '👥 Бонус за рефералов' : '🎁 Бонусная подписка'}
+                      {bonusInSub > 0 ? '👥 Бонус за рефералов' : '🎁 Бонусная подписка'}
                     </div>
                     <div className="text-[24px] sm:text-[28px] font-bold mt-1 leading-[1.1]">
-                      {refBonus > 0 ? 'Реферальные дни' : 'Активная подписка'}
+                      {bonusInSub > 0 ? 'Реферальные дни' : 'Активная подписка'}
                     </div>
                     <div className="text-sm mt-1.5 opacity-85">
                       {remaining > 0 && <>осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>}

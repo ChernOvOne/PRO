@@ -139,17 +139,27 @@ function LoginContent() {
 
     if (!botName) return
 
+    // Telegram Login Widget v22 + new attributes from late-2025 update:
+    //   data-init_auth  — auto-trigger auth if user previously authorized (single-tap UX)
+    //   data-onunauth   — callback when user revokes authorization
+    //   data-request_access=write — allow bot to message the user
     const script = document.createElement('script')
     script.src = 'https://telegram.org/js/telegram-widget.js?22'
     script.setAttribute('data-telegram-login', botName)
     script.setAttribute('data-size', 'large')
-    script.setAttribute('data-radius', '12')
-    script.setAttribute('data-onauth', 'onTelegramAuth(user)')
-    script.setAttribute('data-request-access', 'write')
-    script.setAttribute('data-auth-url', window.location.origin + '/login')
+    script.setAttribute('data-radius', '14')
+    script.setAttribute('data-init_auth',    '1')
+    script.setAttribute('data-onauth',       'onTelegramAuth(user)')
+    script.setAttribute('data-onunauth',     'onTelegramUnauth()')
+    script.setAttribute('data-request_access', 'write')
+    script.setAttribute('data-auth-url',     window.location.origin + '/login')
     script.async = true
     tgRef.current.innerHTML = ''
     tgRef.current.appendChild(script)
+
+    ;(window as any).onTelegramUnauth = () => {
+      // User removed authorization from @BotFather — no action needed locally
+    }
 
     return () => { window.onTelegramAuth = undefined }
   }, [tab, botName, redirectAfterAuth])
