@@ -517,23 +517,19 @@ export default function DashboardPage() {
               const tariff  = u.currentPlan
               const remaining = daysLeft ?? 0
 
-              // Bonus-first consumption model:
-              // bonusTotal (earned) spent first, then paidTotal.
-              // daysConsumed = totalEverAdded - remaining.
-              const refEarned   = u.referralBonusDays || 0
-              const grantEarned = u.bonusDays || 0
-              const paidEver    = u.paidDaysEver || 0
-              const bonusTotal  = refEarned + grantEarned
-              const totalEver   = bonusTotal + paidEver
-              const daysConsumed = Math.max(0, totalEver - remaining)
-              const bonusConsumed = Math.min(bonusTotal, daysConsumed)
-              const bonusRemaining = Math.max(0, bonusTotal - bonusConsumed)
-              // Split bonus remaining proportionally across referral vs admin-granted
-              const refBonus = bonusTotal > 0
-                ? Math.round(bonusRemaining * (refEarned   / bonusTotal))
-                : 0
-              const myBonus  = bonusRemaining - refBonus
-              const paidRemaining = Math.max(0, remaining - bonusRemaining)
+              // Two separate accounts:
+              //  1) user.bonusDays = unactivated balance on bonus account
+              //     (days user can still "convert" into subscription time)
+              //  2) subExpireAt → remaining = currently active subscription days,
+              //     which is a mix of bonus-activated + paid days
+              //
+              // Within the active subscription, bonus days are consumed FIRST:
+              //    paidRemaining    = min(paidEver, remaining)   // paid drains last
+              //    bonusActivatedRem = max(0, remaining - paidEver)
+              const bonusAccount   = u.bonusDays || 0
+              const paidEver       = u.paidDaysEver || 0
+              const paidRemaining  = Math.min(paidEver, remaining)
+              const bonusInSub     = Math.max(0, remaining - paidEver)
 
               if (isTrial) {
                 return (
@@ -557,19 +553,13 @@ export default function DashboardPage() {
                         ? <>всего осталось <b>{remaining}</b> {remaining === 1 ? 'день' : remaining < 5 ? 'дня' : 'дней'}</>
                         : <>подписка закончилась</>}
                     </div>
-                    {/* Split breakdown: bonus-first consumption */}
-                    {(bonusRemaining > 0 || paidRemaining !== remaining) && remaining > 0 && (
+                    {/* Breakdown of ACTIVE subscription days — bonus spent first */}
+                    {remaining > 0 && (bonusInSub > 0 || paidRemaining > 0) && (
                       <div className="flex items-center gap-1.5 flex-wrap mt-3">
-                        {refBonus > 0 && (
+                        {bonusInSub > 0 && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                                 style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
-                            👥 {refBonus} дн. за рефералов
-                          </span>
-                        )}
-                        {myBonus > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                                style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)' }}>
-                            🎁 {myBonus} бонусных дн.
+                            🎁 {bonusInSub} бонусных
                           </span>
                         )}
                         {paidRemaining > 0 && (
@@ -578,6 +568,15 @@ export default function DashboardPage() {
                             💳 {paidRemaining} оплаченных
                           </span>
                         )}
+                      </div>
+                    )}
+                    {/* Separate pill for unactivated bonus balance */}
+                    {bonusAccount > 0 && (
+                      <div className="mt-2">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                              style={{ background: 'rgba(252,211,77,0.25)', backdropFilter: 'blur(6px)', border: '1px solid rgba(252,211,77,0.4)' }}>
+                          💰 На счёте ещё {bonusAccount} бонусных дн.
+                        </span>
                       </div>
                     )}
                   </>
