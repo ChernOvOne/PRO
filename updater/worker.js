@@ -142,6 +142,24 @@ async function createBackupRow(data) {
   } finally { await c.end() }
 }
 
+/**
+ * Persist current installed version (tag + sha) in settings.
+ * Backend's /api/admin/updates/status reads it to display "Текущая версия".
+ */
+async function saveCurrentVersion(tag, sha) {
+  const c = new PgClient({ connectionString: DATABASE_URL })
+  await c.connect()
+  try {
+    const value = JSON.stringify({ tag: tag || null, sha: sha || null })
+    await c.query(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('current_version', $1, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `, [value])
+  } catch (e) {
+    err('saveCurrentVersion failed:', e.message)
+  } finally { await c.end() }
+}
+
 async function setMaintenance(on, message = '🔧 Платформа обновляется. Это займёт 3-5 минут. Скоро вернёмся!') {
   const c = new PgClient({ connectionString: DATABASE_URL })
   await c.connect()
@@ -335,6 +353,10 @@ async function runInstall(job) {
       phase: null,
       finished_at: new Date(),
     })
+
+    // Persist current version so admin UI shows it even if update_events history is cleared.
+    await saveCurrentVersion(tag, newSha)
+
     await emit(eventId, 'done', `✓ Успешно обновлено до ${tag}`, { ok: true })
 
   } catch (e) {
@@ -484,6 +506,18 @@ async function main() {
   log(`REPO_DIR=${REPO_DIR}, GITHUB_REPO=${GITHUB_REPO}`)
 
   ensureDir(BACKUPS_DIR)
+
+  // Record current version so the admin UI has something to show on first run.
+  try {
+    const sha = gitCurrentSha()
+    const tag = gitCurrentTag()
+    if (sha) {
+      await saveCurrentVersion(tag, sha)
+      log(`Current version recorded: ${tag || '(no tag)'} / ${sha.slice(0, 7)}`)
+    }
+  } catch (e) {
+    err('Initial version record failed:', e.message)
+  }
 
   // Ensure repo is initialized
   if (!fs.existsSync(path.join(REPO_DIR, '.git'))) {

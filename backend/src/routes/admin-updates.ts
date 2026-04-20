@@ -36,14 +36,31 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
    * GET /status — current installed version + available releases
    */
   app.get('/status', admin, async () => {
-    // Read current version info written by updater
-    let current = { sha: null as string | null, tag: null as string | null }
-    try {
-      const vfile = path.join('/app/data', 'current-version.json')
-      if (fs.existsSync(vfile)) {
-        current = JSON.parse(fs.readFileSync(vfile, 'utf8'))
+    // Derive current version from the most recent successful (non-failed) update event.
+    // Falls back to a version file written by the updater, or a stored setting.
+    let current: { sha: string | null; tag: string | null } = { sha: null, tag: null }
+
+    const lastOk = await prisma.updateEvent.findFirst({
+      where: { status: 'ok' },
+      orderBy: { finishedAt: 'desc' },
+      select: { toSha: true, toTag: true },
+    })
+    if (lastOk) {
+      current = { sha: lastOk.toSha, tag: lastOk.toTag }
+    } else {
+      // Fallback: settings row set by bootstrap / manual update
+      const row = await prisma.setting.findUnique({ where: { key: 'current_version' } })
+      if (row?.value) {
+        try { current = JSON.parse(row.value) } catch {}
       }
-    } catch {}
+      // Last-resort: the JSON file the updater may have written
+      try {
+        const vfile = path.join('/app/data', 'current-version.json')
+        if (fs.existsSync(vfile) && !current.tag) {
+          current = JSON.parse(fs.readFileSync(vfile, 'utf8'))
+        }
+      } catch {}
+    }
 
     const releases = await fetchReleases()
     // Find "available" releases: anything newer than current tag, ordered.

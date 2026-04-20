@@ -106,8 +106,17 @@ function OverviewTab() {
           return
         }
         setProgress(p => [...p, payload].slice(-200))
-        if (payload.phase === 'done' || payload.phase === 'failed' || payload.phase === 'rolled_back') {
+        if (payload.phase === 'done') {
           setInstalling(null)
+          toast.success(payload.message || '✓ Успешно обновлено', { duration: 6000 })
+          setTimeout(() => load(), 1000)
+        } else if (payload.phase === 'failed') {
+          setInstalling(null)
+          toast.error(payload.message || 'Ошибка обновления', { duration: 8000 })
+          setTimeout(() => load(), 1000)
+        } else if (payload.phase === 'rolled_back') {
+          setInstalling(null)
+          toast(payload.message || 'Платформа восстановлена из бэкапа', { duration: 8000, icon: '↩️' })
           setTimeout(() => load(), 1000)
         }
       } catch {}
