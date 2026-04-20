@@ -11,7 +11,7 @@ OUT_TAR="${1:?output tar path required}"
 GIT_SHA="${2:-unknown}"
 GIT_TAG="${3:-}"
 
-REPO_DIR="/repo"
+REPO_DIR="${REPO_DIR:-/opt/pro/LKHY}"
 WORK_DIR=$(mktemp -d)
 trap "rm -rf $WORK_DIR" EXIT
 

@@ -29,8 +29,10 @@ const QUEUE_KEY         = 'update:queue'
 const EVENTS_CHANNEL    = 'update:events'
 const LOCK_KEY          = 'update:lock'
 
-const REPO_DIR          = '/repo'       // in-container mount of the repo (for git/fs operations)
-const HOST_REPO_PATH    = process.env.HOST_REPO_PATH || '/opt/pro/LKHY'  // host-side path (for docker daemon)
+// Same path inside container and on host — see volumes: in docker-compose.
+// This eliminates the in-container vs host-path confusion that was breaking
+// docker compose bind-mount resolution.
+const REPO_DIR          = process.env.REPO_DIR || '/opt/pro/LKHY'
 const BACKUPS_DIR       = '/backups'
 const DATABASE_URL      = process.env.DATABASE_URL
 const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD
@@ -289,7 +291,7 @@ async function runInstall(job) {
     // 3. Build images (excludes updater and certbot for self-safety)
     await emit(eventId, 'build', 'Сборка Docker-образов…')
     await shStream('docker', [
-      'compose', '-p', COMPOSE_PROJECT, '-f', `${HOST_REPO_PATH}/docker-compose.yml`,
+      'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
       'build', 'backend', 'frontend', 'bot',
     ], line => emit(eventId, 'build', line).catch(() => {}))
 
@@ -315,7 +317,7 @@ async function runInstall(job) {
     // --no-deps: don't touch postgres/redis even if their config is drifted;
     // --force-recreate: we want fresh containers for the services we rebuilt.
     await shStream('docker', [
-      'compose', '-p', COMPOSE_PROJECT, '-f', `${HOST_REPO_PATH}/docker-compose.yml`,
+      'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
       'up', '-d', '--no-deps', '--force-recreate',
       'backend', 'frontend', 'bot', 'nginx',
     ], line => emit(eventId, 'deploy', line).catch(() => {}))
@@ -394,13 +396,13 @@ async function restoreFromBackupId(backupId, eventId) {
 
   await emit(eventId, 'restore-build', 'Пересборка образов к состоянию бэкапа…')
   await shStream('docker', [
-    'compose', '-p', COMPOSE_PROJECT, '-f', `${HOST_REPO_PATH}/docker-compose.yml`,
+    'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
     'build', 'backend', 'frontend', 'bot',
   ], line => emit(eventId, 'restore-build', line).catch(() => {}))
 
   await emit(eventId, 'restore-up', 'Запуск сервисов…')
   await shStream('docker', [
-    'compose', '-p', COMPOSE_PROJECT, '-f', `${HOST_REPO_PATH}/docker-compose.yml`,
+    'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
     'up', '-d', '--no-deps', '--force-recreate',
     'backend', 'frontend', 'bot', 'nginx',
   ], line => emit(eventId, 'restore-up', line).catch(() => {}))

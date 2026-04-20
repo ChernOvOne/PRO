@@ -6,7 +6,7 @@
 set -euo pipefail
 
 BACKUP_TAR="${1:?backup tar path required}"
-REPO_DIR="/repo"
+REPO_DIR="${REPO_DIR:-/opt/pro/LKHY}"
 WORK_DIR=$(mktemp -d)
 trap "rm -rf $WORK_DIR" EXIT
 

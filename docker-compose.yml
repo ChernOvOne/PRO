@@ -165,17 +165,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       NGINX_CONTAINER: hideyou_nginx
       COMPOSE_PROJECT: lkhy
-      # Host path to the repo — used by docker compose invocations inside the
-      # updater container. `/repo` is the IN-CONTAINER mount of the same dir;
-      # docker daemon on the host needs the host-side path for bind mounts to
-      # resolve correctly. If you move the repo, update this.
-      HOST_REPO_PATH: /opt/pro/LKHY
+      REPO_DIR: /opt/pro/LKHY
       TG_BACKUP_TOKEN: ${TG_BACKUP_TOKEN:-}
       TG_BACKUP_CHAT: ${TG_BACKUP_CHAT:-}
       INTERNAL_HEALTH_URL: http://backend:4000
       TZ: Europe/Moscow
     volumes:
-      - /opt/pro/LKHY:/repo
+      # Mount repo at SAME path inside container as on host.
+      # This way `docker compose -f /opt/pro/LKHY/docker-compose.yml ...`
+      # works correctly: compose CLI inside this container can read the file,
+      # AND docker daemon on the host resolves bind mounts to the same dir.
+      - /opt/pro/LKHY:/opt/pro/LKHY
       - ./data/backups:/backups
       - uploads_data:/uploads
       - /etc/letsencrypt:/letsencrypt
