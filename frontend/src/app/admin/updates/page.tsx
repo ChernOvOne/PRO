@@ -125,6 +125,38 @@ function OverviewTab() {
     return () => es.close()
   }, [load])
 
+  // Polling fallback — SSE drops while backend is being recreated and the
+  // `done` event is published in that gap. Every 4s while installing,
+  // poll the event row directly.
+  useEffect(() => {
+    if (!activeEvent) return
+    const id = setInterval(async () => {
+      try {
+        const ev = await adminApi.updatesEvent(activeEvent)
+        if (!ev) return
+        if (ev.status === 'ok') {
+          setInstalling(null)
+          setActiveEvent(null)
+          toast.success(`✓ Обновление до ${ev.toTag || ev.toSha?.slice(0, 7)} завершено`, { duration: 6000 })
+          load()
+        } else if (ev.status === 'failed') {
+          setInstalling(null)
+          setActiveEvent(null)
+          toast.error(`Ошибка: ${ev.errorMessage || 'обновление не удалось'}`, { duration: 8000 })
+          load()
+        } else if (ev.status === 'rolled_back') {
+          setInstalling(null)
+          setActiveEvent(null)
+          toast(`↩️ Откачено к предыдущей версии${ev.errorMessage ? `: ${ev.errorMessage}` : ''}`, { duration: 8000, icon: '↩️' })
+          load()
+        }
+      } catch {
+        // Backend probably restarting — try again next tick
+      }
+    }, 4000)
+    return () => clearInterval(id)
+  }, [activeEvent, load])
+
   const runCheck = async () => {
     setChecking(true)
     try {

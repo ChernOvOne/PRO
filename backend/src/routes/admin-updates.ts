@@ -163,6 +163,16 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
   })
 
   /**
+   * GET /events/:id — single event status (for polling when SSE drops)
+   */
+  app.get('/events/:id', admin, async (req, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params)
+    const ev = await prisma.updateEvent.findUnique({ where: { id } })
+    if (!ev) return reply.status(404).send({ error: 'Not found' })
+    return ev
+  })
+
+  /**
    * GET /history — paginated update events
    */
   app.get('/history', admin, async (req) => {

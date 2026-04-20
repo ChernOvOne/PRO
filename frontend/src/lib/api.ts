@@ -757,6 +757,8 @@ export const adminApi = {
     apiFetch<{ ok: true; eventId: string }>(`/admin/updates/rollback/${backupId}`, { method: 'POST' }),
   updatesHistory: () =>
     apiFetch<any[]>('/admin/updates/history'),
+  updatesEvent: (id: string) =>
+    apiFetch<any>(`/admin/updates/events/${id}`),
   updatesMaintenance: (data: { enabled: boolean; message?: string }) =>
     apiFetch<{ ok: true }>('/admin/updates/maintenance', {
       method: 'POST', body: JSON.stringify(data),
