@@ -40,6 +40,8 @@ import { adminWebhookKeyRoutes }   from './admin-webhook-keys'
 import { buhWebhookPaymentRoutes } from './buh-webhook-payment'
 import { buhUtmPublicRoutes }      from './buh-utm-public'
 import { adminSetupWizardRoutes }  from './admin-setup-wizard'
+import { adminSetupV2Routes, startCertEventSubscriber } from './admin-setup-v2'
+import { adminUpdatesRoutes }     from './admin-updates'
 import { adminSettingsRoutes }     from './admin-settings'
 import { adminFunnelNodeRoutes }   from './admin-funnel-nodes'
 import { remnawaveWebhookRoutes }  from './webhook-remnawave'
@@ -47,14 +49,28 @@ import { emailTrackingRoutes }     from './email-tracking'
 import { ticketRoutes }            from './tickets'
 import { publicTicketRoutes }      from './tickets-public'
 import { adminTicketRoutes }       from './admin-tickets'
+import { adminSupportWizardRoutes, publicSupportWizardRoutes } from './admin-support-wizards'
 
 export async function registerRoutes(app: FastifyInstance) {
-  app.get('/health', async () => ({
-    status:    'ok',
-    version:   process.env.npm_package_version ?? '1.0.0',
-    timestamp: new Date().toISOString(),
-    uptime:    Math.floor(process.uptime()),
-  }))
+  const healthHandler = async () => {
+    // Also report maintenance flag so frontend can show banner
+    const { prisma } = await import('../db')
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['maintenance_mode', 'maintenance_message'] } },
+    }).catch(() => [])
+    const maintenance = rows.find(r => r.key === 'maintenance_mode')?.value === '1'
+    const maintenanceMessage = rows.find(r => r.key === 'maintenance_message')?.value || null
+    return {
+      status:    'ok',
+      version:   process.env.npm_package_version ?? '1.0.0',
+      timestamp: new Date().toISOString(),
+      uptime:    Math.floor(process.uptime()),
+      maintenance,
+      maintenanceMessage,
+    }
+  }
+  app.get('/health', healthHandler)
+  app.get('/api/health', healthHandler)
 
   // Public
   await app.register(publicRoutes,             { prefix: '/api/public'              })
@@ -106,8 +122,13 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminUtmRoutes,           { prefix: '/api/admin/utm'            })
   await app.register(adminAuditRoutes,         { prefix: '/api/admin/audit'          })
   await app.register(adminChannelRoutes,       { prefix: '/api/admin/channels'       })
-  await app.register(adminWebhookKeyRoutes,    { prefix: '/api/admin/webhook-keys'   })
+  await app.register(adminWebhookKeyRoutes,    { prefix: '/api/admin/webhooks'       })
   await app.register(adminSetupWizardRoutes,   { prefix: '/api/admin/setup-wizard'    })
+  await app.register(adminSetupV2Routes,       { prefix: '/api/admin/setup'           })
+  await app.register(adminUpdatesRoutes,       { prefix: '/api/admin/updates'         })
+
+  // Start Redis subscriber for certbot sidecar events
+  startCertEventSubscriber().catch(() => {})
   await app.register(adminSettingsRoutes,     { prefix: '/api/admin/settings'        })
   await app.register(adminReportsExportRoutes, { prefix: '/api/admin/reports'         })
   await app.register(adminFunnelNodeRoutes,   { prefix: '/api/admin/funnel-builder' })
@@ -124,6 +145,8 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(emailTrackingRoutes,      { prefix: '/api/track'                })
   await app.register(ticketRoutes,             { prefix: '/api/tickets'              })
   await app.register(adminTicketRoutes,        { prefix: '/api/admin/tickets'        })
+  await app.register(adminSupportWizardRoutes, { prefix: '/api/admin/support'         })
+  await app.register(publicSupportWizardRoutes, { prefix: '/api/support'              })
 
   // Serve uploaded files
   app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })

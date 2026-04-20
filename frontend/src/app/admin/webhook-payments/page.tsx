@@ -1,32 +1,29 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import toast from 'react-hot-toast'
 import {
-  Key, Webhook, Plus, Trash2, Copy, Check, Eye, EyeOff,
-  X, AlertCircle, Shield, Clock, Activity, Hash,
+  Key, Webhook, BookOpen, Plus, Copy, Eye, EyeOff,
+  Shield, Loader2, RefreshCw, ChevronDown, ChevronUp,
+  PlayCircle, Zap, Power,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import toast from 'react-hot-toast'
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
-function fmtMoney(n: number) {
-  return new Intl.NumberFormat('ru-RU').format(n) + ' \u20BD'
-}
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}
-
+function fmtMoney(n: number, cur = '₽') { return new Intl.NumberFormat('ru-RU').format(n) + ' ' + cur }
 function fmtDateTime(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: '2-digit' })
     + ' ' + d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
 }
-
-function maskKey(key: string) {
-  if (key.length <= 8) return key
-  return key.slice(0, 6) + '\u2022'.repeat(Math.min(key.length - 10, 20)) + key.slice(-4)
+function maskKey(k: string) {
+  if (!k || k.length <= 12) return k || ''
+  return k.slice(0, 8) + '…' + k.slice(-4)
+}
+async function copyToClipboard(text: string) {
+  try { await navigator.clipboard.writeText(text); toast.success('Скопировано') }
+  catch { toast.error('Не удалось скопировать') }
 }
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -35,567 +32,704 @@ interface ApiKey {
   id: string
   name: string
   key: string
-  active: boolean
+  isActive: boolean
   createdAt: string
-  lastUsedAt?: string | null
+  lastUsed?: string | null
   requestCount: number
 }
 
 interface WebhookPayment {
   id: string
   date: string
-  externalId?: string
-  amount: number
+  externalId: string
+  amount: string
   currency: string
-  customerName?: string
-  plan?: string
-  source?: string
-  status: string
+  customerEmail?: string | null
+  customerId?: string | null
+  customerName?: string | null
+  plan?: string | null
+  planTag?: string | null
+  source?: string | null
+  utmCode?: string | null
+  description?: string | null
+  rawData?: any
+  createdAt: string
+  apiKey?: { name: string } | null
 }
 
-/* ── Tabs ──────────────────────────────────────────────────── */
+type Tab = 'keys' | 'history' | 'docs'
 
-type Tab = 'keys' | 'payments'
-
-const TABS: { id: Tab; label: string; icon: typeof Key }[] = [
-  { id: 'keys',     label: 'API-ключи',     icon: Key },
-  { id: 'payments', label: 'Webhook-платежи', icon: Webhook },
-]
-
-/* ── Component ────────────────────────────────────────────── */
+/* ── Root page ─────────────────────────────────────────────── */
 
 export default function AdminWebhookPaymentsPage() {
   const [tab, setTab] = useState<Tab>('keys')
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
+    <div className="max-w-6xl mx-auto space-y-5">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          Webhook-платежи и API
+          Webhook API
         </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-          Управление API-ключами и входящими webhook-платежами
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+          Приём платежей и событий из внешних систем
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex rounded-xl overflow-hidden w-fit"
-           style={{ border: '1px solid var(--glass-border)' }}>
-        {TABS.map(t => {
-          const Icon = t.icon
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors"
-              style={{
-                background: active ? 'rgba(6,182,212,0.12)' : 'transparent',
-                color: active ? '#a78bfa' : 'var(--text-secondary)',
-              }}
-            >
-              <Icon className="w-4 h-4" />
-              {t.label}
-            </button>
-          )
-        })}
+      <div className="flex gap-1 p-1 rounded-xl w-fit"
+           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+        <TabBtn active={tab === 'keys'}    onClick={() => setTab('keys')}>
+          <Key className="w-4 h-4" /> API-ключи
+        </TabBtn>
+        <TabBtn active={tab === 'history'} onClick={() => setTab('history')}>
+          <Webhook className="w-4 h-4" /> История
+        </TabBtn>
+        <TabBtn active={tab === 'docs'}    onClick={() => setTab('docs')}>
+          <BookOpen className="w-4 h-4" /> Документация
+        </TabBtn>
       </div>
 
-      {tab === 'keys' ? <ApiKeysTab /> : <PaymentsTab />}
+      {tab === 'keys'    && <KeysTab />}
+      {tab === 'history' && <HistoryTab />}
+      {tab === 'docs'    && <DocsTab />}
     </div>
   )
 }
 
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition"
+            style={{
+              background: active ? 'var(--accent-1)' : 'transparent',
+              color: active ? 'white' : 'var(--text-secondary)',
+              fontWeight: active ? 600 : 400,
+            }}>
+      {children}
+    </button>
+  )
+}
+
 /* ═══════════════════════════════════════════════════════════
-   Tab 1: API Keys
+   Tab: API Keys
    ═══════════════════════════════════════════════════════════ */
 
-function ApiKeysTab() {
-  const [keys, setKeys]       = useState<ApiKey[]>([])
+function KeysTab() {
+  const [keys, setKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
-
-  // Create modal
+  const [reveal, setReveal] = useState<Record<string, boolean>>({})
   const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName]       = useState('')
-  const [creating, setCreating]     = useState(false)
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createdKey, setCreatedKey] = useState<ApiKey | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ keyId: string; ok: boolean; status: number; body: string } | null>(null)
 
-  // Success modal (show full key once)
-  const [createdKey, setCreatedKey] = useState<string | null>(null)
-  const [copied, setCopied]         = useState(false)
-
-  // Delete confirmation
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-
-  // Reveal keys per row
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({})
-
-  /* ── Load keys ────────────────────────────────── */
-
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true)
-    adminApi.buhDashboard()
-      .then((d: any) => {
-        // Try to get apiKeys from dashboard, fallback to empty
-        setKeys(d.apiKeys ?? [])
-      })
-      .catch(() => setKeys([]))
-      .finally(() => setLoading(false))
+    try {
+      const data = await adminApi.listWebhookKeys()
+      setKeys(data || [])
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка загрузки')
+    } finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  /* ── Create key ───────────────────────────────── */
-
-  async function handleCreate() {
-    if (!newName.trim()) {
-      toast.error('Укажите название ключа')
-      return
-    }
+  const create = async () => {
+    if (!newName.trim()) { toast.error('Укажи название'); return }
     setCreating(true)
     try {
-      // POST to create API key; for now this may not exist, handle gracefully
-      const res = await fetch('/api/admin/api-keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim() }),
-        credentials: 'include',
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setShowCreate(false)
+      const key = await adminApi.createWebhookKey(newName.trim())
+      setCreatedKey(key)
       setNewName('')
-      setCreatedKey(data.key || data.fullKey || 'key-will-be-here')
-      toast.success('API-ключ создан')
-      load()
-    } catch {
-      toast.error('Ошибка создания ключа. Функция будет доступна после Phase 5.')
-    } finally {
-      setCreating(false)
-    }
+      setShowCreate(false)
+      await load()
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
+    finally { setCreating(false) }
   }
 
-  /* ── Delete key ───────────────────────────────── */
-
-  async function confirmDelete() {
-    if (!deleteId) return
+  const toggleActive = async (k: ApiKey) => {
     try {
-      await fetch(`/api/admin/api-keys/${deleteId}`, {
-        method: 'DELETE',
-        credentials: 'include',
+      if (k.isActive) {
+        await adminApi.deleteWebhookKey(k.id)
+        toast.success('Ключ деактивирован')
+      } else {
+        await adminApi.activateWebhookKey(k.id)
+        toast.success('Ключ активирован')
+      }
+      await load()
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
+  }
+
+  const runTest = async (k: ApiKey) => {
+    setTestingId(k.id)
+    setTestResult(null)
+    try {
+      const r = await adminApi.sendTestWebhook(k.id)
+      setTestResult({
+        keyId: k.id,
+        ok: r.ok,
+        status: r.status,
+        body: JSON.stringify(r.response, null, 2),
       })
-      toast.success('Ключ деактивирован')
-      setDeleteId(null)
-      load()
-    } catch {
-      toast.error('Ошибка удаления')
-    }
+      if (r.ok) toast.success('Тестовый webhook принят')
+      else toast.error(`Ошибка ${r.status}`)
+      await load()
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
+    finally { setTestingId(null) }
   }
-
-  /* ── Copy to clipboard ──────────────────────── */
-
-  function copyKey(text: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      toast.success('Скопировано')
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
-  function toggleReveal(id: string) {
-    setRevealed(prev => ({ ...prev, [id]: !prev[id] }))
-  }
-
-  /* ── Render ──────────────────────────────────── */
 
   return (
-    <>
-      {/* Actions bar */}
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          {keys.length} {keys.length === 1 ? 'ключ' : 'ключей'}
+          Ключи для внешних систем, отправляющих webhook. {keys.length > 0 && `Всего: ${keys.length}`}
         </p>
         <button onClick={() => setShowCreate(true)}
-                className="btn-primary inline-flex items-center gap-2 text-sm">
-          <Plus className="w-4 h-4" />
-          Создать ключ
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--accent-1)', color: 'white' }}>
+          <Plus className="w-4 h-4" /> Создать ключ
         </button>
       </div>
 
-      {/* Keys table */}
-      <div className="rounded-2xl overflow-hidden"
-           style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                {['Название', 'Ключ', 'Статус', 'Создан', 'Последнее использование', 'Запросы', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
-                      style={{ color: 'var(--text-tertiary)' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                [...Array(3)].map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {[...Array(7)].map((_, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <div className="h-4 skeleton rounded w-20" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : keys.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                    <Shield className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    <p>API-ключи не созданы</p>
-                    <p className="text-xs mt-1">Создайте ключ для приёма webhook-платежей</p>
-                  </td>
-                </tr>
-              ) : (
-                keys.map(k => (
-                  <tr key={k.id}
-                      className="hover:bg-white/[0.03] transition-colors"
-                      style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {/* Name */}
-                    <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {k.name}
-                    </td>
-
-                    {/* Key (masked / revealed) */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <code className="text-xs px-2 py-1 rounded-md"
-                              style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-secondary)' }}>
-                          {revealed[k.id] ? k.key : maskKey(k.key)}
-                        </code>
-                        <button onClick={() => toggleReveal(k.id)}
-                                className="p-1 rounded hover:bg-white/[0.06]"
-                                style={{ color: 'var(--text-tertiary)' }}
-                                title={revealed[k.id] ? 'Скрыть' : 'Показать'}>
-                          {revealed[k.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button onClick={() => copyKey(k.key)}
-                                className="p-1 rounded hover:bg-white/[0.06]"
-                                style={{ color: 'var(--text-tertiary)' }}
-                                title="Копировать">
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
-                            style={k.active
-                              ? { background: 'rgba(52,211,153,0.12)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }
-                              : { background: 'rgba(248,113,113,0.12)', color: '#f87171', border: '1px solid rgba(248,113,113,0.2)' }}>
-                        <span className="w-1.5 h-1.5 rounded-full"
-                              style={{ background: k.active ? '#34d399' : '#f87171' }} />
-                        {k.active ? 'Активен' : 'Неактивен'}
-                      </span>
-                    </td>
-
-                    {/* Created */}
-                    <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      {fmtDate(k.createdAt)}
-                    </td>
-
-                    {/* Last used */}
-                    <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      {k.lastUsedAt ? fmtDateTime(k.lastUsedAt) : <span style={{ color: 'var(--text-tertiary)' }}>&mdash;</span>}
-                    </td>
-
-                    {/* Request count */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1 text-sm" style={{ color: 'var(--text-primary)' }}>
-                        <Activity className="w-3.5 h-3.5" style={{ color: 'var(--text-tertiary)' }} />
-                        {k.requestCount.toLocaleString('ru-RU')}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3">
-                      <button onClick={() => setDeleteId(k.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
-                              style={{ color: 'var(--text-tertiary)' }}
-                              title="Удалить">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-1)' }} />
         </div>
-      </div>
+      ) : keys.length === 0 ? (
+        <div className="p-8 rounded-xl text-center"
+             style={{ background: 'var(--surface-2)', color: 'var(--text-tertiary)' }}>
+          <Key className="w-10 h-10 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">Пока нет ни одного API-ключа</p>
+          <p className="text-xs mt-1">Создай первый — и отправь тестовый webhook</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {keys.map(k => (
+            <div key={k.id} className="rounded-xl p-3"
+                 style={{
+                   background: 'var(--surface-2)',
+                   border: '1px solid var(--glass-border)',
+                   opacity: k.isActive ? 1 : 0.6,
+                 }}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {k.name}
+                    </span>
+                    {k.isActive ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+                        active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                        disabled
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 text-[11px] font-mono"
+                       style={{ color: 'var(--text-tertiary)' }}>
+                    <code>{reveal[k.id] ? k.key : maskKey(k.key)}</code>
+                    <button onClick={() => setReveal(r => ({ ...r, [k.id]: !r[k.id] }))}
+                            className="hover:text-[var(--text-primary)]">
+                      {reveal[k.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button onClick={() => copyToClipboard(k.key)}
+                            className="hover:text-[var(--text-primary)]">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Создан {fmtDateTime(k.createdAt)} · Запросов: {k.requestCount}
+                    {k.lastUsed && ` · Последний: ${fmtDateTime(k.lastUsed)}`}
+                  </div>
+                </div>
 
-      {/* ── Create modal ───────────────────────────── */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 " onClick={() => setShowCreate(false)} />
-          <div className="relative w-full max-w-md rounded-2xl p-6 space-y-5 animate-scale-in"
-               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                Новый API-ключ
-              </h3>
-              <button onClick={() => setShowCreate(false)}
-                      className="p-1 hover:bg-white/[0.05] rounded-md transition-colors"
-                      style={{ color: 'var(--text-tertiary)' }}>
-                <X className="w-5 h-5" />
-              </button>
+                <button onClick={() => runTest(k)}
+                        disabled={!k.isActive || testingId === k.id}
+                        className="px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 disabled:opacity-40"
+                        style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}>
+                  {testingId === k.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                  Тест
+                </button>
+                <button onClick={() => toggleActive(k)}
+                        className="p-1.5 rounded hover:bg-white/5"
+                        style={{ color: k.isActive ? '#ef4444' : '#22c55e' }}
+                        title={k.isActive ? 'Деактивировать' : 'Активировать'}>
+                  {k.isActive ? <Power className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {testResult?.keyId === k.id && (
+                <pre className="mt-3 p-2 rounded text-[11px] overflow-x-auto"
+                     style={{
+                       background: 'var(--surface-1)',
+                       color: testResult.ok ? '#22c55e' : '#ef4444',
+                       border: '1px solid var(--glass-border)',
+                     }}>
+{`HTTP ${testResult.status}
+${testResult.body}`}
+                </pre>
+              )}
             </div>
+          ))}
+        </div>
+      )}
 
+      {/* Create modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setShowCreate(false)}>
+          <div className="w-full max-w-md rounded-2xl p-5 space-y-4"
+               style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+               onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Новый API-ключ
+            </h3>
             <div>
-              <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                Название
+              <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                Название (для чего используется)
               </label>
-              <input className="glass-input w-full" placeholder="Например: Production webhook"
+              <input className="w-full mt-1 px-3 py-2 rounded-lg text-sm"
+                     style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                     autoFocus
+                     placeholder="например: Реселлер портал"
                      value={newName}
                      onChange={e => setNewName(e.target.value)}
-                     onKeyDown={e => e.key === 'Enter' && handleCreate()} />
+                     onKeyDown={e => e.key === 'Enter' && create()} />
             </div>
-
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => setShowCreate(false)} className="btn-secondary flex-1">Отмена</button>
-              <button onClick={handleCreate} disabled={creating}
-                      className="btn-primary flex-1 justify-center">
-                {creating ? 'Создание...' : 'Создать'}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowCreate(false)}
+                      className="px-3 py-1.5 rounded-lg text-sm"
+                      style={{ color: 'var(--text-secondary)' }}>
+                Отмена
+              </button>
+              <button onClick={create} disabled={creating}
+                      className="px-4 py-1.5 rounded-lg text-sm font-medium"
+                      style={{ background: 'var(--accent-1)', color: 'white' }}>
+                {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Создать'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Key created success modal ──────────────── */}
+      {/* Created key — show once */}
       {createdKey && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 " onClick={() => setCreatedKey(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl p-6 space-y-5 animate-scale-in"
-               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                   style={{ background: 'rgba(52,211,153,0.12)' }}>
-                <Check className="w-5 h-5" style={{ color: '#34d399' }} />
-              </div>
-              <div>
-                <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                  Ключ создан
-                </h3>
-                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Сохраните ключ — он больше не будет показан
-                </p>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-lg rounded-2xl p-5 space-y-4"
+               style={{ background: 'var(--surface-1)', border: '1px solid rgba(34,197,94,0.4)' }}>
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5" style={{ color: '#22c55e' }} />
+              <h3 className="text-lg font-semibold" style={{ color: '#22c55e' }}>
+                Ключ создан — сохрани его!
+              </h3>
             </div>
-
-            <div className="rounded-xl p-4"
-                 style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)' }}>
-              <code className="text-sm break-all block" style={{ color: 'var(--text-primary)' }}>
-                {createdKey}
-              </code>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => copyKey(createdKey)}
-                className="btn-primary inline-flex items-center gap-2 text-sm flex-1 justify-center"
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? 'Скопировано' : 'Скопировать'}
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Ключ показывается полностью только сейчас. После закрытия окна его можно подсмотреть в списке, но лучше скопировать сразу.
+            </p>
+            <div className="p-3 rounded-lg font-mono text-xs break-all flex items-center gap-2"
+                 style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
+              <span className="flex-1">{createdKey.key}</span>
+              <button onClick={() => copyToClipboard(createdKey.key)}
+                      className="p-1.5 rounded shrink-0"
+                      style={{ background: 'var(--accent-1)', color: 'white' }}>
+                <Copy className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => setCreatedKey(null)} className="btn-secondary flex-1">
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setCreatedKey(null)}
+                      className="px-4 py-1.5 rounded-lg text-sm font-medium"
+                      style={{ background: 'var(--accent-1)', color: 'white' }}>
                 Закрыть
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* ── Delete confirmation ────────────────────── */}
-      {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 " onClick={() => setDeleteId(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl p-6 space-y-4 animate-scale-in"
-               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-            <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-              Деактивировать ключ?
-            </h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Ключ будет деактивирован. Все запросы с этим ключом перестанут работать.
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => setDeleteId(null)} className="btn-secondary flex-1">Отмена</button>
-              <button onClick={confirmDelete}
-                      className="flex-1 py-2 px-4 rounded-xl text-sm font-medium transition-colors"
-                      style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
-                Деактивировать
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   )
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Tab 2: Webhook Payments
+   Tab: History
    ═══════════════════════════════════════════════════════════ */
 
-function PaymentsTab() {
-  const [payments, setPayments] = useState<WebhookPayment[]>([])
-  const [loading, setLoading]   = useState(true)
+function HistoryTab() {
+  const [items, setItems] = useState<WebhookPayment[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
-  useEffect(() => {
-    adminApi.buhDashboard()
-      .then((d: any) => {
-        // Use recentPayments from dashboard if available
-        const raw = d.recentPayments ?? []
-        setPayments(raw.map((p: any) => ({
-          id: p.id ?? p._id ?? '',
-          date: p.date ?? p.createdAt ?? '',
-          externalId: p.externalId ?? p.external_id ?? '',
-          amount: p.amount ?? 0,
-          currency: p.currency ?? 'RUB',
-          customerName: p.customerName ?? p.customer_name ?? p.userName ?? '',
-          plan: p.plan ?? p.tariffName ?? '',
-          source: p.source ?? p.provider ?? '',
-          status: p.status ?? 'completed',
-        })))
-      })
-      .catch(() => setPayments([]))
-      .finally(() => setLoading(false))
-  }, [])
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await adminApi.listWebhookPayments({ page, limit: 50 })
+      setItems(data.items || [])
+      setTotal(data.total || 0)
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка загрузки')
+    } finally { setLoading(false) }
+  }, [page])
 
-  const statusStyles: Record<string, { bg: string; color: string; border: string }> = {
-    completed: { bg: 'rgba(52,211,153,0.12)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' },
-    pending:   { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' },
-    failed:    { bg: 'rgba(248,113,113,0.12)', color: '#f87171', border: '1px solid rgba(248,113,113,0.2)' },
-  }
+  useEffect(() => { load() }, [load])
 
-  const statusLabels: Record<string, string> = {
-    completed: 'Выполнен',
-    pending: 'Ожидание',
-    failed: 'Ошибка',
-    COMPLETED: 'Выполнен',
-    PENDING: 'Ожидание',
-    FAILED: 'Ошибка',
-  }
+  const maxPage = Math.max(1, Math.ceil(total / 50))
 
   return (
-    <>
-      {/* Payments table */}
-      <div className="rounded-2xl overflow-hidden"
-           style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          Всего принято: <strong>{total}</strong>
+        </div>
+        <button onClick={load}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}>
+          <RefreshCw className="w-3.5 h-3.5" /> Обновить
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-1)' }} />
+        </div>
+      ) : items.length === 0 ? (
+        <div className="p-8 rounded-xl text-center"
+             style={{ background: 'var(--surface-2)', color: 'var(--text-tertiary)' }}>
+          <Webhook className="w-10 h-10 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">Ни одного webhook'а ещё не принято</p>
+          <p className="text-xs mt-1">Создай ключ и нажми «Тест» на вкладке API-ключи</p>
+        </div>
+      ) : (
+        <div className="space-y-1 rounded-xl overflow-hidden"
+             style={{ border: '1px solid var(--glass-border)' }}>
+          {items.map(p => {
+            const isOpen = expanded === p.id
+            return (
+              <div key={p.id}>
+                <button onClick={() => setExpanded(isOpen ? null : p.id)}
+                        className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-white/5 transition"
+                        style={{ background: 'var(--surface-2)' }}>
+                  <div className="text-xs font-mono shrink-0 w-32 truncate"
+                       style={{ color: 'var(--text-tertiary)' }}>
+                    {p.externalId}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                      {p.plan || p.description || '(без описания)'}
+                    </div>
+                    <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {p.customerName || p.customerEmail || p.customerId || '—'}
+                      {p.source && ` · ${p.source}`}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold text-sm" style={{ color: '#22c55e' }}>
+                      {fmtMoney(parseFloat(p.amount), p.currency === 'RUB' ? '₽' : p.currency)}
+                    </div>
+                    <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                      {fmtDateTime(p.createdAt)}
+                    </div>
+                  </div>
+                  {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isOpen && (
+                  <div className="p-3 text-xs space-y-2"
+                       style={{ background: 'var(--surface-1)', borderTop: '1px solid var(--glass-border)' }}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Kv k="API-ключ"    v={p.apiKey?.name || '—'} />
+                      <Kv k="External ID" v={p.externalId} />
+                      <Kv k="Customer ID" v={p.customerId || '—'} />
+                      <Kv k="Email"       v={p.customerEmail || '—'} />
+                      <Kv k="Plan tag"    v={p.planTag || '—'} />
+                      <Kv k="UTM"         v={p.utmCode || '—'} />
+                    </div>
+                    {p.rawData && (
+                      <div>
+                        <div className="text-[11px] font-semibold mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                          raw_data:
+                        </div>
+                        <pre className="p-2 rounded overflow-x-auto"
+                             style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                          {JSON.stringify(p.rawData, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {maxPage > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                  className="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+            ← Назад
+          </button>
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Стр. {page} / {maxPage}
+          </span>
+          <button onClick={() => setPage(p => Math.min(maxPage, p + 1))} disabled={page >= maxPage}
+                  className="px-3 py-1 rounded-lg text-sm disabled:opacity-40"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+            Вперёд →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Kv({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>{k}</div>
+      <div style={{ color: 'var(--text-primary)' }}>{v}</div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tab: Docs
+   ═══════════════════════════════════════════════════════════ */
+
+function DocsTab() {
+  const [baseUrl, setBaseUrl] = useState('')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setBaseUrl(`${window.location.protocol}//${window.location.host}`)
+    }
+  }, [])
+
+  const endpoint = `${baseUrl}/api/webhooks/payment-ingest/`
+
+  const FIELDS: Array<{ name: string; type: string; required: boolean; desc: string }> = [
+    { name: 'external_id',    type: 'string',  required: true,  desc: 'Уникальный ID события (order_id, transaction_id). Повторный webhook с тем же значением вернёт status:"duplicate".' },
+    { name: 'amount',         type: 'number',  required: true,  desc: 'Сумма платежа (299 или 299.50). Отрицательная сумма = расход.' },
+    { name: 'currency',       type: 'string',  required: false, desc: 'Валюта ISO-4217. По умолчанию RUB.' },
+    { name: 'customer_id',    type: 'string',  required: false, desc: 'Telegram ID / UUID / leadteh_id существующего пользователя — статистика оплат обновится.' },
+    { name: 'customer_email', type: 'string',  required: false, desc: 'Email клиента (если ID не задан — поиск по email).' },
+    { name: 'customer_name',  type: 'string',  required: false, desc: 'Отображаемое имя.' },
+    { name: 'plan',           type: 'string',  required: false, desc: 'Название тарифа (попадает в описание транзакции).' },
+    { name: 'plan_tag',       type: 'string',  required: false, desc: 'Тег тарифа (trial, premium_30d, year…) — обновит currentPlanTag.' },
+    { name: 'sub_start',      type: 'ISO date', required: false, desc: 'Дата начала подписки: "2026-04-20T00:00:00Z".' },
+    { name: 'sub_end',        type: 'ISO date', required: false, desc: 'Дата окончания подписки.' },
+    { name: 'description',    type: 'string',  required: false, desc: 'Произвольный комментарий для истории.' },
+    { name: 'source',         type: 'string',  required: false, desc: 'Источник (reseller, partner_crm, ad_platform…).' },
+    { name: 'utm_code',       type: 'string',  required: false, desc: 'UTM-код кампании — сматчится с BuhUtmLead и отметит лид как converted.' },
+    { name: 'raw_data',       type: 'object',  required: false, desc: 'Любые доп. поля JSON — сохранятся для дебага.' },
+  ]
+
+  const exampleReseller = `curl -X POST ${endpoint} \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -d '{
+    "external_id": "reseller_order_20260420_001",
+    "amount": 299,
+    "currency": "RUB",
+    "customer_email": "ivan@example.com",
+    "customer_name": "Иван Петров",
+    "plan": "Стандарт · 1 месяц",
+    "plan_tag": "standard_30d",
+    "sub_start": "2026-04-20T00:00:00Z",
+    "sub_end": "2026-05-20T00:00:00Z",
+    "source": "reseller_portal",
+    "description": "Оплата через партнёра"
+  }'`
+
+  const examplePartnerCRM = `curl -X POST ${endpoint} \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -d '{
+    "external_id": "crm_lead_converted_42",
+    "amount": 499,
+    "customer_id": "123456789",
+    "plan": "Премиум · 1 месяц",
+    "plan_tag": "premium_30d",
+    "source": "partner_crm",
+    "utm_code": "yt_blogger_march"
+  }'`
+
+  const exampleExpense = `curl -X POST ${endpoint} \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -d '{
+    "external_id": "hetzner_invoice_2026_04",
+    "amount": -1840,
+    "currency": "RUB",
+    "plan": "Hetzner servers · apr 2026",
+    "source": "hetzner_webhook",
+    "description": "Ежемесячный инвойс за серверы VPN"
+  }'`
+
+  const successResp = `{
+  "ok": true,
+  "status": "created",
+  "paymentId": "550e8400-e29b-41d4-a716-446655440000",
+  "transactionId": "550e8400-e29b-41d4-a716-446655440001"
+}`
+
+  const dupResp = `{
+  "ok": true,
+  "status": "duplicate",
+  "paymentId": "...uuid ранее созданного..."
+}`
+
+  return (
+    <div className="space-y-5">
+      {/* Endpoint banner */}
+      <div className="rounded-xl p-4 space-y-2"
+           style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}>
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4" style={{ color: '#06b6d4' }} />
+          <strong style={{ color: '#06b6d4' }}>Endpoint</strong>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2 font-mono text-sm"
+             style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0"
+                style={{ background: '#f59e0b', color: 'white' }}>POST</span>
+          <span className="flex-1 truncate">{endpoint}</span>
+          <button onClick={() => copyToClipboard(endpoint)}
+                  className="p-1.5 rounded shrink-0 hover:bg-white/5"
+                  style={{ color: 'var(--text-tertiary)' }}>
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <Section title="🔑 Авторизация">
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          Ключ передаётся одним из трёх способов (приоритет по порядку):
+        </p>
+        <ol className="text-sm space-y-1 list-decimal ml-5" style={{ color: 'var(--text-secondary)' }}>
+          <li>Header <Mono>Authorization: Bearer &lt;key&gt;</Mono> — рекомендуется</li>
+          <li>Header <Mono>X-API-Key: &lt;key&gt;</Mono></li>
+          <li>Поле <Mono>api_key</Mono> в JSON-теле (legacy)</li>
+        </ol>
+        <div className="text-xs p-2 rounded"
+             style={{ background: 'rgba(245,158,11,0.08)', color: '#f59e0b' }}>
+          Ключ создай на вкладке «API-ключи». При создании он показывается полностью один раз — копируй сразу.
+        </div>
+      </Section>
+
+      <Section title="📋 Поля запроса">
+        <div className="rounded-lg overflow-hidden"
+             style={{ border: '1px solid var(--glass-border)' }}>
+          <table className="w-full text-xs">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                {['Дата', 'External ID', 'Сумма', 'Валюта', 'Клиент', 'Тариф', 'Источник', 'Статус'].map(h => (
-                  <th key={h} className="text-left px-4 py-3 font-medium text-xs whitespace-nowrap"
-                      style={{ color: 'var(--text-tertiary)' }}>
-                    {h}
-                  </th>
-                ))}
+              <tr style={{ background: 'var(--surface-2)', color: 'var(--text-tertiary)' }}>
+                <th className="text-left px-3 py-2">Поле</th>
+                <th className="text-left px-3 py-2">Тип</th>
+                <th className="text-left px-3 py-2">Обязательное</th>
+                <th className="text-left px-3 py-2">Описание</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    {[...Array(8)].map((_, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <div className="h-4 skeleton rounded w-20" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : payments.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                    <Webhook className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    <p>Платежи будут отображаться после настройки webhook</p>
-                    <p className="text-xs mt-1">Создайте API-ключ и настройте webhook в платёжной системе</p>
-                  </td>
-                </tr>
-              ) : (
-                payments.map(p => {
-                  const st = statusStyles[p.status.toLowerCase()] ?? statusStyles.pending
-                  return (
-                    <tr key={p.id}
-                        className="hover:bg-white/[0.03] transition-colors"
-                        style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      {/* Date */}
-                      <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {p.date ? fmtDateTime(p.date) : '\u2014'}
-                      </td>
-
-                      {/* External ID */}
-                      <td className="px-4 py-3">
-                        {p.externalId ? (
-                          <code className="text-xs px-1.5 py-0.5 rounded"
-                                style={{ background: 'rgba(6,182,212,0.08)', color: 'var(--text-secondary)' }}>
-                            {p.externalId}
-                          </code>
-                        ) : (
-                          <span style={{ color: 'var(--text-tertiary)' }}>&mdash;</span>
-                        )}
-                      </td>
-
-                      {/* Amount */}
-                      <td className="px-4 py-3 whitespace-nowrap font-semibold" style={{ color: '#34d399' }}>
-                        {fmtMoney(p.amount)}
-                      </td>
-
-                      {/* Currency */}
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {p.currency}
-                      </td>
-
-                      {/* Customer */}
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {p.customerName || '\u2014'}
-                      </td>
-
-                      {/* Plan */}
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {p.plan || '\u2014'}
-                      </td>
-
-                      {/* Source */}
-                      <td className="px-4 py-3">
-                        {p.source ? (
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md"
-                                style={{ background: 'rgba(6,182,212,0.08)', color: '#a78bfa' }}>
-                            <Hash className="w-3 h-3" />
-                            {p.source}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-tertiary)' }}>&mdash;</span>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
-                              style={{ background: st.bg, color: st.color, border: st.border }}>
-                          {statusLabels[p.status] ?? p.status}
+              {FIELDS.map(f => (
+                <tr key={f.name} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                  <td className="px-3 py-2 font-mono font-medium"
+                      style={{ color: 'var(--text-primary)' }}>{f.name}</td>
+                  <td className="px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>{f.type}</td>
+                  <td className="px-3 py-2">
+                    {f.required
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded"
+                              style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                          обязательное
                         </span>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
+                      : <span className="text-[10px]"
+                              style={{ color: 'var(--text-tertiary)' }}>опционально</span>}
+                  </td>
+                  <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{f.desc}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section title="💡 Примеры использования для VPN-платформы">
+        <CodeBlock title="1. Реселлер продал тариф (новый юзер по email)" code={exampleReseller} />
+        <CodeBlock title="2. Партнёрская CRM: лид конвертнулся, UTM-атрибуция" code={examplePartnerCRM} />
+        <CodeBlock title="3. Внешний сервис пишет расход (отрицательная сумма)" code={exampleExpense} />
+      </Section>
+
+      <Section title="📤 Ответы">
+        <CodeBlock title="Успех — платёж создан" code={successResp} color="#22c55e" />
+        <CodeBlock title="Дубликат — external_id уже был принят" code={dupResp} color="#f59e0b" />
+        <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+          <div><strong style={{ color: '#ef4444' }}>401</strong> — неверный или неактивный API-ключ</div>
+          <div><strong style={{ color: '#ef4444' }}>400</strong> — невалидное тело запроса</div>
+          <div><strong style={{ color: '#ef4444' }}>429</strong> — превышен rate-limit (300/мин)</div>
+        </div>
+      </Section>
+
+      <Section title="⚙️ Что делает платформа при получении webhook'а">
+        <ol className="text-sm space-y-1.5 list-decimal ml-5" style={{ color: 'var(--text-secondary)' }}>
+          <li>Проверяет API-ключ (активен + существует)</li>
+          <li>Ищет дубликат по <Mono>external_id</Mono> — если есть, возвращает <Mono>duplicate</Mono></li>
+          <li>Создаёт запись в <Mono>buh_transactions</Mono> (type=INCOME, source=webhook)</li>
+          <li>Применяет auto-tag правила из <Mono>BuhAutoTagRule</Mono></li>
+          <li>Сохраняет в <Mono>buh_webhook_payments</Mono> полный снимок + <Mono>raw_data</Mono></li>
+          <li>Ищет юзера: по <Mono>customer_id</Mono> (Telegram/UUID/leadteh), затем по <Mono>customer_email</Mono></li>
+          <li>Если найден — обновляет <Mono>totalPaid</Mono>, <Mono>paymentsCount</Mono>, <Mono>currentPlan</Mono>, <Mono>currentPlanTag</Mono></li>
+          <li>При <Mono>utm_code</Mono> + найденном юзере — помечает UTM-лид как converted</li>
+          <li>Инкрементирует <Mono>requestCount</Mono> у API-ключа</li>
+        </ol>
+      </Section>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
+      <div className="space-y-2">{children}</div>
+    </div>
+  )
+}
+
+function Mono({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="px-1 py-0.5 rounded font-mono text-[11px]"
+          style={{ background: 'var(--surface-1)', color: 'var(--text-primary)' }}>
+      {children}
+    </code>
+  )
+}
+
+function CodeBlock({ title, code, color }: { title: string; code: string; color?: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium" style={{ color: color || 'var(--text-secondary)' }}>
+          {title}
+        </span>
+        <button onClick={() => copyToClipboard(code)}
+                className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-tertiary)' }}>
+          <Copy className="w-3 h-3" /> Копировать
+        </button>
       </div>
-    </>
+      <pre className="p-3 rounded-lg overflow-x-auto text-[11px] font-mono"
+           style={{
+             background: 'var(--surface-2)',
+             border: '1px solid var(--glass-border)',
+             color: 'var(--text-primary)',
+           }}>
+        {code}
+      </pre>
+    </div>
   )
 }

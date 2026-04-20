@@ -36,3 +36,11 @@ node_modules/
 dist/
 **/dist/
 *.log
+
+# Runtime backups (created by updater sidecar)
+data/backups/
+data/db-backups/
+
+# Temporary nginx config backups
+nginx/*.bak
+nginx/*.tmp

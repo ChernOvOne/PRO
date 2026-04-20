@@ -1,0 +1,180 @@
+#!/bin/bash
+#
+# HIDEYOU platform CLI.
+#
+# Interactive menu: `hy`
+# Direct command:  `hy <topic> <subcommand> [args...]`
+#
+# Topics: updates | backups | wizard | domains | settings | db | users | services | maintenance | system
+
+set -euo pipefail
+
+# Auto-detect LKHY root — prefer /opt/pro/LKHY, fall back to parent of this script
+if [ -d "/opt/pro/LKHY" ]; then
+  LKHY_ROOT="/opt/pro/LKHY"
+else
+  LKHY_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+fi
+
+CLI_DIR="$LKHY_ROOT/scripts/cli"
+export LKHY_ROOT
+export CLI_DIR
+
+# Colors
+if [ -t 1 ]; then
+  BOLD='\033[1m'; DIM='\033[2m'; RED='\033[31m'; GRN='\033[32m'
+  YLW='\033[33m'; BLU='\033[36m'; MGN='\033[35m'; NC='\033[0m'
+else
+  BOLD=''; DIM=''; RED=''; GRN=''; YLW=''; BLU=''; MGN=''; NC=''
+fi
+export BOLD DIM RED GRN YLW BLU MGN NC
+
+# Helper: require docker compose running
+ensure_running() {
+  if ! docker ps --filter name=hideyou_postgres --format '{{.Names}}' | grep -q hideyou_postgres; then
+    echo -e "${RED}✗ Контейнер hideyou_postgres не запущен.${NC} Выполни: cd $LKHY_ROOT && docker compose up -d"
+    exit 1
+  fi
+}
+
+# Helper: psql shortcut
+psql_exec() {
+  docker exec -i hideyou_postgres psql -U hideyou -d hideyou -t -A "$@"
+}
+
+# Helper: redis-cli with password
+redis_exec() {
+  local pw
+  pw=$(grep '^REDIS_PASSWORD=' "$LKHY_ROOT/.env" 2>/dev/null | cut -d= -f2- || echo '')
+  if [ -n "$pw" ]; then
+    docker exec -i hideyou_redis redis-cli -a "$pw" --no-auth-warning "$@"
+  else
+    docker exec -i hideyou_redis redis-cli "$@"
+  fi
+}
+export -f ensure_running psql_exec redis_exec
+
+# Helper: get current version
+current_version() {
+  cd "$LKHY_ROOT"
+  if [ -d .git ]; then
+    local tag sha
+    tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    if [ -n "$tag" ]; then echo "$tag ($sha)"; else echo "$sha"; fi
+  else
+    echo "(not a git repo)"
+  fi
+}
+export -f current_version
+
+# ── Main menu ──────────────────────────────────────────────
+
+show_main_menu() {
+  clear
+  local version
+  version=$(current_version)
+  cat <<EOF
+$(echo -e "${BOLD}${BLU}")╔═══════════════════════════════════════════════════╗
+║   HIDEYOU Platform CLI                            ║
+║   $(printf "%-48s" "Версия: $version") ║
+╚═══════════════════════════════════════════════════╝$(echo -e "${NC}")
+
+  $(echo -e "${GRN}1.${NC})  Обновления и версии
+  $(echo -e "${GRN}2.${NC})  Бэкапы и восстановление
+  $(echo -e "${GRN}3.${NC})  Визард настройки
+  $(echo -e "${GRN}4.${NC})  Домены и TLS
+  $(echo -e "${GRN}5.${NC})  Настройки
+  $(echo -e "${GRN}6.${NC})  База данных
+  $(echo -e "${GRN}7.${NC})  Пользователи и админы
+  $(echo -e "${GRN}8.${NC})  Сервисы и логи
+  $(echo -e "${GRN}9.${NC})  Режим обслуживания
+  $(echo -e "${GRN}10.${NC}) Система и диагностика
+  $(echo -e "${DIM}0.${NC})  Выход
+
+EOF
+}
+
+interactive_loop() {
+  while true; do
+    show_main_menu
+    read -p "  Выбери пункт: " choice
+    case "$choice" in
+      1)  bash "$CLI_DIR/updates.sh" menu ;;
+      2)  bash "$CLI_DIR/backups.sh" menu ;;
+      3)  bash "$CLI_DIR/wizard.sh" menu ;;
+      4)  bash "$CLI_DIR/domains.sh" menu ;;
+      5)  bash "$CLI_DIR/settings.sh" menu ;;
+      6)  bash "$CLI_DIR/db.sh" menu ;;
+      7)  bash "$CLI_DIR/users.sh" menu ;;
+      8)  bash "$CLI_DIR/services.sh" menu ;;
+      9)  bash "$CLI_DIR/maintenance.sh" menu ;;
+      10) bash "$CLI_DIR/system.sh" menu ;;
+      0|q|exit) echo "Пока."; exit 0 ;;
+      *)  echo -e "${RED}Неизвестная команда${NC}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Non-interactive dispatch ───────────────────────────────
+
+usage() {
+  cat <<EOF
+$(echo -e "${BOLD}hy — HIDEYOU Platform CLI${NC})
+
+Запуск без аргументов: интерактивное меню.
+
+Команды:
+  hy updates check              Проверить новые релизы на GitHub
+  hy updates install <tag>      Установить релиз
+  hy updates history            Показать историю обновлений
+
+  hy backups list               Список бэкапов
+  hy backups create             Создать полный бэкап
+  hy backups restore <id|file>  Откатиться к бэкапу
+  hy backups delete <id>        Удалить бэкап
+
+  hy domains list               Список доменов
+  hy domains add <domain> <role>  Добавить домен и выпустить TLS
+  hy domains remove <id>        Удалить домен
+
+  hy settings get <key>         Получить настройку
+  hy settings set <key> <val>   Установить настройку
+  hy settings list              Все настройки
+
+  hy db backup                  Бэкап только БД
+  hy db restore <file>          Восстановить БД
+  hy db shell                   Открыть psql shell
+
+  hy users create-admin         Создать админа
+  hy users reset-password <email>  Сбросить пароль
+
+  hy services status            Статус всех контейнеров
+  hy services restart <name>    Перезапустить сервис
+  hy services logs <name>       Показать логи
+
+  hy maintenance on|off         Включить/выключить режим обслуживания
+  hy maintenance status         Текущий статус
+
+  hy system info                Информация о системе
+  hy system health              Проверка здоровья
+  hy system disk                Использование диска
+
+  hy wizard reset               Сбросить флаг setup_completed
+
+EOF
+}
+
+if [ $# -eq 0 ]; then
+  interactive_loop
+else
+  topic="$1"; shift
+  case "$topic" in
+    updates|backups|wizard|domains|settings|db|users|services|maintenance|system)
+      exec bash "$CLI_DIR/${topic}.sh" "$@"
+      ;;
+    -h|--help|help) usage ;;
+    version|--version) current_version ;;
+    *) echo -e "${RED}Неизвестная команда: $topic${NC}"; usage; exit 1 ;;
+  esac
+fi

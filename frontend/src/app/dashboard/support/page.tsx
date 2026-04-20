@@ -1158,70 +1158,174 @@ const WIZARD_FLOWS: Record<string, { steps: WizardStep[]; buildSubject: (answers
   },
 }
 
+/* ── API wizard types ──────────────────────────────────── */
+
+interface ApiWizardOption {
+  value: string
+  label: string
+  icon?: string | null
+  nextNodeId?: string | null
+}
+
+interface ApiWizardNode {
+  id: string
+  wizardId: string
+  nodeType: 'choice' | 'text' | 'textarea' | 'terminal'
+  answerId?: string | null
+  question?: string | null
+  hint?: string | null
+  placeholder?: string | null
+  optional: boolean
+  options?: ApiWizardOption[] | null
+  nextNodeId?: string | null
+  subjectTemplate?: string | null
+  bodyTemplate?: string | null
+}
+
+interface ApiWizard {
+  id: string
+  category: TicketCategory
+  title: string
+  icon?: string | null
+  description?: string | null
+  enabled: boolean
+  entryNodeId?: string | null
+  nodes: ApiWizardNode[]
+}
+
+interface Answer {
+  value: string
+  label?: string
+}
+
+// Render template: {{id}} → answer.value, {{id:label}} → answer.label || value
+function renderTemplate(tpl: string, answers: Record<string, Answer>): string {
+  return tpl
+    .replace(/\{\{([a-zA-Z0-9_]+):label\}\}/g, (_, id) => {
+      const a = answers[id]; return a ? (a.label ?? a.value) : ''
+    })
+    .replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, id) => answers[id]?.value ?? '')
+}
+
 function CreateTicketModal({
   onClose, onCreated,
 }: {
   onClose: () => void
   onCreated: (id: string) => void
 }) {
-  // Pick up category from window (set via start_param)
   const prefillCat = typeof window !== 'undefined' ? (window as any).__supportPrefillCategory : null
   const validCats: TicketCategory[] = ['BILLING', 'TECH', 'REFUND', 'SUBSCRIPTION', 'OTHER']
   const initialCategory = validCats.includes(prefillCat) ? (prefillCat as TicketCategory) : null
 
-  const [category, setCategory] = useState<TicketCategory | null>(initialCategory)
-  const [stepIndex, setStepIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [wizards, setWizards] = useState<ApiWizard[]>([])
+  const [wizardsLoaded, setWizardsLoaded] = useState(false)
+  const [category, setCategory] = useState<TicketCategory | null>(null)
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null)
+  const [history, setHistory] = useState<string[]>([])
+  const [answers, setAnswers] = useState<Record<string, Answer>>({})
+  const [textInput, setTextInput] = useState<string>('')
   const [creating, setCreating] = useState(false)
 
+  /* Load wizards */
   useEffect(() => {
-    // Clear the one-time prefill
-    if (typeof window !== 'undefined') {
-      delete (window as any).__supportPrefillCategory
-    }
+    authFetch('/api/support/wizards')
+      .then(r => r.ok ? r.json() : [])
+      .then((data: ApiWizard[]) => setWizards(data || []))
+      .catch(() => setWizards([]))
+      .finally(() => setWizardsLoaded(true))
   }, [])
 
-  const flow = category ? WIZARD_FLOWS[category] : null
-  const currentStep = flow?.steps[stepIndex]
-  const totalSteps = flow?.steps.length || 0
+  /* If we had a prefilled category from bot start_param, start after load */
+  useEffect(() => {
+    if (typeof window !== 'undefined') delete (window as any).__supportPrefillCategory
+    if (initialCategory && wizardsLoaded) selectCategory(initialCategory)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardsLoaded])
+
+  const currentWizard = category ? wizards.find(w => w.category === category && w.enabled) : null
+  const fallbackFlow = category && !currentWizard ? WIZARD_FLOWS[category] : null
+
+  const currentNode = currentWizard && currentNodeId
+    ? currentWizard.nodes.find(n => n.id === currentNodeId)
+    : null
 
   const selectCategory = (cat: TicketCategory) => {
     setCategory(cat)
-    setStepIndex(0)
     setAnswers({})
+    setHistory([])
+    setTextInput('')
+    const wiz = wizards.find(w => w.category === cat && w.enabled)
+    if (wiz?.entryNodeId) setCurrentNodeId(wiz.entryNodeId)
+    else setCurrentNodeId(null)
   }
 
-  const setAnswer = (id: string, value: string) => {
-    setAnswers(prev => ({ ...prev, [id]: value }))
+  const goToNode = (toId: string | null | undefined) => {
+    if (!toId) return submit()
+    const node = currentWizard?.nodes.find(n => n.id === toId)
+    if (!node) return submit()
+    setHistory(h => [...h, currentNodeId!].filter(Boolean) as string[])
+    setCurrentNodeId(toId)
+    setTextInput('')
+    if (node.nodeType === 'terminal') {
+      // Defer so the transition feels smooth
+      setTimeout(() => submitFrom(node), 100)
+    }
   }
 
-  const next = () => {
-    if (!currentStep) return
-    const val = answers[currentStep.id]
-    if (!currentStep.optional && !val?.trim()) {
-      toast.error('Выберите вариант или введите текст')
+  const pickChoice = (node: ApiWizardNode, opt: ApiWizardOption) => {
+    if (!node.answerId) return
+    setAnswers(prev => ({ ...prev, [node.answerId!]: { value: opt.value, label: opt.label } }))
+    setTimeout(() => goToNode(opt.nextNodeId), 150)
+  }
+
+  const submitText = (node: ApiWizardNode) => {
+    const val = textInput.trim()
+    if (!node.optional && !val) {
+      toast.error('Заполните поле')
       return
     }
-    if (stepIndex < totalSteps - 1) {
-      setStepIndex(i => i + 1)
-    } else {
-      submit()
+    if (node.answerId) {
+      setAnswers(prev => ({ ...prev, [node.answerId!]: { value: val } }))
     }
+    goToNode(node.nextNodeId)
   }
 
   const back = () => {
-    if (stepIndex > 0) setStepIndex(i => i - 1)
-    else setCategory(null)
-  }
-
-  const submit = async () => {
-    if (!category || !flow) return
-    const subject = flow.buildSubject(answers)
-    const message = flow.buildBody(answers)
-    if (!subject.trim() || !message.trim()) {
-      toast.error('Недостаточно данных')
+    if (history.length === 0) {
+      setCategory(null)
+      setCurrentNodeId(null)
       return
     }
+    const prev = history[history.length - 1]
+    setHistory(h => h.slice(0, -1))
+    setCurrentNodeId(prev)
+    setTextInput('')
+  }
+
+  /* Build subject/body from the terminal node's templates (or by walking until we find one) */
+  const submitFrom = async (terminalNode: ApiWizardNode) => {
+    if (!category) return
+    const subject = renderTemplate(terminalNode.subjectTemplate || '', answers).trim()
+      || `Обращение (${CATEGORY_LABELS[category]})`
+    const message = renderTemplate(terminalNode.bodyTemplate || '', answers).trim()
+      || Object.values(answers).map(a => a.label ?? a.value).filter(Boolean).join('\n')
+    if (!message) { toast.error('Недостаточно данных'); return }
+    await createTicket(subject, message)
+  }
+
+  /* Fallback submit for hardcoded flows */
+  const submit = async () => {
+    if (!category) return
+    if (fallbackFlow) {
+      const subject = fallbackFlow.buildSubject(answers as any)
+      const message = fallbackFlow.buildBody(answers as any)
+      if (!subject.trim() || !message.trim()) { toast.error('Недостаточно данных'); return }
+      await createTicket(subject.trim(), message.trim())
+    }
+  }
+
+  const createTicket = async (subject: string, message: string) => {
+    if (!category) return
     setCreating(true)
     try {
       const tgWebApp = (window as any).Telegram?.WebApp
@@ -1229,12 +1333,7 @@ function CreateTicketModal({
       const res = await authFetch('/api/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject: subject.trim(),
-          category,
-          message: message.trim(),
-          source,
-        }),
+        body: JSON.stringify({ subject, category, message, source }),
       })
       if (!res.ok) throw new Error()
       const { id } = await res.json()
@@ -1246,6 +1345,14 @@ function CreateTicketModal({
       setCreating(false)
     }
   }
+
+  /* Estimate progress: count answered non-terminal nodes vs total nodes (excluding terminal) */
+  const progress = (() => {
+    if (!currentWizard) return 0
+    const nonTerminal = currentWizard.nodes.filter(n => n.nodeType !== 'terminal').length
+    if (nonTerminal === 0) return 100
+    return Math.min(100, Math.round((Object.keys(answers).length / nonTerminal) * 100))
+  })()
 
   return (
     <div
@@ -1261,11 +1368,11 @@ function CreateTicketModal({
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-              {!category ? 'Новое обращение' : 'Расскажите подробнее'}
+              {!category ? 'Новое обращение' : (currentWizard?.title || 'Расскажите подробнее')}
             </h3>
-            {category && (
+            {category && currentWizard && (
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                Шаг {stepIndex + 1} из {totalSteps}
+                {progress}% · вопрос {history.length + 1}
               </p>
             )}
           </div>
@@ -1275,71 +1382,80 @@ function CreateTicketModal({
         </div>
 
         {/* Progress bar */}
-        {category && (
+        {category && currentWizard && (
           <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
             <div
               className="h-full rounded-full transition-all"
-              style={{
-                width: `${((stepIndex + 1) / totalSteps) * 100}%`,
-                background: 'var(--accent-1)',
-              }}
+              style={{ width: `${progress}%`, background: 'var(--accent-1)' }}
             />
           </div>
         )}
 
-        {/* Step 0: category */}
-        {!category && (
+        {/* Loading wizards */}
+        {!wizardsLoaded && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--accent-1)' }} />
+          </div>
+        )}
+
+        {/* Category pick */}
+        {wizardsLoaded && !category && (
           <div className="space-y-2">
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               С каким вопросом обращаетесь?
             </p>
-            {(Object.keys(CATEGORY_LABELS) as TicketCategory[]).map(cat => (
-              <button
-                key={cat}
-                onClick={() => selectCategory(cat)}
-                className="w-full px-4 py-3 rounded-xl text-left transition hover:brightness-110"
-                style={{
-                  background: 'var(--surface-2)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--glass-border)',
-                }}
-              >
-                <span className="font-medium">{CATEGORY_LABELS[cat]}</span>
-              </button>
-            ))}
+            {(Object.keys(CATEGORY_LABELS) as TicketCategory[]).map(cat => {
+              const w = wizards.find(x => x.category === cat && x.enabled)
+              return (
+                <button
+                  key={cat}
+                  onClick={() => selectCategory(cat)}
+                  className="w-full px-4 py-3 rounded-xl text-left transition hover:brightness-110 flex items-center gap-3"
+                  style={{
+                    background: 'var(--surface-2)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--glass-border)',
+                  }}
+                >
+                  {w?.icon && <span className="text-xl">{w.icon}</span>}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{w?.title || CATEGORY_LABELS[cat]}</div>
+                    {w?.description && (
+                      <div className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-tertiary)' }}>
+                        {w.description}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
           </div>
         )}
 
-        {/* Wizard step */}
-        {category && currentStep && (
+        {/* API wizard node */}
+        {wizardsLoaded && category && currentWizard && currentNode && currentNode.nodeType !== 'terminal' && (
           <div className="space-y-3">
             <div>
               <h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                {currentStep.question}
+                {currentNode.question}
               </h4>
-              {currentStep.hint && (
+              {currentNode.hint && (
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  {currentStep.hint}
+                  {currentNode.hint}
                 </p>
               )}
             </div>
 
-            {currentStep.type === 'choice' && currentStep.options && (
+            {currentNode.nodeType === 'choice' && currentNode.options && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {currentStep.options.map(opt => {
-                  const selected = answers[currentStep.id] === opt.value
+                {currentNode.options.map(opt => {
+                  const selected = currentNode.answerId
+                    ? answers[currentNode.answerId]?.value === opt.value
+                    : false
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => {
-                        setAnswer(currentStep.id, opt.value)
-                        // Auto-advance on choice
-                        setTimeout(() => {
-                          if (stepIndex < totalSteps - 1) {
-                            setStepIndex(i => i + 1)
-                          }
-                        }, 200)
-                      }}
+                      onClick={() => pickChoice(currentNode, opt)}
                       className="px-3 py-2.5 rounded-xl text-sm font-medium transition text-left flex items-center gap-2"
                       style={{
                         background: selected ? 'var(--accent-1)' : 'var(--surface-2)',
@@ -1355,23 +1471,23 @@ function CreateTicketModal({
               </div>
             )}
 
-            {currentStep.type === 'text' && (
+            {currentNode.nodeType === 'text' && (
               <input
-                value={answers[currentStep.id] || ''}
-                onChange={e => setAnswer(currentStep.id, e.target.value)}
-                placeholder={currentStep.placeholder}
+                value={textInput}
+                onChange={e => setTextInput(e.target.value)}
+                placeholder={currentNode.placeholder || ''}
                 className="glass-input w-full px-3 py-2 text-sm rounded-xl"
                 maxLength={200}
                 autoFocus
-                onKeyDown={e => e.key === 'Enter' && next()}
+                onKeyDown={e => e.key === 'Enter' && submitText(currentNode)}
               />
             )}
 
-            {currentStep.type === 'textarea' && (
+            {currentNode.nodeType === 'textarea' && (
               <textarea
-                value={answers[currentStep.id] || ''}
-                onChange={e => setAnswer(currentStep.id, e.target.value)}
-                placeholder={currentStep.placeholder}
+                value={textInput}
+                onChange={e => setTextInput(e.target.value)}
+                placeholder={currentNode.placeholder || ''}
                 rows={5}
                 className="glass-input w-full px-3 py-2 text-sm rounded-xl resize-none"
                 maxLength={2000}
@@ -1379,12 +1495,9 @@ function CreateTicketModal({
               />
             )}
 
-            {currentStep.optional && (
+            {currentNode.optional && currentNode.nodeType !== 'choice' && (
               <button
-                onClick={() => {
-                  setAnswer(currentStep.id, '')
-                  next()
-                }}
+                onClick={() => { setTextInput(''); goToNode(currentNode.nextNodeId) }}
                 className="text-xs"
                 style={{ color: 'var(--text-tertiary)', textDecoration: 'underline' }}
               >
@@ -1394,8 +1507,29 @@ function CreateTicketModal({
           </div>
         )}
 
-        {/* Navigation */}
-        {category && (
+        {/* Fallback for categories without enabled wizard — use hardcoded flow */}
+        {wizardsLoaded && category && !currentWizard && fallbackFlow && (
+          <FallbackLinearFlow
+            flow={fallbackFlow}
+            answers={answers as any}
+            setAnswers={setAnswers as any}
+            onBack={() => setCategory(null)}
+            onSubmit={submit}
+            creating={creating}
+          />
+        )}
+
+        {/* Terminal — show spinner while creating */}
+        {currentNode?.nodeType === 'terminal' && (
+          <div className="flex items-center justify-center py-6 gap-2"
+               style={{ color: 'var(--text-secondary)' }}>
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--accent-1)' }} />
+            <span className="text-sm">Создаём обращение…</span>
+          </div>
+        )}
+
+        {/* Back nav for API wizard */}
+        {category && currentWizard && currentNode && currentNode.nodeType !== 'terminal' && (
           <div className="flex gap-2">
             <button
               onClick={back}
@@ -1404,23 +1538,107 @@ function CreateTicketModal({
             >
               ← Назад
             </button>
-            {currentStep?.type !== 'choice' && (
+            {(currentNode.nodeType === 'text' || currentNode.nodeType === 'textarea') && (
               <button
-                onClick={next}
+                onClick={() => submitText(currentNode)}
                 disabled={creating}
                 className="flex-1 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50"
                 style={{ background: 'var(--accent-1)', color: '#fff' }}
               >
-                {creating ? (
-                  <Loader2 className="w-4 h-4 animate-spin inline" />
-                ) : stepIndex < totalSteps - 1 ? (
-                  'Далее →'
-                ) : (
-                  'Создать обращение 🚀'
-                )}
+                {creating ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Далее →'}
               </button>
             )}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Fallback hardcoded-flow renderer ──────────────────── */
+
+function FallbackLinearFlow({
+  flow, answers, setAnswers, onBack, onSubmit, creating,
+}: {
+  flow: typeof WIZARD_FLOWS[keyof typeof WIZARD_FLOWS]
+  answers: Record<string, string>
+  setAnswers: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  onBack: () => void
+  onSubmit: () => void
+  creating: boolean
+}) {
+  const [stepIndex, setStepIndex] = useState(0)
+  const step = flow.steps[stepIndex]
+  const total = flow.steps.length
+
+  const setAnswer = (id: string, v: string) => setAnswers(prev => ({ ...prev, [id]: v }))
+
+  const next = () => {
+    if (!step) return
+    const val = answers[step.id]
+    if (!step.optional && !val?.trim()) {
+      toast.error('Заполните поле')
+      return
+    }
+    if (stepIndex < total - 1) setStepIndex(i => i + 1)
+    else onSubmit()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{step.question}</h4>
+        {step.hint && <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{step.hint}</p>}
+      </div>
+
+      {step.type === 'choice' && step.options && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {step.options.map(opt => {
+            const selected = answers[step.id] === opt.value
+            return (
+              <button key={opt.value}
+                      onClick={() => {
+                        setAnswer(step.id, opt.value)
+                        setTimeout(() => { if (stepIndex < total - 1) setStepIndex(i => i + 1) }, 150)
+                      }}
+                      className="px-3 py-2.5 rounded-xl text-sm font-medium transition text-left flex items-center gap-2"
+                      style={{
+                        background: selected ? 'var(--accent-1)' : 'var(--surface-2)',
+                        color: selected ? '#fff' : 'var(--text-primary)',
+                        border: `1px solid ${selected ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                      }}>
+                {opt.icon && <span className="text-lg">{opt.icon}</span>}
+                <span>{opt.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {step.type === 'text' && (
+        <input value={answers[step.id] || ''} onChange={e => setAnswer(step.id, e.target.value)}
+               placeholder={step.placeholder} className="glass-input w-full px-3 py-2 text-sm rounded-xl"
+               maxLength={200} autoFocus onKeyDown={e => e.key === 'Enter' && next()} />
+      )}
+      {step.type === 'textarea' && (
+        <textarea value={answers[step.id] || ''} onChange={e => setAnswer(step.id, e.target.value)}
+                  placeholder={step.placeholder} rows={5}
+                  className="glass-input w-full px-3 py-2 text-sm rounded-xl resize-none" maxLength={2000} autoFocus />
+      )}
+
+      <div className="flex gap-2">
+        <button onClick={() => { if (stepIndex > 0) setStepIndex(i => i - 1); else onBack() }}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+          ← Назад
+        </button>
+        {step.type !== 'choice' && (
+          <button onClick={next} disabled={creating}
+                  className="flex-1 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                  style={{ background: 'var(--accent-1)', color: '#fff' }}>
+            {creating ? <Loader2 className="w-4 h-4 animate-spin inline" />
+             : stepIndex < total - 1 ? 'Далее →' : 'Создать обращение 🚀'}
+          </button>
         )}
       </div>
     </div>

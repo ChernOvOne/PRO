@@ -4,10 +4,14 @@ import { prisma } from '../db'
 
 export async function buhWebhookPaymentRoutes(app: FastifyInstance) {
   // ── POST / — receive payment webhook (public, API-key auth) ─
+  // Accepts API key via:
+  //   - Authorization: Bearer <key> header (preferred), or
+  //   - X-API-Key: <key> header, or
+  //   - "api_key" field in body (legacy)
   app.post('/', async (req, reply) => {
     const body = z
       .object({
-        api_key:        z.string(),
+        api_key:        z.string().optional(),
         external_id:    z.string(),
         amount:         z.number(),
         currency:       z.string().default('RUB'),
@@ -25,9 +29,18 @@ export async function buhWebhookPaymentRoutes(app: FastifyInstance) {
       })
       .parse(req.body)
 
-    // 1. Validate API key
+    // 1. Validate API key — header takes precedence
+    const hdr = req.headers.authorization
+    const bearer = hdr?.startsWith('Bearer ') ? hdr.slice(7) : null
+    const headerKey = (req.headers['x-api-key'] as string) || null
+    const keyValue = bearer || headerKey || body.api_key
+
+    if (!keyValue) {
+      return reply.status(401).send({ error: 'Missing API key (Authorization: Bearer …, X-API-Key, or api_key in body)' })
+    }
+
     const apiKey = await prisma.buhWebhookApiKey.findFirst({
-      where: { key: body.api_key, isActive: true },
+      where: { key: keyValue, isActive: true },
     })
 
     if (!apiKey) {
@@ -105,27 +118,50 @@ export async function buhWebhookPaymentRoutes(app: FastifyInstance) {
       },
     })
 
-    // 7. If customerId provided — update User
+    // 7. Resolve customer: try telegramId, email, UUID — whichever matches first
     let resolvedUser: { id: string } | null = null
 
-    if (body.customer_id) {
-      resolvedUser = await prisma.user.findUnique({
-        where: { telegramId: body.customer_id },
-        select: { id: true },
-      })
-
-      if (resolvedUser) {
-        await prisma.user.update({
-          where: { id: resolvedUser.id },
-          data: {
-            totalPaid:      { increment: body.amount },
-            paymentsCount:  { increment: 1 },
-            lastPaymentAt:  new Date(),
-            currentPlan:    body.plan     ?? undefined,
-            currentPlanTag: body.plan_tag ?? undefined,
-          },
-        })
+    const tryLookup = async (): Promise<{ id: string } | null> => {
+      if (body.customer_id) {
+        // Telegram numeric ID
+        const byTg = await prisma.user.findUnique({ where: { telegramId: body.customer_id }, select: { id: true } })
+        if (byTg) return byTg
+        // UUID / internal ID
+        const byId = await prisma.user.findUnique({ where: { id: body.customer_id }, select: { id: true } })
+        if (byId) return byId
+        // leadteh external
+        const byLead = await prisma.user.findUnique({ where: { leadtehId: body.customer_id }, select: { id: true } })
+        if (byLead) return byLead
       }
+      if (body.customer_email) {
+        const byEmail = await prisma.user.findUnique({ where: { email: body.customer_email.toLowerCase() }, select: { id: true } })
+        if (byEmail) return byEmail
+      }
+      return null
+    }
+
+    resolvedUser = await tryLookup()
+
+    if (resolvedUser) {
+      await prisma.user.update({
+        where: { id: resolvedUser.id },
+        data: {
+          totalPaid:      { increment: body.amount },
+          paymentsCount:  { increment: 1 },
+          lastPaymentAt:  new Date(),
+          currentPlan:    body.plan     ?? undefined,
+          currentPlanTag: body.plan_tag ?? undefined,
+        },
+      })
+      // Link transaction and webhook payment to customer
+      await prisma.buhTransaction.update({
+        where: { id: transaction.id },
+        data: { customerId: resolvedUser.id },
+      })
+      await prisma.buhWebhookPayment.update({
+        where: { id: payment.id },
+        data: { customerId: resolvedUser.id },
+      }).catch(() => {}) // customerId may already be set
     }
 
     // 8. If utmCode provided — mark UTM lead as converted

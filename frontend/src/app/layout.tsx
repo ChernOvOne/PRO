@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import { TMAProvider } from '@/providers/TMAProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { BrandTheme } from '@/components/BrandTheme'
+import { MaintenanceBanner } from '@/components/MaintenanceBanner'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['300', '400', '500', '600', '700', '800'] })
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             style={{ background: 'var(--surface-0)', color: 'var(--text-primary)' }}>
         <ThemeProvider>
           <BrandTheme />
+          <MaintenanceBanner />
           <TMAProvider>
             {children}
           </TMAProvider>

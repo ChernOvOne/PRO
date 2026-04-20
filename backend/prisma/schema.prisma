@@ -1576,3 +1576,123 @@ model LandingBlock {
   @@index([pageKey, sortOrder])
   @@map("landing_blocks")
 }
+
+// ============================================================
+//  Support Wizards — configurable ticket creation flows
+//  Each category (BILLING/TECH/REFUND/SUBSCRIPTION/OTHER) has a
+//  wizard graph: nodes ask questions, edges are user answers.
+// ============================================================
+model SupportWizard {
+  id           String   @id @default(uuid())
+  category     TicketCategory
+  title        String
+  icon         String?
+  description  String?
+  enabled      Boolean  @default(true)
+  entryNodeId  String?  @map("entry_node_id")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  nodes        SupportWizardNode[]
+
+  @@index([category])
+  @@map("support_wizards")
+}
+
+// ============================================================
+//  Update Events — history of platform updates via GitHub
+// ============================================================
+model UpdateEvent {
+  id            String   @id @default(uuid())
+  fromSha       String?  @map("from_sha")
+  toSha         String?  @map("to_sha")
+  fromTag       String?  @map("from_tag")
+  toTag         String?  @map("to_tag")
+  status        String   // pending | running | ok | failed | rolled_back
+  phase         String?  // phase within running: backup | fetch | build | migrate | deploy | health
+  log           String?  @db.Text
+  errorMessage  String?  @map("error_message") @db.Text
+  startedAt     DateTime @default(now()) @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+  backupId      String?  @map("backup_id")
+  backup        Backup?  @relation(fields: [backupId], references: [id], onDelete: SetNull)
+  triggeredBy   String?  @map("triggered_by") // admin user id
+  isRollback    Boolean  @default(false) @map("is_rollback")
+
+  @@index([startedAt(sort: Desc)])
+  @@map("update_events")
+}
+
+// ============================================================
+//  Backups — full platform snapshots (db + uploads + configs)
+// ============================================================
+model Backup {
+  id            String   @id @default(uuid())
+  filename      String   @unique
+  sizeBytes     BigInt   @map("size_bytes")
+  gitSha        String?  @map("git_sha")
+  gitTag        String?  @map("git_tag")
+  uploadedToTg  Boolean  @default(false) @map("uploaded_to_tg")
+  tgFileId      String?  @map("tg_file_id")
+  tgMessageUrl  String?  @map("tg_message_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String?  @map("created_by")
+  reason        String?  // 'pre-update' | 'manual' | 'scheduled'
+
+  updateEvents  UpdateEvent[]
+
+  @@index([createdAt(sort: Desc)])
+  @@map("backups")
+}
+
+// ============================================================
+//  Setup Domains — tenant-configured domains for multi-domain
+//  deployment. Each row represents a domain bound to a service
+//  role; status reflects DNS + TLS progression.
+// ============================================================
+model SetupDomain {
+  id         String   @id @default(uuid())
+  domain     String   @unique
+  role       String   // landing | app | admin | api | webhook | payments | custom
+  status     String   @default("pending") // pending | dns_ok | cert_ok | failed
+  lastError  String?  @map("last_error")
+  certIssuedAt DateTime? @map("cert_issued_at")
+  certExpiresAt DateTime? @map("cert_expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("setup_domains")
+}
+
+model SupportWizardNode {
+  id              String   @id @default(uuid())
+  wizardId        String   @map("wizard_id")
+  wizard          SupportWizard @relation(fields: [wizardId], references: [id], onDelete: Cascade)
+
+  nodeType        String   @map("node_type") // choice | text | textarea | terminal
+  answerId        String?  @map("answer_id") // friendly key for template {{answerId}}
+  question        String?
+  hint            String?
+  placeholder     String?
+  optional        Boolean  @default(false)
+
+  // For choice nodes: [{value, label, icon, nextNodeId}]
+  options         Json?
+  // For text/textarea: straight-line next
+  nextNodeId      String?  @map("next_node_id")
+
+  // Canvas position
+  posX            Float    @default(0) @map("pos_x")
+  posY            Float    @default(0) @map("pos_y")
+
+  // Only on terminal nodes — templates use {{answerId}} placeholders
+  subjectTemplate String?  @map("subject_template")
+  bodyTemplate    String?  @map("body_template")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([wizardId])
+  @@map("support_wizard_nodes")
+}

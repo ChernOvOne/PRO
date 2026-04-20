@@ -60,6 +60,7 @@ services:
       - ./data:/app/data
       - uploads_data:/app/uploads
       - ./.env:/app/.env
+      - ./data/backups:/app/data/backups
     networks:
       - hideyou_internal
       - hideyou_external
@@ -139,6 +140,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot:ro
       - nginx_logs:/var/log/nginx
     depends_on:
       - backend
@@ -147,11 +149,74 @@ services:
       - hideyou_internal
       - hideyou_external
 
+  # ── Updater sidecar ──────────────────────────────────────────
+  # Listens on Redis queue `update:queue` for update/rollback/backup jobs.
+  # Mounts the host repo, /etc/letsencrypt, uploads volume, and docker socket.
+  updater:
+    build:
+      context: ./updater
+      dockerfile: Dockerfile
+    container_name: hideyou_updater
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: postgresql://hideyou:${POSTGRES_PASSWORD}@postgres:5432/hideyou
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      NGINX_CONTAINER: hideyou_nginx
+      COMPOSE_PROJECT: lkhy
+      TG_BACKUP_TOKEN: ${TG_BACKUP_TOKEN:-}
+      TG_BACKUP_CHAT: ${TG_BACKUP_CHAT:-}
+      INTERNAL_HEALTH_URL: http://backend:4000
+      TZ: Europe/Moscow
+    volumes:
+      - /opt/pro/LKHY:/repo
+      - ./data/backups:/backups
+      - uploads_data:/uploads
+      - /etc/letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - hideyou_internal
+
+  # ── Certbot sidecar ──────────────────────────────────────────
+  # Listens on Redis queue `cert:queue` for {domain, role, email} jobs,
+  # issues Let's Encrypt cert via webroot, writes nginx vhost to
+  # /etc/nginx/conf.d/, then reloads nginx via docker exec.
+  # Also runs `certbot renew` every 12h.
+  certbot:
+    build:
+      context: ./certbot
+      dockerfile: Dockerfile
+    container_name: hideyou_certbot
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      NGINX_CONTAINER: hideyou_nginx
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-admin@example.com}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+      TZ: Europe/Moscow
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - certbot_webroot:/var/www/certbot
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hideyou_internal
+
 volumes:
   postgres_data:
   redis_data:
   uploads_data:
   nginx_logs:
+  certbot_webroot:
 
 networks:
   hideyou_internal:

@@ -7,8 +7,51 @@ import fastifySwagger   from '@fastify/swagger'
 import fastifySwaggerUi from '@fastify/swagger-ui'
 import { securityPlugin } from './security'
 import { config }         from '../config'
+import { prisma }         from '../db'
+
+/**
+ * Simple cache for maintenance mode flag to avoid hitting DB on every request.
+ * Invalidated after 2 seconds — plenty fast for admins to toggle, but cheap.
+ */
+let maintenanceCache: { active: boolean; message: string | null; expires: number } = {
+  active: false, message: null, expires: 0,
+}
+async function isInMaintenance() {
+  const now = Date.now()
+  if (now < maintenanceCache.expires) return maintenanceCache
+  try {
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['maintenance_mode', 'maintenance_message'] } },
+    })
+    const active = rows.find(r => r.key === 'maintenance_mode')?.value === '1'
+    const message = rows.find(r => r.key === 'maintenance_message')?.value || null
+    maintenanceCache = { active, message, expires: now + 2000 }
+  } catch {
+    // On DB errors, assume not in maintenance to avoid blocking traffic
+    maintenanceCache = { active: false, message: null, expires: now + 2000 }
+  }
+  return maintenanceCache
+}
 
 export async function registerPlugins(app: FastifyInstance) {
+  // ── Maintenance mode gate ────────────────────────────────
+  // Returns 503 on public/webhook/user endpoints when flag is set.
+  // Admin endpoints, health, and auth are always accessible so admin can
+  // monitor/disable the mode.
+  app.addHook('onRequest', async (req, reply) => {
+    const url = req.url
+    if (url === '/health' || url.startsWith('/api/admin/') || url.startsWith('/api/auth/')) {
+      return
+    }
+    const m = await isInMaintenance()
+    if (m.active) {
+      reply.status(503).send({
+        error: 'maintenance',
+        message: m.message || 'Платформа обновляется. Попробуйте позже.',
+      })
+    }
+  })
+
   // ── Security headers ─────────────────────────────────────
   await app.register(securityPlugin)
 

@@ -62,6 +62,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Коммуникации',
     items: [
       { href: '/admin/tickets',          icon: LifeBuoy,        label: 'Поддержка',     roles: ['ADMIN', 'EDITOR'] },
+      { href: '/admin/support-wizards',  icon: Workflow,        label: 'Визарды тикетов', roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/news',             icon: Newspaper,       label: 'Новости',       roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/broadcast',        icon: MessageCircle,   label: 'Рассылки',      roles: ['ADMIN', 'EDITOR'] },
       { href: '/admin/communications/funnel-builder', icon: MessageCircle, label: 'Воронки', roles: ['ADMIN', 'EDITOR'] },
@@ -78,6 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/landing/builder',  icon: Globe,           label: 'Лендинг',       roles: ['ADMIN'] },
       { href: '/admin/import',           icon: Upload,          label: 'Импорт',        roles: ['ADMIN'] },
       { href: '/admin/settings',         icon: Settings,        label: 'Настройки',     roles: ['ADMIN'] },
+      { href: '/admin/updates',          icon: Package,         label: 'Обновления',    roles: ['ADMIN'] },
     ],
   },
 ]

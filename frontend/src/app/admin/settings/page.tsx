@@ -433,6 +433,7 @@ export default function AdminSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('general')
+  const [showRestartDialog, setShowRestartDialog] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   // For roles tab
@@ -575,7 +576,14 @@ export default function AdminSettings() {
           <h1 className="text-2xl font-bold">Настройки</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>Параметры платформы</p>
         </div>
+        <button onClick={() => setShowRestartDialog(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}>
+          <RefreshCw className="w-3.5 h-3.5" /> Запустить визард настройки
+        </button>
       </div>
+
+      {showRestartDialog && <RestartWizardDialog onClose={() => setShowRestartDialog(false)} />}
 
       {/* Layout: tabs + content */}
       <div className="settings-layout" style={{ display: 'flex', gap: '1rem', minHeight: 600 }}>
@@ -994,6 +1002,311 @@ function RolesTab({ settings, update, adminUsers, adminsLoading, changeUserRole 
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════
+   Restart Wizard Dialog — choose keep-data vs wipe-all
+   ════════════════════════════════════════════════════════════ */
+
+interface ScopeItem {
+  key: string
+  label: string
+  description: string
+  defaultChecked: boolean
+}
+
+interface ScopeGroup {
+  title: string
+  icon: string
+  items: ScopeItem[]
+}
+
+const WIPE_GROUPS: ScopeGroup[] = [
+  {
+    title: 'Клиентские данные',
+    icon: '👥',
+    items: [
+      { key: 'users',        label: 'Пользователи (кроме тебя)', description: 'Также сессии, теги, переменные, уведомления, email-верификации', defaultChecked: true },
+      { key: 'payments',     label: 'Платежи и транзакции',      description: 'Платежи, баланс, реферальные начисления, webhook-платежи',      defaultChecked: true },
+      { key: 'tickets',      label: 'Тикеты поддержки',          description: 'Все обращения и переписка',                                     defaultChecked: true },
+      { key: 'giftSubs',     label: 'Подарочные подписки',       description: 'Все выданные gift-коды',                                        defaultChecked: true },
+    ],
+  },
+  {
+    title: 'Контент и маркетинг',
+    icon: '📣',
+    items: [
+      { key: 'news',         label: 'Новости',                  description: 'Все новостные записи', defaultChecked: true },
+      { key: 'broadcasts',   label: 'Рассылки',                 description: 'История массовых рассылок и получатели', defaultChecked: true },
+      { key: 'promos',       label: 'Промокоды',                description: 'Все промокоды и их использования', defaultChecked: true },
+    ],
+  },
+  {
+    title: 'Бухгалтерия',
+    icon: '📊',
+    items: [
+      { key: 'buhTransactions', label: 'Транзакции и кампании', description: 'Доходы, расходы, инкассации, рекламные кампании', defaultChecked: true },
+      { key: 'buhStructural',   label: 'Структура (категории/серверы/партнёры/SaaS)',  description: 'Настройки учёта — трогать только если хочешь пересобрать с нуля', defaultChecked: false },
+    ],
+  },
+  {
+    title: 'Конфигурация платформы',
+    icon: '⚙️',
+    items: [
+      { key: 'tariffs',         label: 'Тарифы',                description: 'Все тарифные планы — нужно будет создать заново', defaultChecked: false },
+      { key: 'funnels',         label: 'Воронки',               description: 'Все цепочки сообщений и логи воронок',            defaultChecked: false },
+      { key: 'botConstructor',  label: 'Конструктор бота',      description: 'Все блоки/кнопки/триггеры бота',                  defaultChecked: false },
+      { key: 'supportWizards',  label: 'Визарды тикетов',       description: 'Настроенные флоу создания тикетов',               defaultChecked: false },
+      { key: 'landing',         label: 'Лендинг',               description: 'Блоки лендинга из конструктора',                  defaultChecked: false },
+      { key: 'proxies',         label: 'Telegram-прокси',       description: 'Список добавленных прокси-серверов',              defaultChecked: false },
+    ],
+  },
+]
+
+const ALWAYS_KEEP = [
+  'Твой админ-аккаунт (чтобы войти обратно)',
+  'TLS-сертификаты доменов (certbot)',
+  'Настроенные домены (setup_domains) + nginx-конфиги',
+  'Инструкции по платформам',
+  'Миграции БД',
+  'Настройки (app_name, ключи API, SMTP и т.д.)',
+]
+
+function RestartWizardDialog({ onClose }: { onClose: () => void }) {
+  const [mode, setMode] = useState<'pick' | 'wipe-select' | 'wipe-confirm'>('pick')
+  const [confirmText, setConfirmText] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const [scopes, setScopes] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    WIPE_GROUPS.forEach(g => g.items.forEach(i => { initial[i.key] = i.defaultChecked }))
+    return initial
+  })
+
+  const toggleScope = (key: string) => setScopes(s => ({ ...s, [key]: !s[key] }))
+  const selectedCount = Object.values(scopes).filter(Boolean).length
+
+  const setAll = (value: boolean) => {
+    const next: Record<string, boolean> = {}
+    WIPE_GROUPS.forEach(g => g.items.forEach(i => { next[i.key] = value }))
+    setScopes(next)
+  }
+
+  const keepData = async () => {
+    setProcessing(true)
+    try {
+      const res = await fetch('/api/admin/setup/reset', {
+        method: 'POST', credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Ошибка')
+      window.location.href = '/admin/setup'
+    } catch (e: any) { alert(e.message || 'Ошибка'); setProcessing(false) }
+  }
+
+  const wipeSelected = async () => {
+    if (confirmText.trim() !== 'УДАЛИТЬ ВСЁ') {
+      alert('Нужно ввести точно: УДАЛИТЬ ВСЁ')
+      return
+    }
+    setProcessing(true)
+    try {
+      const res = await fetch('/api/admin/setup/wipe-and-reset', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'УДАЛИТЬ ВСЁ', scopes }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Ошибка')
+      }
+      window.location.href = '/admin/setup'
+    } catch (e: any) { alert(e.message || 'Ошибка'); setProcessing(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.6)' }}
+         onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+           style={{ background: 'var(--surface-1)', border: '1px solid var(--glass-border)' }}
+           onClick={e => e.stopPropagation()}>
+
+        {mode === 'pick' && (
+          <>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+              🚀 Перезапустить визард настройки
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Как хочешь перезапустить визард?
+            </p>
+
+            <div className="space-y-3">
+              <button onClick={keepData} disabled={processing}
+                      className="w-full text-left p-4 rounded-xl transition hover:brightness-110"
+                      style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">💾</span>
+                  <span className="font-semibold" style={{ color: '#22c55e' }}>Сохранить все данные</span>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Визард откроется заново, поля подтянутся из текущих настроек. Ничего не удаляется.
+                </p>
+              </button>
+
+              <button onClick={() => setMode('wipe-select')} disabled={processing}
+                      className="w-full text-left p-4 rounded-xl transition hover:brightness-110"
+                      style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">🗑️</span>
+                  <span className="font-semibold" style={{ color: '#ef4444' }}>Удалить выбранные данные</span>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Выберешь что именно удалить: клиентов, платежи, тикеты, новости…
+                  Конфигурацию (тарифы, воронки, бот, лендинг) можно сохранить.
+                </p>
+              </button>
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Отмена
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === 'wipe-select' && (
+          <>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold" style={{ color: '#ef4444' }}>
+                🗑️ Что удалить?
+              </h3>
+              <div className="flex gap-2">
+                <button onClick={() => setAll(true)}
+                        className="text-xs px-2 py-1 rounded"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  Выбрать всё
+                </button>
+                <button onClick={() => setAll(false)}
+                        className="text-xs px-2 py-1 rounded"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  Снять всё
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Отметь галочками что нужно удалить. Не отмеченное — останется без изменений.
+              По умолчанию выбраны только клиентские данные.
+            </p>
+
+            <div className="space-y-4">
+              {WIPE_GROUPS.map(group => (
+                <div key={group.title}>
+                  <div className="text-xs font-semibold uppercase tracking-wider mb-2"
+                       style={{ color: 'var(--text-tertiary)' }}>
+                    {group.icon} {group.title}
+                  </div>
+                  <div className="space-y-1">
+                    {group.items.map(item => (
+                      <label key={item.key}
+                             className="flex items-start gap-2 p-2 rounded-lg cursor-pointer hover:bg-white/5 transition">
+                        <input type="checkbox"
+                               className="mt-0.5"
+                               checked={scopes[item.key] || false}
+                               onChange={() => toggleScope(item.key)} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {item.label}
+                          </div>
+                          <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                            {item.description}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 rounded-lg text-xs"
+                 style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)' }}>
+              <strong style={{ color: '#22c55e' }}>Всегда сохраняется:</strong>
+              <ul className="mt-1 space-y-0.5" style={{ color: 'var(--text-secondary)' }}>
+                {ALWAYS_KEEP.map((x, i) => <li key={i}>• {x}</li>)}
+              </ul>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setMode('pick')}
+                      className="px-4 py-2 rounded-lg text-sm"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                Назад
+              </button>
+              <button onClick={() => setMode('wipe-confirm')} disabled={selectedCount === 0}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                      style={{ background: '#ef4444', color: 'white' }}>
+                Продолжить ({selectedCount}) →
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === 'wipe-confirm' && (
+          <>
+            <h3 className="text-lg font-semibold" style={{ color: '#ef4444' }}>
+              ⚠️ Финальное подтверждение
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Выбрано к удалению: <strong>{selectedCount}</strong> категорий данных.
+              Это действие <strong>необратимо</strong>.
+            </p>
+            <div className="p-3 rounded-lg text-xs max-h-40 overflow-y-auto"
+                 style={{ background: 'var(--surface-2)', color: 'var(--text-tertiary)' }}>
+              <strong style={{ color: '#ef4444' }}>Будет удалено:</strong>
+              <ul className="mt-1 space-y-0.5">
+                {WIPE_GROUPS.flatMap(g => g.items).filter(i => scopes[i.key]).map(i => (
+                  <li key={i.key}>• {i.label}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Для подтверждения введи фразу: <code className="font-mono px-1 py-0.5 rounded"
+                                                      style={{ background: 'var(--surface-2)', color: '#ef4444' }}>
+                  УДАЛИТЬ ВСЁ
+                </code>
+              </label>
+              <input type="text"
+                     className="w-full px-3 py-2 rounded-lg text-sm"
+                     style={{
+                       background: 'var(--surface-2)',
+                       border: '1px solid var(--glass-border)',
+                       color: 'var(--text-primary)',
+                     }}
+                     value={confirmText}
+                     onChange={e => setConfirmText(e.target.value)}
+                     placeholder="УДАЛИТЬ ВСЁ"
+                     autoFocus />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setMode('wipe-select')}
+                      className="px-4 py-2 rounded-lg text-sm"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                Назад
+              </button>
+              <button onClick={wipeSelected}
+                      disabled={processing || confirmText.trim() !== 'УДАЛИТЬ ВСЁ'}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+                      style={{ background: '#ef4444', color: 'white' }}>
+                {processing ? 'Удаляем...' : `Удалить (${selectedCount})`}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

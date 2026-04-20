@@ -1,0 +1,10 @@
+{
+  "name": "hideyou-updater",
+  "version": "1.0.0",
+  "description": "HIDEYOU platform updater sidecar — GitHub release installs, backups, rollbacks",
+  "main": "worker.js",
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "pg": "^8.12.0"
+  }
+}

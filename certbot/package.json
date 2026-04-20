@@ -1,0 +1,9 @@
+{
+  "name": "hideyou-certbot-worker",
+  "version": "1.0.0",
+  "description": "Certbot sidecar — issues TLS certs + writes nginx configs on demand",
+  "main": "worker.js",
+  "dependencies": {
+    "ioredis": "^5.4.1"
+  }
+}

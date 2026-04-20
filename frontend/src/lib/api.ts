@@ -661,4 +661,141 @@ export const adminApi = {
   deleteBotTrigger: (id: string) =>
     apiFetch<void>(`/admin/bot-blocks/triggers/${id}`, { method: 'DELETE' }),
   botBlockStats: () => apiFetch<any>('/admin/bot-blocks/stats'),
+
+  // ── Support Wizards ─────────────────────────────────────────
+  listSupportWizards: () =>
+    apiFetch<any[]>('/admin/support/wizards'),
+  getSupportWizard: (id: string) =>
+    apiFetch<any>(`/admin/support/wizards/${id}`),
+  createSupportWizard: (data: any) =>
+    apiFetch<any>('/admin/support/wizards', { method: 'POST', body: JSON.stringify(data) }),
+  updateSupportWizard: (id: string, data: any) =>
+    apiFetch<any>(`/admin/support/wizards/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSupportWizard: (id: string) =>
+    apiFetch<void>(`/admin/support/wizards/${id}`, { method: 'DELETE' }),
+
+  createSupportWizardNode: (wizardId: string, data: any) =>
+    apiFetch<any>(`/admin/support/wizards/${wizardId}/nodes`, { method: 'POST', body: JSON.stringify(data) }),
+  updateSupportWizardNode: (wizardId: string, nodeId: string, data: any) =>
+    apiFetch<any>(`/admin/support/wizards/${wizardId}/nodes/${nodeId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSupportWizardNode: (wizardId: string, nodeId: string) =>
+    apiFetch<void>(`/admin/support/wizards/${wizardId}/nodes/${nodeId}`, { method: 'DELETE' }),
+  saveSupportWizardPositions: (wizardId: string, positions: Array<{ id: string; posX: number; posY: number }>) =>
+    apiFetch<{ ok: true }>(`/admin/support/wizards/${wizardId}/positions`, {
+      method: 'PUT',
+      body: JSON.stringify({ positions }),
+    }),
+
+  /* ── Setup wizard v2 ───────────────────────────────────────── */
+  setupBootstrap: () =>
+    apiFetch<{ hasAdmin: boolean; completed: boolean; publicIp: string | null }>('/admin/setup/bootstrap'),
+  setupCreateFirstAdmin: (data: { email: string; password: string }) =>
+    apiFetch<{ ok: true; userId: string }>('/admin/setup/create-first-admin', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  setupGetProgress: () =>
+    apiFetch<{ progress: any; completed: boolean }>('/admin/setup/progress'),
+  setupSaveProgress: (progress: any) =>
+    apiFetch<{ ok: true }>('/admin/setup/progress', { method: 'PUT', body: JSON.stringify({ progress }) }),
+  setupComplete: () =>
+    apiFetch<{ ok: true }>('/admin/setup/complete', { method: 'POST' }),
+  setupReset: () =>
+    apiFetch<{ ok: true }>('/admin/setup/reset', { method: 'POST' }),
+  setupWipeAndReset: (data: { confirm: string; scopes: Record<string, boolean> }) =>
+    apiFetch<{ ok: true; message: string; tablesWiped: number }>('/admin/setup/wipe-and-reset', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /* ── Webhook API keys & payment ingest ─────────────────────── */
+  listWebhookKeys: () =>
+    apiFetch<any[]>('/admin/webhooks/keys'),
+  createWebhookKey: (name: string) =>
+    apiFetch<any>('/admin/webhooks/keys', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteWebhookKey: (id: string) =>
+    apiFetch<void>(`/admin/webhooks/keys/${id}`, { method: 'DELETE' }),
+  activateWebhookKey: (id: string) =>
+    apiFetch<any>(`/admin/webhooks/keys/${id}/activate`, { method: 'POST' }),
+  listWebhookPayments: (params: { page?: number; limit?: number; apiKeyId?: string } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.page) qs.set('page', String(params.page))
+    if (params.limit) qs.set('limit', String(params.limit))
+    if (params.apiKeyId) qs.set('apiKeyId', params.apiKeyId)
+    return apiFetch<{ items: any[]; total: number; page: number; limit: number }>(
+      `/admin/webhooks/payments?${qs}`)
+  },
+  getWebhookPayment: (id: string) =>
+    apiFetch<any>(`/admin/webhooks/payments/${id}`),
+  sendTestWebhook: (keyId: string) =>
+    apiFetch<{ ok: boolean; status: number; response: any; sentPayload: any }>('/admin/webhooks/test', {
+      method: 'POST', body: JSON.stringify({ keyId }),
+    }),
+
+  /* ── Platform updates ──────────────────────────────────── */
+  updatesStatus: () =>
+    apiFetch<{
+      current: { sha: string | null; tag: string | null }
+      latest: any
+      available: Array<{ tag: string; name: string; body: string; publishedAt: string; prerelease: boolean; htmlUrl: string }>
+      maintenance: boolean
+    }>('/admin/updates/status'),
+  updatesCheck: () =>
+    apiFetch<{ ok: true }>('/admin/updates/check', { method: 'POST' }),
+  updatesInstall: (tag: string) =>
+    apiFetch<{ ok: true; eventId: string }>('/admin/updates/install', {
+      method: 'POST', body: JSON.stringify({ tag }),
+    }),
+  updatesRollback: (backupId: string) =>
+    apiFetch<{ ok: true; eventId: string }>(`/admin/updates/rollback/${backupId}`, { method: 'POST' }),
+  updatesHistory: () =>
+    apiFetch<any[]>('/admin/updates/history'),
+  updatesMaintenance: (data: { enabled: boolean; message?: string }) =>
+    apiFetch<{ ok: true }>('/admin/updates/maintenance', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  backupsList: () =>
+    apiFetch<any[]>('/admin/updates/backups'),
+  backupsCreate: () =>
+    apiFetch<{ ok: true; eventId: string }>('/admin/updates/backups', { method: 'POST' }),
+  backupsDelete: (id: string) =>
+    apiFetch<void>(`/admin/updates/backups/${id}`, { method: 'DELETE' }),
+
+  setupListDomains: () =>
+    apiFetch<any[]>('/admin/setup/domains'),
+  setupCheckDns: (domain: string) =>
+    apiFetch<{ resolved: string[]; publicIp: string | null; matches: boolean; error?: string }>('/admin/setup/check-dns', {
+      method: 'POST', body: JSON.stringify({ domain }),
+    }),
+  setupAddDomain: (data: { domain: string; role: string; email?: string }) =>
+    apiFetch<any>('/admin/setup/domain', { method: 'POST', body: JSON.stringify(data) }),
+  setupRetryDomain: (id: string) =>
+    apiFetch<{ ok: true }>(`/admin/setup/domain/${id}/retry`, { method: 'POST' }),
+  setupDeleteDomain: (id: string) =>
+    apiFetch<{ ok: true }>(`/admin/setup/domain/${id}`, { method: 'DELETE' }),
+
+  setupPreview: (data: any) =>
+    apiFetch<any>('/admin/setup/preview', { method: 'POST', body: JSON.stringify(data) }),
+
+  setupTestRemnawave: (data: { url: string; token: string }) =>
+    apiFetch<{ ok: boolean; status?: number; error?: string }>('/admin/setup/test-remnawave', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  setupTestYukassa: (data: { shopId: string; secretKey: string }) =>
+    apiFetch<{ ok: boolean; status?: number; error?: string }>('/admin/setup/test-yukassa', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  setupTestBot: (data: { token: string }) =>
+    apiFetch<{ ok: boolean; username?: string; error?: string }>('/admin/setup/test-bot', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  /* ── Settings bulk helper for wizard ────────────────────────── */
+  saveSettingsRecord: (settings: Record<string, any>) =>
+    apiFetch<{ ok: true }>('/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        settings: Object.entries(settings).map(([key, value]) => ({ key, value: String(value ?? '') })),
+      }),
+    }),
 }
