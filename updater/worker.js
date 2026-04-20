@@ -292,22 +292,31 @@ async function runInstall(job) {
       'build', 'backend', 'frontend', 'bot',
     ], line => emit(eventId, 'build', line).catch(() => {}))
 
-    // 4. Apply DB migrations
+    // 4. Apply DB migrations.
+    // We're tolerant here: if the backend image was bumped, migrate deploy
+    // might see pre-existing rows for migrations that were applied manually
+    // during development (common on long-lived DBs). We log warnings but
+    // continue — if a real schema mismatch happens, backend healthcheck will
+    // catch it and trigger rollback.
     await emit(eventId, 'migrate', 'Применяю миграции БД…')
     await updateEventRow(eventId, { phase: 'migrate' })
     try {
       sh(`docker exec hideyou_backend npx prisma migrate deploy`)
+      await emit(eventId, 'migrate', 'Миграции применены')
     } catch (e) {
-      // Migrations may fail on failed-migration state; log and continue (restore will handle it)
-      await emit(eventId, 'migrate', `WARN: migrate failed: ${String(e.message).slice(0, 200)}`)
+      const msg = String(e.message || e).slice(0, 400)
+      await emit(eventId, 'migrate', `WARN: ${msg} — продолжаю (healthcheck поймает проблему)`)
     }
 
     // 5. Deploy
     await emit(eventId, 'deploy', 'Перезапуск сервисов…')
     await updateEventRow(eventId, { phase: 'deploy' })
+    // --no-deps: don't touch postgres/redis even if their config is drifted;
+    // --force-recreate: we want fresh containers for the services we rebuilt.
     await shStream('docker', [
       'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
-      'up', '-d', 'backend', 'frontend', 'bot', 'nginx',
+      'up', '-d', '--no-deps', '--force-recreate',
+      'backend', 'frontend', 'bot', 'nginx',
     ], line => emit(eventId, 'deploy', line).catch(() => {}))
 
     // 6. Health check
@@ -391,7 +400,8 @@ async function restoreFromBackupId(backupId, eventId) {
   await emit(eventId, 'restore-up', 'Запуск сервисов…')
   await shStream('docker', [
     'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
-    'up', '-d', 'backend', 'frontend', 'bot', 'nginx',
+    'up', '-d', '--no-deps', '--force-recreate',
+    'backend', 'frontend', 'bot', 'nginx',
   ], line => emit(eventId, 'restore-up', line).catch(() => {}))
 
   await emit(eventId, 'restore-health', 'Проверка…')
