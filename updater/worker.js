@@ -288,7 +288,7 @@ async function runInstall(job) {
     // 3. Build images (excludes updater and certbot for self-safety)
     await emit(eventId, 'build', 'Сборка Docker-образов…')
     await shStream('docker', [
-      'compose', '-f', `${REPO_DIR}/docker-compose.yml`,
+      'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
       'build', 'backend', 'frontend', 'bot',
     ], line => emit(eventId, 'build', line).catch(() => {}))
 
@@ -306,7 +306,7 @@ async function runInstall(job) {
     await emit(eventId, 'deploy', 'Перезапуск сервисов…')
     await updateEventRow(eventId, { phase: 'deploy' })
     await shStream('docker', [
-      'compose', '-f', `${REPO_DIR}/docker-compose.yml`,
+      'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
       'up', '-d', 'backend', 'frontend', 'bot', 'nginx',
     ], line => emit(eventId, 'deploy', line).catch(() => {}))
 
@@ -384,13 +384,13 @@ async function restoreFromBackupId(backupId, eventId) {
 
   await emit(eventId, 'restore-build', 'Пересборка образов к состоянию бэкапа…')
   await shStream('docker', [
-    'compose', '-f', `${REPO_DIR}/docker-compose.yml`,
+    'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
     'build', 'backend', 'frontend', 'bot',
   ], line => emit(eventId, 'restore-build', line).catch(() => {}))
 
   await emit(eventId, 'restore-up', 'Запуск сервисов…')
   await shStream('docker', [
-    'compose', '-f', `${REPO_DIR}/docker-compose.yml`,
+    'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
     'up', '-d', 'backend', 'frontend', 'bot', 'nginx',
   ], line => emit(eventId, 'restore-up', line).catch(() => {}))
 
