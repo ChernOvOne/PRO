@@ -955,29 +955,71 @@ export async function adminRoutes(app: FastifyInstance) {
     return { payments: enriched, total }
   })
 
-  // ── Refund payment via YuKassa API ──────────────────────
+  // ── Refund payment — routed by provider ─────────────────
+  // YUKASSA — has refund API, does it automatically
+  // CRYPTOPAY — no refund API, admin must transfer crypto back manually
+  // PLATEGA — no refund API, refund done in Platega merchant panel
+  // BALANCE  — credits back to user balance
+  //
+  // For providers without API support, this endpoint marks payment as
+  // REFUNDED / PARTIAL_REFUND in our DB and rolls back the subscription,
+  // but does NOT actually move money — admin is responsible for that.
+  //
+  // Body: { amount?: number, manual?: boolean }
+  // manual=true forces DB-only marking even if provider has API support.
   app.post('/payments/:id/refund', admin, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const { amount } = (req.body || {}) as { amount?: number }
+    const body = (req.body || {}) as { amount?: number; manual?: boolean }
 
     const payment = await prisma.payment.findUnique({ where: { id }, include: { user: true, tariff: true } })
     if (!payment) return reply.status(404).send({ error: 'Платёж не найден' })
     if (payment.status !== 'PAID') return reply.status(400).send({ error: 'Возврат возможен только для оплаченных платежей' })
-    if (!payment.yukassaPaymentId) return reply.status(400).send({ error: 'Нет ID платежа ЮKassa — возврат невозможен' })
+
+    const gross = payment.amount + Number(payment.commission || 0)
+    const refundAmount = body.amount || gross
 
     try {
-      const { paymentService } = await import('../services/payment')
-      const { remnawave } = await import('../services/remnawave')
-      const gross = payment.amount + Number(payment.commission || 0)
-      const refundAmount = amount || gross
+      const { paymentService, handleSubscriptionRefund } = await import('../services/payment')
 
-      const refund = await paymentService.yukassa.createRefund(
-        payment.yukassaPaymentId,
-        refundAmount,
-      )
+      let refundId: string | null = null
+      let refundAmt = refundAmount
+      let isFullRefund = refundAmt >= gross - 0.01
+      let message: string | null = null
 
-      const refundAmt = parseFloat(refund.amount.value)
-      const isFullRefund = refundAmt >= gross - 0.01
+      // ── Route by provider ──────────────────────────────────
+      if (payment.provider === 'YUKASSA' && !body.manual) {
+        if (!payment.yukassaPaymentId) {
+          return reply.status(400).send({ error: 'Нет ID платежа ЮKassa — возврат невозможен' })
+        }
+        const refund = await paymentService.yukassa.createRefund(
+          payment.yukassaPaymentId,
+          refundAmount,
+        )
+        refundId = refund.id
+        refundAmt = parseFloat(refund.amount.value)
+        isFullRefund = refundAmt >= gross - 0.01
+      } else if (payment.provider === 'BALANCE') {
+        if (!payment.userId) {
+          return reply.status(400).send({ error: 'Нет userId у платежа — возврат на баланс невозможен' })
+        }
+        const { balanceService } = await import('../services/balance')
+        await balanceService.credit({
+          userId:      payment.userId,
+          amount:      refundAmt,
+          type:        'REFUND',
+          description: `Возврат: платёж ${payment.id.slice(0, 8)}`,
+          paymentId:   payment.id,
+        })
+        message = 'Средства возвращены на баланс клиента'
+      } else {
+        // PLATEGA / CRYPTOPAY / manual flag — DB-only marking.
+        // Admin must process the actual refund out-of-band.
+        const hint =
+          payment.provider === 'PLATEGA'  ? 'Выполни возврат вручную в ЛК Platega (https://app.platega.io). В нашей БД платёж помечен как возвращённый.' :
+          payment.provider === 'CRYPTOPAY' ? 'CryptoPay не поддерживает возврат через API. Переведи сумму обратно клиенту вручную. В БД платёж помечен как возвращённый.' :
+          'Платёж помечен возвращённым в БД. Проведи возврат вручную.'
+        message = hint
+      }
 
       await prisma.payment.update({
         where: { id },
@@ -988,18 +1030,23 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       })
 
-      // Delegate subscription rollback to shared helper — rolls back days,
-      // updates status, recomputes currentPlan from latest remaining payment,
-      // syncs REMNAWAVE expireAt. Full refund only.
+      // Rollback subscription days + currentPlan regardless of provider
       try {
-        const { handleSubscriptionRefund } = await import('../services/payment')
         await handleSubscriptionRefund(payment.id, isFullRefund)
       } catch (e: any) {
         logger.warn(`Refund rollback failed for ${payment.id}: ${e?.message}`)
       }
 
-      logger.info(`Refund created for payment ${id}: amount=${refundAmt}, full=${isFullRefund}`)
-      return { ok: true, refundId: refund.id, amount: refundAmt, status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND' }
+      logger.info(`Refund processed for payment ${id}: provider=${payment.provider} amount=${refundAmt} full=${isFullRefund} manual=${!refundId}`)
+      return {
+        ok: true,
+        refundId,
+        amount: refundAmt,
+        status: isFullRefund ? 'REFUNDED' : 'PARTIAL_REFUND',
+        provider: payment.provider,
+        manual: !refundId,
+        message,
+      }
     } catch (err: any) {
       logger.error(`Refund failed for payment ${id}: ${err?.message}`)
       const msg = err?.response?.data?.description || err?.message || 'Ошибка возврата'

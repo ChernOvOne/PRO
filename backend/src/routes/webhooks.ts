@@ -166,4 +166,67 @@ export async function webhookRoutes(app: FastifyInstance) {
       return reply.status(200).send({ ok: true })
     }
   })
+
+  // ── Platega.io webhook ─────────────────────────────────────
+  // X-Secret static header auth. Body: { id, amount, currency, status, paymentMethod, payload }.
+  // Since the secret is shared, we also re-fetch transaction status before confirming.
+  app.post('/platega', async (req, reply) => {
+    try {
+      const headerSecret = req.headers['x-secret'] as string | undefined
+      const ok = await paymentService.platega.verifyWebhookSecret(headerSecret)
+      if (!ok) {
+        logger.warn('Platega webhook: invalid X-Secret header')
+        return reply.status(401).send({ error: 'Invalid secret' })
+      }
+
+      const body = req.body as any
+      const txId   = body.id
+      const status = body.status
+      const orderId = body.payload
+
+      if (!txId || !orderId) {
+        logger.warn('Platega webhook: missing id or payload')
+        return reply.status(200).send({ ok: true })
+      }
+
+      // Re-verify via API call — X-Secret is shared and could leak
+      const verified = await paymentService.platega.getTransaction(txId).catch(() => null)
+      if (!verified) {
+        logger.warn(`Platega webhook: transaction ${txId} not found in API`)
+        return reply.status(200).send({ ok: true })
+      }
+
+      const payment = await prisma.payment.findFirst({
+        where: {
+          OR: [{ id: orderId }, { providerOrderId: txId }],
+          provider: 'PLATEGA',
+        },
+      })
+      if (!payment) {
+        logger.warn(`Platega webhook: payment not found orderId=${orderId}`)
+        return reply.status(200).send({ ok: true })
+      }
+
+      if (verified.status === 'CONFIRMED' && payment.status !== 'PAID') {
+        // Verify amount matches what we created
+        if (Number(verified.paymentDetails?.amount) !== Number(payment.amount)) {
+          logger.error(`Platega amount mismatch: api=${verified.paymentDetails?.amount} db=${payment.amount}`)
+          return reply.status(200).send({ ok: true })
+        }
+        await paymentService.confirmPayment(payment.id)
+        logger.info(`Platega payment confirmed: ${payment.id}`)
+      } else if (verified.status === 'CANCELED' || verified.status === 'CHARGEBACKED') {
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: 'FAILED' },
+        })
+        logger.info(`Platega payment ${verified.status.toLowerCase()}: ${payment.id}`)
+      }
+
+      return reply.status(200).send({ ok: true })
+    } catch (err) {
+      logger.error('Platega webhook error:', err)
+      return reply.status(200).send({ ok: true })
+    }
+  })
 }

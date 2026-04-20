@@ -64,7 +64,10 @@ export default function DashboardPage() {
   const [showRevoke, setShowRevoke]     = useState(false)
   const [showTariffs, setShowTariffs]   = useState(false)
   const [payTariff, setPayTariff]       = useState<any>(null)
-  const [provider, setProvider]         = useState<'YUKASSA' | 'CRYPTOPAY' | 'BALANCE'>('YUKASSA')
+  const [provider, setProvider]         = useState<'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA' | 'BALANCE'>('YUKASSA')
+  // Payment providers fetched once from backend (/api/public/payment-methods).
+  // Empty array means we'll fall back to legacy YUKASSA+CRYPTOPAY hardcoded list.
+  const [enabledProviders, setEnabledProviders] = useState<Array<{ id: string; label: string; icon: string; meta?: any }>>([])
   const [paying, setPaying]             = useState(false)
   const [revoking, setRevoking]         = useState(false)
   const [devices, setDevices]           = useState<any[]>([])
@@ -75,7 +78,7 @@ export default function DashboardPage() {
 
   /* ── gift modal ── */
   const [giftTariff, setGiftTariff]           = useState<any>(null)
-  const [giftProvider, setGiftProvider]       = useState<'YUKASSA' | 'CRYPTOPAY' | 'BALANCE'>('YUKASSA')
+  const [giftProvider, setGiftProvider]       = useState<'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA' | 'BALANCE'>('YUKASSA')
   const [giftPaying, setGiftPaying]           = useState(false)
   const [giftLink, setGiftLink]               = useState<string | null>(null)
 
@@ -85,7 +88,7 @@ export default function DashboardPage() {
   const [redeemDays, setRedeemDays]     = useState(1)
   const [redeeming, setRedeeming]       = useState(false)
   const [topupAmount, setTopupAmount]   = useState(100)
-  const [topupProvider, setTopupProvider] = useState<'YUKASSA' | 'CRYPTOPAY'>('YUKASSA')
+  const [topupProvider, setTopupProvider] = useState<'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA'>('YUKASSA')
 
   /* ── bonus days modal ── */
   const [showBonusRedeem, setShowBonusRedeem] = useState(false)
@@ -124,8 +127,10 @@ export default function DashboardPage() {
       fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json()).catch(() => []),
       fetch('/api/public/config').then(r => r.json()).catch(() => ({})),
       fetch('/api/user/promo/active-discount', { credentials: 'include' }).then(r => r.json()).catch(() => null),
-    ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg, disc]) => {
+      fetch('/api/public/payment-methods').then(r => r.json()).catch(() => ({ providers: [] })),
+    ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg, disc, pm]) => {
       setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setMyGifts(Array.isArray(gifts) ? gifts : []); setConfig(cfg || {}); if (disc?.active) setActiveDiscount(disc)
+      setEnabledProviders(pm?.providers || [])
     }).finally(() => setLoading(false))
 
     // Load activity history separately
@@ -218,10 +223,15 @@ export default function DashboardPage() {
           window.location.reload()
         }
       } else {
+        const pMeta = enabledProviders.find(p => p.id === provider)?.meta
         const res = await fetch('/api/payments/create', {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tariffId: payTariff.id, provider, ...extra }),
+          body: JSON.stringify({
+            tariffId: payTariff.id, provider,
+            ...(provider === 'PLATEGA' && pMeta?.paymentMethod ? { paymentMethod: pMeta.paymentMethod } : {}),
+            ...extra,
+          }),
         })
         const d = await res.json()
         if (d.paymentUrl) window.location.href = d.paymentUrl
@@ -237,10 +247,14 @@ export default function DashboardPage() {
       return
     }
     try {
+      const pMeta = enabledProviders.find(p => p.id === topupProvider)?.meta
       const res = await fetch('/api/user/balance/topup', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: topupAmount, provider: topupProvider }),
+        body: JSON.stringify({
+          amount: topupAmount, provider: topupProvider,
+          ...(topupProvider === 'PLATEGA' && pMeta?.paymentMethod ? { paymentMethod: pMeta.paymentMethod } : {}),
+        }),
       })
       const d = await res.json()
       if (d.paymentUrl) window.location.href = d.paymentUrl
@@ -252,10 +266,14 @@ export default function DashboardPage() {
     if (!giftTariff) return
     setGiftPaying(true)
     try {
+      const gMeta = enabledProviders.find(p => p.id === giftProvider)?.meta
       const res = await fetch('/api/gifts/create', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tariffId: giftTariff.id, provider: giftProvider }),
+        body: JSON.stringify({
+          tariffId: giftTariff.id, provider: giftProvider,
+          ...(giftProvider === 'PLATEGA' && gMeta?.paymentMethod ? { paymentMethod: gMeta.paymentMethod } : {}),
+        }),
       })
       const d = await res.json()
       if (giftProvider === 'BALANCE') {
@@ -1623,16 +1641,26 @@ export default function DashboardPage() {
 
               {/* ── Payment: compact inline ── */}
               <div className="pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
-                <div className="flex gap-1.5 mb-3">
-                  {([
-                    { key: 'YUKASSA' as const, top: 'ЮKassa', bottom: 'Карта · СБП' },
-                    { key: 'CRYPTOPAY' as const, top: 'CryptoPay', bottom: 'TON · USDT' },
-                    { key: 'BALANCE' as const, top: 'Баланс', bottom: `${(balance?.balance ?? 0).toFixed(0)}₽` },
-                  ]).map(p => {
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {(() => {
+                    const list: Array<{ key: string; top: string; bottom: string; meta?: any }> =
+                      enabledProviders.length > 0
+                        ? enabledProviders.map(p => ({
+                            key: p.id,
+                            top: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
+                            bottom: p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
+                            meta: p.meta,
+                          }))
+                        : [
+                            { key: 'YUKASSA', top: 'ЮKassa', bottom: 'Карта · СБП' },
+                            { key: 'CRYPTOPAY', top: 'CryptoPay', bottom: 'TON · USDT' },
+                          ]
+                    list.push({ key: 'BALANCE', top: 'Баланс', bottom: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    return list.map(p => {
                     const active = provider === p.key
                     return (
-                      <button key={p.key} onClick={() => setProvider(p.key)}
-                              className="flex-1 py-2.5 rounded-xl text-center transition-all"
+                      <button key={p.key} onClick={() => setProvider(p.key as any)}
+                              className="flex-1 min-w-[90px] py-2.5 rounded-xl text-center transition-all"
                               style={{
                                 background: active ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
                                 border: `1px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
@@ -1642,7 +1670,8 @@ export default function DashboardPage() {
                         <p className="text-[9px]" style={{color: active ? 'var(--accent-1)' : 'var(--text-tertiary)'}}>{p.bottom}</p>
                       </button>
                     )
-                  })}
+                  })
+                  })()}
                 </div>
                 <button onClick={handleBuy} disabled={paying}
                         className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all"
@@ -1675,13 +1704,18 @@ export default function DashboardPage() {
 
             <div>
               <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Способ оплаты</p>
-              <div className="flex gap-2">
-                {([
-                  { key: 'YUKASSA' as const, label: 'ЮKassa', sub: 'Карта / СБП', icon: <CreditCard className="w-4 h-4" /> },
-                  { key: 'CRYPTOPAY' as const, label: 'CryptoPay', sub: 'USDT / BTC', icon: <Wallet className="w-4 h-4" /> },
-                ]).map(p => (
-                  <button key={p.key} onClick={() => setTopupProvider(p.key)}
-                          className="flex-1 p-3 rounded-xl text-left transition-all duration-200"
+              <div className="flex flex-wrap gap-2">
+                {(enabledProviders.length > 0 ? enabledProviders.map(p => ({
+                    key: p.id,
+                    label: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
+                    sub:   p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
+                    icon: p.icon === 'bitcoin' ? <Wallet className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />,
+                  })) : [
+                    { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта / СБП', icon: <CreditCard className="w-4 h-4" /> },
+                    { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'USDT / BTC', icon: <Wallet className="w-4 h-4" /> },
+                  ]).map(p => (
+                  <button key={p.key} onClick={() => setTopupProvider(p.key as any)}
+                          className="flex-1 min-w-[120px] p-3 rounded-xl text-left transition-all duration-200"
                           style={{
                             background: topupProvider === p.key ? 'rgba(6,182,212,0.08)' : 'var(--glass-bg)',
                             border: `1.5px solid ${topupProvider === p.key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
@@ -1825,16 +1859,25 @@ export default function DashboardPage() {
 
               {/* Payment — same style as tariffs */}
               <div className="pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
-                <div className="flex gap-1.5 mb-3">
-                  {([
-                    { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта · СБП' },
-                    { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'TON · USDT' },
-                    { key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)}₽` },
-                  ] as const).map(p => {
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {(() => {
+                    const list: Array<{ key: string; label: string; sub: string }> =
+                      enabledProviders.length > 0
+                        ? enabledProviders.map(p => ({
+                            key: p.id,
+                            label: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
+                            sub:   p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label,
+                          }))
+                        : [
+                            { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта · СБП' },
+                            { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'TON · USDT' },
+                          ]
+                    list.push({ key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    return list.map(p => {
                     const active = giftProvider === p.key
                     return (
-                      <button key={p.key} onClick={() => setGiftProvider(p.key)}
-                              className="flex-1 py-2.5 rounded-xl text-center transition-all"
+                      <button key={p.key} onClick={() => setGiftProvider(p.key as any)}
+                              className="flex-1 min-w-[90px] py-2.5 rounded-xl text-center transition-all"
                               style={{
                                 background: active ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
                                 border: `1px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
@@ -1843,7 +1886,8 @@ export default function DashboardPage() {
                         <p className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{p.sub}</p>
                       </button>
                     )
-                  })}
+                  })
+                  })()}
                 </div>
                 <button onClick={handleGiftBuy} disabled={giftPaying}
                         className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all"

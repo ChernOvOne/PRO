@@ -26,6 +26,59 @@ export async function publicRoutes(app: FastifyInstance) {
     referralBonusDays: config.referral.bonusDays,
   }))
 
+  // Available payment providers for the checkout UI.
+  // Only returns providers that are BOTH toggled on AND have credentials.
+  app.get('/payment-methods', async () => {
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: [
+        'yukassa_enabled', 'yukassa_shop_id', 'yukassa_secret',
+        'crypto_enabled', 'crypto_token',
+        'platega_enabled', 'platega_merchant_id', 'platega_secret', 'platega_payment_method',
+        'balance_payments_enabled',
+      ] } },
+    })
+    const s: Record<string, string> = {}
+    rows.forEach(r => { s[r.key] = r.value })
+
+    const providers: Array<{ id: string; label: string; icon: string; meta?: any }> = []
+
+    // Toggle rows may store "1"/"0" (numeric wizard) or "true"/"false" (admin settings UI)
+    const isOn = (v: string | undefined) => v === '1' || v === 'true'
+
+    // Back-compat: if the toggle row is missing, fall back to env-driven config flag
+    const yukassaOn = s.yukassa_enabled != null ? isOn(s.yukassa_enabled) : config.yukassa.enabled
+    if (yukassaOn && (s.yukassa_shop_id || config.yukassa.enabled)) {
+      providers.push({ id: 'YUKASSA', label: 'Карта / СБП', icon: 'credit-card' })
+    }
+
+    const cryptoOn = s.crypto_enabled != null ? isOn(s.crypto_enabled) : config.cryptopay.enabled
+    if (cryptoOn && (s.crypto_token || config.cryptopay.enabled)) {
+      providers.push({ id: 'CRYPTOPAY', label: 'Крипта (USDT/TON/BTC)', icon: 'bitcoin' })
+    }
+
+    if (isOn(s.platega_enabled) && s.platega_merchant_id && s.platega_secret) {
+      const methodMap: Record<string, string> = {
+        '2':  'СБП QR',
+        '3':  'ЕРИП',
+        '11': 'Карта',
+        '12': 'International',
+        '13': 'Крипта',
+      }
+      const pm = s.platega_payment_method || '2'
+      providers.push({
+        id: 'PLATEGA',
+        label: `Platega · ${methodMap[pm] || 'Оплата'}`,
+        icon: 'credit-card',
+        meta: { paymentMethod: Number(pm) },
+      })
+    }
+
+    return {
+      providers,
+      balanceEnabled: s.balance_payments_enabled === '1',
+    }
+  })
+
   // Check referral code validity
   app.get('/referral/:code', async (req, reply) => {
     const { code } = req.params as { code: string }

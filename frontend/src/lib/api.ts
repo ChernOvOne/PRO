@@ -175,8 +175,11 @@ export const promoApi = {
 export const paymentsApi = {
   create: (params: {
     tariffId: string
-    provider: 'YUKASSA' | 'CRYPTOPAY'
+    provider: 'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA'
     currency?: 'USDT' | 'TON' | 'BTC'
+    paymentMethod?: number
+    variantIndex?: number
+    config?: { trafficGb?: number; days?: number; devices?: number }
   }) => apiFetch<CreatePaymentResponse>('/payments/create', {
     method: 'POST', body: JSON.stringify(params),
   }),
@@ -184,6 +187,11 @@ export const paymentsApi = {
     apiFetch<Payment>(`/payments/status/${orderId}`),
   verify: (orderId: string) =>
     apiFetch<{ confirmed: boolean }>(`/payments/verify/${orderId}`, { method: 'POST' }),
+  listMethods: () =>
+    apiFetch<{
+      providers: Array<{ id: string; label: string; icon: string; meta?: any }>
+      balanceEnabled: boolean
+    }>('/public/payment-methods'),
 }
 
 // ── Admin ─────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ export async function registerPlugins(app: FastifyInstance) {
   // monitor/disable the mode.
   app.addHook('onRequest', async (req, reply) => {
     const url = req.url
-    if (url === '/health' || url.startsWith('/api/admin/') || url.startsWith('/api/auth/')) {
+    if (url === '/health' || url === '/api/health' || url.startsWith('/api/admin/') || url.startsWith('/api/auth/')) {
       return
     }
     const m = await isInMaintenance()

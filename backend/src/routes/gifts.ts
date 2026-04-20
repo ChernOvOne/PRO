@@ -10,8 +10,9 @@ export async function giftRoutes(app: FastifyInstance) {
     const userId = (req.user as any).sub
     const schema = z.object({
       tariffId:       z.string(),
-      provider:       z.enum(['YUKASSA', 'CRYPTOPAY', 'BALANCE']),
+      provider:       z.enum(['YUKASSA', 'CRYPTOPAY', 'PLATEGA', 'BALANCE']),
       currency:       z.string().optional(),
+      paymentMethod:  z.number().int().optional(),
       recipientEmail: z.string().email().optional(),
       message:        z.string().max(500).optional(),
     })
@@ -74,8 +75,9 @@ export async function giftRoutes(app: FastifyInstance) {
     const result = await paymentService.createOrder({
       user,
       tariff,
-      provider: data.provider,
+      provider: data.provider as 'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA',
       currency: data.currency,
+      paymentMethod: data.paymentMethod,
       purpose:  'GIFT',
     })
 

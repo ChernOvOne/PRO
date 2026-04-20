@@ -404,10 +404,11 @@ export async function userRoutes(app: FastifyInstance) {
     const userId = (req.user as any).sub
     const schema = z.object({
       amount:   z.coerce.number().min(50).max(100000),
-      provider: z.enum(['YUKASSA', 'CRYPTOPAY']),
+      provider: z.enum(['YUKASSA', 'CRYPTOPAY', 'PLATEGA']),
       currency: z.string().optional(),
+      paymentMethod: z.number().int().optional(),
     })
-    const { amount, provider, currency } = schema.parse(req.body)
+    const { amount, provider, currency, paymentMethod } = schema.parse(req.body)
 
     const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) return reply.status(404).send({ error: 'User not found' })
@@ -429,6 +430,7 @@ export async function userRoutes(app: FastifyInstance) {
       tariff,
       provider,
       currency,
+      paymentMethod,
       purpose: 'TOPUP',
     })
 

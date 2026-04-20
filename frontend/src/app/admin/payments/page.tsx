@@ -811,15 +811,44 @@ function DetailPanel({
         {/* Refund buttons */}
         {p.status === 'PAID' && (
           <div className="pt-2 space-y-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
-            <p className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Возврат средств</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Возврат средств</p>
+              {p.provider === 'PLATEGA' && (
+                <a href="https://app.platega.io" target="_blank" rel="noreferrer"
+                   className="text-[10px] inline-flex items-center gap-1"
+                   style={{ color: 'var(--accent-1)' }}>
+                  Открыть ЛК Platega ↗
+                </a>
+              )}
+            </div>
+            {p.provider === 'PLATEGA' && (
+              <div className="text-[11px] p-2 rounded"
+                   style={{ background: 'rgba(245,158,11,0.08)', color: '#f59e0b' }}>
+                ⚠ У Platega нет API возврата. Сначала сделай возврат вручную в их ЛК,
+                затем нажми ниже — платёж в БД пометится как возвращённый и подписка откатится.
+              </div>
+            )}
+            {p.provider === 'CRYPTOPAY' && (
+              <div className="text-[11px] p-2 rounded"
+                   style={{ background: 'rgba(245,158,11,0.08)', color: '#f59e0b' }}>
+                ⚠ CryptoPay не поддерживает возврат через API. Переведи сумму клиенту вручную,
+                затем нажми ниже.
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={async () => {
-                  if (!confirm(`Полный возврат ${formatAmount(gross, p.currency)}? Деньги вернутся клиенту.`)) return
+                  const label = p.provider === 'YUKASSA'
+                    ? `Полный возврат ${formatAmount(gross, p.currency)} через ЮKassa API?`
+                    : p.provider === 'BALANCE'
+                    ? `Вернуть ${formatAmount(gross, p.currency)} на баланс клиента?`
+                    : `Пометить платёж как возвращённый (${formatAmount(gross, p.currency)})? Убедись что деньги уже переведены клиенту.`
+                  if (!confirm(label)) return
                   setRefunding(true)
                   try {
                     const res = await adminApi.refundPayment(p.id)
-                    toast.success(`Возврат ${formatAmount(res.amount, 'RUB')} выполнен`)
+                    const msg = (res as any).message || `Возврат ${formatAmount(res.amount, 'RUB')} выполнен`
+                    toast.success(msg)
                     onRefresh?.()
                   } catch (err: any) {
                     toast.error(err?.message || 'Ошибка возврата')
@@ -852,11 +881,15 @@ function DetailPanel({
                   if (!amtStr) return
                   const amt = parseFloat(amtStr.replace(',', '.'))
                   if (!amt || amt <= 0 || amt > gross) { toast.error('Некорректная сумма'); return }
-                  if (!confirm(`Частичный возврат ${amt} ₽? Деньги вернутся клиенту.`)) return
+                  const label = p.provider === 'YUKASSA'
+                    ? `Частичный возврат ${amt} ₽ через ЮKassa API?`
+                    : `Пометить частичный возврат ${amt} ₽ (провайдер: ${p.provider})? Убедись что деньги переведены вручную.`
+                  if (!confirm(label)) return
                   setRefunding(true)
                   try {
                     const res = await adminApi.refundPayment(p.id, amt)
-                    toast.success(`Возврат ${formatAmount(res.amount, 'RUB')} выполнен`)
+                    const msg = (res as any).message || `Возврат ${formatAmount(res.amount, 'RUB')} выполнен`
+                    toast.success(msg)
                     onRefresh?.()
                   } catch (err: any) {
                     toast.error(err?.message || 'Ошибка возврата')

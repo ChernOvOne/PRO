@@ -11,38 +11,60 @@ interface Tariff {
   deviceLimit: number; trafficGb?: number; isFeatured: boolean
 }
 
+interface ProviderOption {
+  id: string
+  label: string
+  icon: string
+  meta?: { paymentMethod?: number }
+}
+
 export default function PlansPage() {
   const [tariffs, setTariffs]       = useState<Tariff[]>([])
   const [loading, setLoading]       = useState(true)
   const [selected, setSelected]     = useState<Tariff | null>(null)
   const [paying, setPaying]         = useState(false)
-  const [provider, setProvider]     = useState<'YUKASSA' | 'CRYPTOPAY'>('YUKASSA')
+  const [providers, setProviders]   = useState<ProviderOption[]>([])
+  const [provider, setProvider]     = useState<string>('YUKASSA')
   const [currency, setCurrency]     = useState<'USDT' | 'TON' | 'BTC'>('USDT')
 
   useEffect(() => {
     fetch('/api/tariffs')
       .then(r => r.json())
       .then(data => { setTariffs(data); setLoading(false) })
+
+    fetch('/api/public/payment-methods')
+      .then(r => r.json())
+      .then(data => {
+        const list: ProviderOption[] = data.providers || []
+        setProviders(list)
+        if (list.length > 0 && !list.find(p => p.id === provider)) {
+          setProvider(list[0].id)
+        }
+      })
+      .catch(() => {})
   }, [])
+
+  const currentProviderOpt = providers.find(p => p.id === provider)
 
   const handleBuy = async () => {
     if (!selected) return
     setPaying(true)
     try {
+      const body: any = { tariffId: selected.id, provider }
+      if (provider === 'CRYPTOPAY') body.currency = currency
+      if (provider === 'PLATEGA' && currentProviderOpt?.meta?.paymentMethod) {
+        body.paymentMethod = currentProviderOpt.meta.paymentMethod
+      }
+
       const res = await fetch('/api/payments/create', {
         method:      'POST',
         credentials: 'include',
         headers:     { 'Content-Type': 'application/json' },
-        body:        JSON.stringify({
-          tariffId: selected.id,
-          provider,
-          ...(provider === 'CRYPTOPAY' ? { currency } : {}),
-        }),
+        body:        JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Ошибка создания платежа')
 
-      // Redirect to payment page
       window.location.href = data.paymentUrl
     } catch (err: any) {
       toast.error(err.message || 'Ошибка оплаты')
@@ -132,27 +154,38 @@ export default function PlansPage() {
             </button>
           </div>
 
-          {/* Provider tabs */}
-          <div className="flex gap-3">
-            <ProviderTab
-              id="YUKASSA"
-              label="Картой / СБП"
-              icon={<CreditCard className="w-4 h-4" />}
-              active={provider === 'YUKASSA'}
-              onClick={() => setProvider('YUKASSA')}
-            />
-            <ProviderTab
-              id="CRYPTOPAY"
-              label="Криптовалюта"
-              icon={<Bitcoin className="w-4 h-4" />}
-              active={provider === 'CRYPTOPAY'}
-              onClick={() => setProvider('CRYPTOPAY')}
-            />
-          </div>
+          {/* Provider tabs — dynamic from backend */}
+          {providers.length === 0 ? (
+            <div className="p-4 rounded-xl text-sm"
+                 style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+              ⚠️ Нет активных способов оплаты. Обратись в поддержку.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {providers.map(p => (
+                <ProviderTab
+                  key={p.id}
+                  id={p.id}
+                  label={p.label}
+                  icon={p.icon === 'bitcoin'
+                    ? <Bitcoin className="w-4 h-4" />
+                    : <CreditCard className="w-4 h-4" />}
+                  active={provider === p.id}
+                  onClick={() => setProvider(p.id)}
+                />
+              ))}
+            </div>
+          )}
 
           {provider === 'YUKASSA' && (
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               Оплата через ЮKassa — Visa, МИР, СБП, ЮMoney
+            </p>
+          )}
+
+          {provider === 'PLATEGA' && (
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Оплата через Platega — {currentProviderOpt?.label.replace('Platega · ', '')}
             </p>
           )}
 
@@ -194,9 +227,9 @@ export default function PlansPage() {
             <div className="flex justify-between font-semibold pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <span>Итого</span>
               <span>
-                {provider === 'YUKASSA'
-                  ? `${selected.priceRub.toLocaleString('ru')} ₽`
-                  : `~${selected.priceUsdt} ${currency}`}
+                {provider === 'CRYPTOPAY'
+                  ? `~${selected.priceUsdt} ${currency}`
+                  : `${selected.priceRub.toLocaleString('ru')} ₽`}
               </span>
             </div>
           </div>

@@ -27,6 +27,7 @@ interface TabDef {
   id: string
   icon: any
   title: string
+  description?: string
   fields: FieldDef[]
   actions?: { label: string; action: string; variant?: 'primary' | 'secondary' }[]
   linkCards?: { href: string; title: string; description: string }[]
@@ -234,14 +235,9 @@ const TABS: TabDef[] = [
     ],
   },
   {
-    id: 'payments', icon: CreditCard, title: 'Платежи',
+    id: 'payments', icon: CreditCard, title: 'Общие платежи',
+    description: 'Лимиты и общие настройки. Ключи провайдеров — на отдельных вкладках.',
     fields: [
-      { key: 'yukassa_enabled', label: 'ЮKassa включена', type: 'toggle' },
-      { key: 'yukassa_shop_id', label: 'ЮKassa Shop ID', type: 'text', placeholder: '123456' },
-      { key: 'yukassa_secret', label: 'ЮKassa Secret Key', type: 'password', placeholder: 'live_...' },
-      { key: 'yukassa_test_mode', label: 'ЮKassa тестовый режим', type: 'toggle' },
-      { key: 'crypto_enabled', label: 'CryptoPay включён', type: 'toggle' },
-      { key: 'crypto_token', label: 'CryptoPay токен', type: 'password', placeholder: 'Token...' },
       { key: 'balance_payments_enabled', label: 'Оплата с баланса', type: 'toggle' },
       { key: 'balance_min', label: 'Мин. сумма пополнения', type: 'number', placeholder: '100' },
       { key: 'balance_max', label: 'Макс. сумма пополнения', type: 'number', placeholder: '50000' },
@@ -249,6 +245,138 @@ const TABS: TabDef[] = [
       { key: 'payment_max', label: 'Макс. платёж', type: 'number', placeholder: '100000' },
       { key: 'auto_confirm_payments', label: 'Автоподтверждение платежей', type: 'toggle' },
       { key: 'notify_admin_payments', label: 'Уведомлять админа о платежах', type: 'toggle' },
+    ],
+  },
+  {
+    id: 'yukassa', icon: CreditCard, title: 'ЮKassa',
+    description: 'Российский платёжный провайдер. 54-ФЗ чеки, карты, СБП.',
+    fields: [
+      { key: 'yukassa_enabled', label: 'ЮKassa включена', type: 'toggle' },
+      { key: 'yukassa_shop_id', label: 'Shop ID', type: 'text', placeholder: '123456' },
+      { key: 'yukassa_secret', label: 'Secret Key', type: 'password', placeholder: 'live_...' },
+      { key: 'yukassa_test_mode', label: 'Тестовый режим', type: 'toggle' },
+      { key: 'yukassa_description_template', label: 'Описание платежа',
+        type: 'text', placeholder: '{app_name} — {tariff}',
+        hint: 'Шаблон. Плейсхолдеры: {app_name}, {tariff}, {days}, {amount}, {user}. Макс. 128 символов.' },
+      { key: 'yukassa_return_url', label: 'URL возврата после оплаты',
+        type: 'text', placeholder: 'https://app.hideyou.com/dashboard/payment-success',
+        hint: 'orderId добавляется автоматически.' },
+      { key: 'yukassa_capture_mode', label: 'Режим подтверждения', type: 'select',
+        options: [
+          { value: 'auto',   label: 'Автоматически (одношаговый)' },
+          { value: 'manual', label: 'Ручное подтверждение (двухшаговый, 7 дней)' },
+        ] },
+      { key: 'yukassa_receipt_enabled', label: '54-ФЗ чек включён', type: 'toggle',
+        hint: 'Обязательно для продажи услуг физ. лицам в РФ.' },
+      { key: 'yukassa_vat_code', label: 'Ставка НДС', type: 'select',
+        options: [
+          { value: '1', label: '1 — Без НДС' },
+          { value: '2', label: '2 — НДС 0%' },
+          { value: '3', label: '3 — НДС 10%' },
+          { value: '4', label: '4 — НДС 20%' },
+          { value: '5', label: '5 — НДС 10/110' },
+          { value: '6', label: '6 — НДС 20/120' },
+        ] },
+      { key: 'yukassa_payment_subject', label: 'Предмет расчёта', type: 'select',
+        options: [
+          { value: 'commodity',             label: 'Товар' },
+          { value: 'service',               label: 'Услуга' },
+          { value: 'job',                   label: 'Работа' },
+          { value: 'excise',                label: 'Подакцизный товар' },
+          { value: 'gambling_bet',          label: 'Ставка в азартной игре' },
+          { value: 'gambling_prize',        label: 'Выигрыш в азартной игре' },
+          { value: 'lottery',               label: 'Лотерейный билет' },
+          { value: 'lottery_prize',         label: 'Выигрыш в лотерее' },
+          { value: 'intellectual_activity', label: 'Предоставление РИД' },
+          { value: 'payment',               label: 'Платёж, аванс' },
+          { value: 'agent_commission',      label: 'Агентское вознаграждение' },
+          { value: 'composite',             label: 'Составной предмет' },
+          { value: 'another',               label: 'Иной' },
+        ],
+        hint: 'VPN-подписка обычно = Услуга.' },
+      { key: 'yukassa_payment_mode', label: 'Способ расчёта', type: 'select',
+        options: [
+          { value: 'full_prepayment',    label: 'Полная предоплата' },
+          { value: 'partial_prepayment', label: 'Частичная предоплата' },
+          { value: 'advance',            label: 'Аванс' },
+          { value: 'full_payment',       label: 'Полный расчёт' },
+          { value: 'partial_payment',    label: 'Частичный расчёт и кредит' },
+          { value: 'credit',             label: 'Передача в кредит' },
+          { value: 'credit_payment',     label: 'Оплата кредита' },
+        ],
+        hint: 'Для VPN-подписок обычно = Полная предоплата.' },
+      { key: 'yukassa_tax_system_code', label: 'Система налогообложения', type: 'select',
+        options: [
+          { value: '',  label: '— По умолчанию магазина —' },
+          { value: '1', label: '1 — ОСН' },
+          { value: '2', label: '2 — УСН доходы' },
+          { value: '3', label: '3 — УСН доходы - расходы' },
+          { value: '4', label: '4 — ЕНВД' },
+          { value: '5', label: '5 — ЕСХН' },
+          { value: '6', label: '6 — Патент' },
+        ],
+        hint: 'Оставь пустым если магазин настроен с одной СНО.' },
+    ],
+  },
+  {
+    id: 'cryptopay', icon: CreditCard, title: 'CryptoPay',
+    description: 'Оплата криптовалютой через @CryptoBot в Telegram. USDT / TON / BTC / ETH / LTC.',
+    fields: [
+      { key: 'crypto_enabled', label: 'CryptoPay включён', type: 'toggle' },
+      { key: 'crypto_token', label: 'API-токен CryptoPay', type: 'password',
+        placeholder: '12345:AAAA...',
+        hint: 'Получить: @CryptoBot → Crypto Pay → Create App → API Token.' },
+      { key: 'crypto_network', label: 'Сеть', type: 'select',
+        options: [
+          { value: 'mainnet', label: 'Mainnet (боевая)' },
+          { value: 'testnet', label: 'Testnet (для тестов)' },
+        ] },
+      { key: 'crypto_description_template', label: 'Описание платежа',
+        type: 'text', placeholder: '{app_name} — {tariff}',
+        hint: 'Плейсхолдеры: {app_name}, {tariff}, {days}, {amount}.' },
+      { key: 'crypto_expires_in', label: 'Время жизни инвойса (секунд)',
+        type: 'number', placeholder: '3600',
+        hint: 'По умолчанию 1 час. После — инвойс истекает.' },
+      { key: 'crypto_default_currency', label: 'Валюта по умолчанию', type: 'select',
+        options: [
+          { value: 'USDT', label: 'USDT' },
+          { value: 'TON',  label: 'TON' },
+          { value: 'BTC',  label: 'BTC' },
+          { value: 'ETH',  label: 'ETH' },
+          { value: 'LTC',  label: 'LTC' },
+        ] },
+    ],
+  },
+  {
+    id: 'platega', icon: CreditCard, title: 'Platega',
+    description: 'Российский агрегатор: СБП, ЕРИП, карты, крипта. Документация: https://docs.platega.io',
+    fields: [
+      { key: 'platega_enabled', label: 'Platega включена', type: 'toggle' },
+      { key: 'platega_merchant_id', label: 'Merchant ID (UUID)',
+        type: 'text', placeholder: '00000000-0000-0000-0000-000000000000',
+        hint: 'X-MerchantId из личного кабинета Platega.' },
+      { key: 'platega_secret', label: 'Secret', type: 'password',
+        placeholder: 'secret_...',
+        hint: 'X-Secret из личного кабинета Platega.' },
+      { key: 'platega_payment_method', label: 'Метод оплаты по умолчанию', type: 'select',
+        options: [
+          { value: '2',  label: '2 — СБП QR (от 5%)' },
+          { value: '3',  label: '3 — ЕРИП (Беларусь)' },
+          { value: '11', label: '11 — Карты (от 4%)' },
+          { value: '12', label: '12 — International' },
+          { value: '13', label: '13 — Crypto (от 1%)' },
+        ],
+        hint: 'Клиенту откроется именно эта оплата. Можно переопределять на лету через API.' },
+      { key: 'platega_description_template', label: 'Описание платежа',
+        type: 'text', placeholder: '{app_name} — {tariff}',
+        hint: 'Макс. 255 символов. Плейсхолдеры: {app_name}, {tariff}, {days}, {amount}.' },
+      { key: 'platega_return_url', label: 'URL возврата',
+        type: 'text', placeholder: 'https://app.hideyou.com/dashboard/payment-success',
+        hint: 'orderId добавится автоматически. Для failedUrl используется тот же URL с ?failed=1.' },
+      { key: 'platega_webhook_url', label: 'URL вебхука (укажи в ЛК Platega)',
+        type: 'text',
+        hint: 'Скопируй это значение и пропиши в Platega → Settings → Callback URLs. HTTPS обязателен, self-signed не принимается.',
+        placeholder: 'https://<твой-домен>/api/webhooks/platega' },
     ],
   },
   {
@@ -627,7 +755,14 @@ export default function AdminSettings() {
                    style={{ background: 'rgba(83,74,183,0.1)' }}>
                 {(() => { const I = currentTab.icon; return <I className="w-5 h-5" style={{ color: '#8B7BF7' }} /> })()}
               </div>
-              <h2 className="text-lg font-semibold">{currentTab.title}</h2>
+              <div>
+                <h2 className="text-lg font-semibold">{currentTab.title}</h2>
+                {currentTab.description && (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                    {currentTab.description}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Fields */}

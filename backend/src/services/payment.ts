@@ -185,16 +185,48 @@ class YukassaService {
     orderId:     string
     returnUrl:   string
     metadata?:   Record<string, string>
+    // 54-FZ receipt fields (optional — included only if receipt is configured)
+    receipt?:    {
+      customerEmail?: string
+      customerPhone?: string
+      itemDescription: string
+      vatCode:       number   // 1-6
+      paymentSubject: string  // commodity | service | ...
+      paymentMode:   string   // full_prepayment | ...
+    }
+    taxSystemCode?: number  // 1-6
+    captureMode?:   'auto' | 'manual'
   }) {
+    const body: any = {
+      amount:       { value: params.amount.toFixed(2), currency: 'RUB' },
+      description:  params.description,
+      confirmation: { type: 'redirect', return_url: params.returnUrl },
+      capture:      params.captureMode !== 'manual',
+      metadata:     { orderId: params.orderId, ...params.metadata },
+    }
+
+    // 54-FZ receipt — required for Russian merchants processing physical goods/services
+    if (params.receipt) {
+      body.receipt = {
+        customer: {
+          ...(params.receipt.customerEmail ? { email: params.receipt.customerEmail } : {}),
+          ...(params.receipt.customerPhone ? { phone: params.receipt.customerPhone } : {}),
+        },
+        items: [{
+          description:     params.receipt.itemDescription.slice(0, 128),
+          quantity:        '1',
+          amount:          { value: params.amount.toFixed(2), currency: 'RUB' },
+          vat_code:        params.receipt.vatCode,
+          payment_subject: params.receipt.paymentSubject,
+          payment_mode:    params.receipt.paymentMode,
+        }],
+        ...(params.taxSystemCode ? { tax_system_code: params.taxSystemCode } : {}),
+      }
+    }
+
     const res = await axios.post(
       `${this.BASE_URL}/payments`,
-      {
-        amount:       { value: params.amount.toFixed(2), currency: 'RUB' },
-        description:  params.description,
-        confirmation: { type: 'redirect', return_url: params.returnUrl },
-        capture:      true,
-        metadata:     { orderId: params.orderId, ...params.metadata },
-      },
+      body,
       {
         headers: {
           Authorization:     `Basic ${this.auth}`,
@@ -365,31 +397,134 @@ class CryptoPayService {
   }
 }
 
+// ── Platega.io ───────────────────────────────────────────────
+// Russian payment aggregator. Thin API: X-MerchantId + X-Secret headers.
+// Payment methods: 2=СБП QR, 3=ЕРИП, 11=Card, 12=International, 13=Crypto.
+// Docs: https://docs.platega.io
+class PlategaService {
+  private readonly BASE_URL = 'https://app.platega.io'
+
+  /**
+   * Read credentials from DB first (settings UI), fall back to env.
+   * Cached for 30s to avoid DB hit per request.
+   */
+  private credsCache: { merchantId: string; secret: string; expires: number } | null = null
+
+  private async getCreds(): Promise<{ merchantId: string; secret: string }> {
+    const now = Date.now()
+    if (this.credsCache && now < this.credsCache.expires) return this.credsCache
+
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['platega_merchant_id', 'platega_secret'] } },
+    }).catch(() => [])
+    const map: Record<string, string> = {}
+    rows.forEach(r => { map[r.key] = r.value })
+
+    const merchantId = map.platega_merchant_id || process.env.PLATEGA_MERCHANT_ID || ''
+    const secret     = map.platega_secret     || process.env.PLATEGA_SECRET     || ''
+    this.credsCache = { merchantId, secret, expires: now + 30_000 }
+    return this.credsCache
+  }
+
+  private async buildHeaders() {
+    const { merchantId, secret } = await this.getCreds()
+    return {
+      'Content-Type': 'application/json',
+      'X-MerchantId': merchantId,
+      'X-Secret':     secret,
+    }
+  }
+
+  async createPayment(params: {
+    amount:        number
+    currency?:     string
+    paymentMethod: number   // 2=SBP, 11=Card, 13=Crypto, ...
+    description:   string
+    orderId:       string
+    returnUrl:     string
+    failedUrl?:    string
+  }) {
+    const res = await axios.post(
+      `${this.BASE_URL}/transaction/process`,
+      {
+        paymentMethod:  params.paymentMethod,
+        paymentDetails: {
+          amount:   params.amount,
+          currency: params.currency || 'RUB',
+        },
+        description: params.description,
+        return:      params.returnUrl,
+        ...(params.failedUrl ? { failedUrl: params.failedUrl } : {}),
+        payload:     params.orderId,
+      },
+      { headers: await this.buildHeaders(), timeout: 20_000 },
+    )
+    return res.data as {
+      transactionId: string
+      redirect:      string
+      status:        string   // "PENDING"
+      expiresIn:     string
+      usdtRate?:     number
+      paymentMethod: number
+    }
+  }
+
+  async getTransaction(id: string) {
+    const res = await axios.get(`${this.BASE_URL}/transaction/${id}`, {
+      headers: await this.buildHeaders(),
+      timeout: 20_000,
+    })
+    return res.data as {
+      id:            string
+      status:        'PENDING' | 'CONFIRMED' | 'CANCELED' | 'CHARGEBACKED'
+      paymentDetails: { amount: number; currency: string }
+      comission?:    number
+      payload?:      string
+      description?:  string
+    }
+  }
+
+  /**
+   * Verify webhook by comparing X-Secret header against configured value.
+   * No HMAC signing — static shared secret.
+   * IMPORTANT: always also call getTransaction() to re-verify amount + status.
+   */
+  async verifyWebhookSecret(headerSecret: string | undefined): Promise<boolean> {
+    if (!headerSecret) return false
+    const { secret } = await this.getCreds()
+    return !!secret && headerSecret === secret
+  }
+}
+
 // ── Payment orchestrator ──────────────────────────────────────
 export class PaymentService {
   yukassa  = new YukassaService()
   cryptopay = new CryptoPayService()
+  platega  = new PlategaService()
 
   // ── Create payment order ───────────────────────────────────
   async createOrder(params: {
     user:     User
     tariff:   Tariff
-    provider: 'YUKASSA' | 'CRYPTOPAY'
+    provider: 'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA'
     currency?: string
     purpose?: 'SUBSCRIPTION' | 'TOPUP' | 'GIFT'
+    paymentMethod?: number  // for Platega
   }) {
     const { user, tariff, provider } = params
     const orderId = randomUUID()
 
     // Create pending payment record
+    // YuKassa & Platega both in RUB; only CryptoPay uses USDT/TON/etc.
+    const isRubProvider = provider === 'YUKASSA' || provider === 'PLATEGA'
     const payment = await prisma.payment.create({
       data: {
         id:       orderId,
         userId:   user.id,
         tariffId: tariff.id,
         provider,
-        amount:   provider === 'YUKASSA' ? tariff.priceRub : (tariff.priceUsdt ?? 0),
-        currency: provider === 'YUKASSA' ? 'RUB' : (params.currency ?? 'USDT'),
+        amount:   isRubProvider ? tariff.priceRub : (tariff.priceUsdt ?? 0),
+        currency: isRubProvider ? 'RUB' : (params.currency ?? 'USDT'),
         status:   'PENDING',
         purpose:  params.purpose || 'SUBSCRIPTION',
       },
@@ -397,12 +532,56 @@ export class PaymentService {
 
     // Create provider payment
     if (provider === 'YUKASSA') {
+      // Load YuKassa settings for description + receipt customization
+      const settingKeys = [
+        'yukassa_description_template', 'yukassa_return_url',
+        'yukassa_capture_mode', 'yukassa_receipt_enabled',
+        'yukassa_vat_code', 'yukassa_payment_subject',
+        'yukassa_payment_mode', 'yukassa_tax_system_code',
+        'app_name',
+      ]
+      const settingRows = await prisma.setting.findMany({ where: { key: { in: settingKeys } } })
+      const s: Record<string, string> = {}
+      settingRows.forEach(r => { s[r.key] = r.value })
+
+      const appName  = s.app_name || 'HIDEYOU VPN'
+      const template = s.yukassa_description_template || '{app_name} — {tariff}'
+      const returnBase = s.yukassa_return_url || `${config.appUrl}/dashboard/payment-success`
+
+      const description = template
+        .replace(/\{app_name\}/g, appName)
+        .replace(/\{tariff\}/g, tariff.name)
+        .replace(/\{days\}/g, String(tariff.durationDays ?? ''))
+        .replace(/\{user\}/g, user.email || user.telegramName || user.id.slice(0, 8))
+        .replace(/\{amount\}/g, tariff.priceRub.toFixed(2))
+        .slice(0, 128)  // YuKassa limit
+
+      // Ensure separator between base return URL and query
+      const retSep = returnBase.includes('?') ? '&' : '?'
+      const returnUrl = `${returnBase}${retSep}orderId=${payment.id}`
+
+      // Build receipt only if enabled
+      let receipt: any = undefined
+      if (s.yukassa_receipt_enabled === '1') {
+        const email = user.email || undefined
+        receipt = {
+          customerEmail:  email,
+          itemDescription: description,
+          vatCode:        Number(s.yukassa_vat_code || 1),          // 1 = без НДС
+          paymentSubject: s.yukassa_payment_subject || 'service',   // товар/услуга
+          paymentMode:    s.yukassa_payment_mode    || 'full_prepayment',
+        }
+      }
+
       const yp = await this.yukassa.createPayment({
-        amount:      tariff.priceRub,
-        description: `HIDEYOU VPN — ${tariff.name}`,
-        orderId:     payment.id,
-        returnUrl:   `${config.appUrl}/dashboard/payment-success?orderId=${payment.id}`,
-        metadata:    { userId: user.id, tariffId: tariff.id },
+        amount:       tariff.priceRub,
+        description,
+        orderId:      payment.id,
+        returnUrl,
+        metadata:     { userId: user.id, tariffId: tariff.id },
+        receipt,
+        taxSystemCode: s.yukassa_tax_system_code ? Number(s.yukassa_tax_system_code) : undefined,
+        captureMode:  (s.yukassa_capture_mode as 'auto' | 'manual') || 'auto',
       })
 
       await prisma.payment.update({
@@ -421,15 +600,81 @@ export class PaymentService {
       }
     }
 
+    if (provider === 'PLATEGA') {
+      const pKeys = [
+        'platega_description_template', 'platega_return_url',
+        'platega_payment_method', 'app_name',
+      ]
+      const pRows = await prisma.setting.findMany({ where: { key: { in: pKeys } } })
+      const ps: Record<string, string> = {}
+      pRows.forEach(r => { ps[r.key] = r.value })
+
+      const appName = ps.app_name || 'HIDEYOU VPN'
+      const tpl = ps.platega_description_template || '{app_name} — {tariff}'
+      const pm = Number(ps.platega_payment_method || 2)  // 2 = СБП
+
+      const description = tpl
+        .replace(/\{app_name\}/g, appName)
+        .replace(/\{tariff\}/g, tariff.name)
+        .replace(/\{days\}/g, String(tariff.durationDays ?? ''))
+        .replace(/\{amount\}/g, tariff.priceRub.toFixed(2))
+        .slice(0, 255)
+
+      const retBase = ps.platega_return_url || `${config.appUrl}/dashboard/payment-success`
+      const sep = retBase.includes('?') ? '&' : '?'
+      const returnUrl = `${retBase}${sep}orderId=${payment.id}`
+
+      const tx = await this.platega.createPayment({
+        amount:        tariff.priceRub,
+        paymentMethod: pm,
+        description,
+        orderId:       payment.id,
+        returnUrl,
+      })
+
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          providerOrderId: tx.transactionId,
+        },
+      })
+
+      return {
+        orderId:    payment.id,
+        paymentUrl: tx.redirect,
+        provider:   'PLATEGA' as const,
+      }
+    }
+
     if (provider === 'CRYPTOPAY') {
-      const currency = (params.currency ?? 'USDT') as 'USDT' | 'TON' | 'BTC'
+      // Load CryptoPay settings for description + expiration
+      const cKeys = ['crypto_description_template', 'crypto_expires_in',
+                     'crypto_default_currency', 'app_name']
+      const cRows = await prisma.setting.findMany({ where: { key: { in: cKeys } } })
+      const cs: Record<string, string> = {}
+      cRows.forEach(r => { cs[r.key] = r.value })
+
+      const appName = cs.app_name || 'HIDEYOU VPN'
+      const tpl = cs.crypto_description_template || '{app_name} — {tariff}'
+      const defaultCur = (cs.crypto_default_currency as any) || 'USDT'
+      const expiresIn = Number(cs.crypto_expires_in || 3600)
+
+      const currency = (params.currency ?? defaultCur) as 'USDT' | 'TON' | 'BTC' | 'ETH' | 'LTC'
       const amount   = tariff.priceUsdt ?? tariff.priceRub / 90 // fallback conversion
+
+      const description = tpl
+        .replace(/\{app_name\}/g, appName)
+        .replace(/\{tariff\}/g, tariff.name)
+        .replace(/\{days\}/g, String(tariff.durationDays ?? ''))
+        .replace(/\{amount\}/g, amount.toFixed(2))
+        .slice(0, 1024)
 
       const invoice = await this.cryptopay.createInvoice({
         amount,
         currency,
-        description: `HIDEYOU VPN — ${tariff.name}`,
+        description,
         orderId:     payment.id,
+        expiresIn,
       })
 
       await prisma.payment.update({

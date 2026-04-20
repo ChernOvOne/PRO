@@ -6,8 +6,9 @@ import { config }           from '../config'
 
 const CreateOrderSchema = z.object({
   tariffId:  z.string().uuid(),
-  provider:  z.enum(['YUKASSA', 'CRYPTOPAY']),
+  provider:  z.enum(['YUKASSA', 'CRYPTOPAY', 'PLATEGA']),
   currency:  z.enum(['USDT', 'TON', 'BTC']).optional(),
+  paymentMethod: z.number().int().optional(), // for Platega (2=SBP, 11=Card, 13=Crypto)
   variantIndex: z.number().int().min(0).optional(),
   config: z.object({
     trafficGb: z.number().min(0).optional(),
@@ -29,6 +30,15 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
     if (body.provider === 'CRYPTOPAY' && !config.cryptopay.enabled) {
       return reply.status(400).send({ error: 'CryptoPay payments not configured' })
+    }
+    if (body.provider === 'PLATEGA') {
+      const enabledRow = await prisma.setting.findUnique({ where: { key: 'platega_enabled' } })
+      const merchantRow = await prisma.setting.findUnique({ where: { key: 'platega_merchant_id' } })
+      const secretRow = await prisma.setting.findUnique({ where: { key: 'platega_secret' } })
+      const on = enabledRow?.value === '1' || enabledRow?.value === 'true'
+      if (!on || !merchantRow?.value || !secretRow?.value) {
+        return reply.status(400).send({ error: 'Platega payments not configured' })
+      }
     }
 
     const [user, tariff] = await Promise.all([
@@ -103,6 +113,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       tariff: tariffOverride as any,
       provider: body.provider,
       currency: body.currency,
+      paymentMethod: body.paymentMethod,
     })
 
     if (paymentMeta) {
