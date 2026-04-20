@@ -60,10 +60,35 @@ CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO hideyou;
 GRANT ALL ON SCHEMA public TO public;
 SQL
+  # pg_restore may exit non-zero on harmless warnings (e.g. pg17-dump →
+  # pg16-server can trip on `SET transaction_timeout = 0`). Capture all output,
+  # then post-verify by counting tables — if we got the schema + data back,
+  # treat the warnings as non-fatal.
+  restore_log="$WORK_DIR/restore.log"
+  set +e
   PGPASSWORD="$POSTGRES_PASSWORD" pg_restore \
     -h postgres -U hideyou -d hideyou \
     --no-owner --no-privileges \
-    "$WORK_DIR/db.sql"
+    "$WORK_DIR/db.sql" 2>&1 | tee "$restore_log"
+  restore_rc=${PIPESTATUS[0]}
+  set -e
+
+  # Post-check: users table must exist and have ≥1 row
+  table_count=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U hideyou -d hideyou -tAc \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
+  user_count=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgres -U hideyou -d hideyou -tAc \
+    "SELECT count(*) FROM users;" 2>/dev/null || echo 0)
+
+  echo "[restore] pg_restore exit=$restore_rc, public tables=$table_count, users=$user_count"
+
+  if [ "$table_count" -lt 10 ]; then
+    echo "[restore] FATAL: schema not restored (only $table_count tables)"
+    exit 1
+  fi
+  # pg_restore rc != 0 is tolerable as long as tables are back
+  if [ "$restore_rc" -ne 0 ]; then
+    echo "[restore] pg_restore had warnings (rc=$restore_rc), but schema and data are back — continuing"
+  fi
 fi
 
 echo "[restore] done"

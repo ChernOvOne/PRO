@@ -1,8 +1,11 @@
 FROM node:20-alpine
 
-# git + docker-cli (for compose operations) + postgres-client (for pg_dump/restore)
+# git + docker-cli (for compose operations) + postgres16-client (matches pg16 server)
 # + tar for backups + curl for GitHub/Telegram
-RUN apk add --no-cache git docker-cli docker-cli-compose postgresql-client \
+# NOTE: must use postgresql16-client explicitly — default `postgresql-client`
+# pulls pg17 on newer Alpine, which emits SET transaction_timeout=0 in dumps
+# that pg16 server rejects.
+RUN apk add --no-cache git docker-cli docker-cli-compose postgresql16-client \
     tar gzip bash curl ca-certificates
 
 WORKDIR /app

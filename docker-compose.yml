@@ -182,6 +182,7 @@ services:
         condition: service_healthy
     networks:
       - hideyou_internal
+      - hideyou_external  # needed to reach GitHub (git fetch) and Telegram API
 
   # ── Certbot sidecar ──────────────────────────────────────────
   # Listens on Redis queue `cert:queue` for {domain, role, email} jobs,
