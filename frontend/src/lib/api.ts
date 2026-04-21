@@ -105,6 +105,27 @@ export const userApi = {
   // Revoke subscription
   revokeSubscription: () =>
     apiFetch<{ ok: boolean; newSubUrl: string }>('/user/revoke-subscription', { method: 'POST' }),
+
+  // ── Squad addons (paid Remnawave server groups on current tariff) ──
+  squadAddons: () => apiFetch<{
+    daysLeft: number
+    autoRenew: boolean
+    active:    Array<{ id: string; squadUuid: string; title: string; expireAt: string; pricePerMonthLocked: number; source: string; autoRenew: boolean }>
+    available: Array<{ squadUuid: string; title: string; description?: string | null; country?: string | null; icon?: string | null; pricePerMonth: number; prorated: number }>
+  }>('/user/squad-addons'),
+  purchaseSquadAddon: (squadUuid: string, method: string, extra?: { currency?: string; paymentMethod?: number }) =>
+    apiFetch<any>('/user/squad-addons/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ squadUuid, method, ...extra }),
+    }),
+  cancelSquadAddon: (id: string, refundTo: 'BALANCE' | 'CARD' = 'BALANCE') =>
+    apiFetch<{ ok: boolean; refunded: number; to: string }>(`/user/squad-addons/${id}/cancel`, {
+      method: 'POST', body: JSON.stringify({ refundTo }),
+    }),
+  setAutoRenew: (enabled: boolean) =>
+    apiFetch<{ autoRenew: boolean }>('/user/squad-addons/auto-renew', {
+      method: 'POST', body: JSON.stringify({ enabled }),
+    }),
 }
 
 // ── Notifications ────────────────────────────────────────────
@@ -350,6 +371,9 @@ export const adminApi = {
   createProxy:   (data: Partial<TelegramProxy>) => apiFetch<TelegramProxy>('/admin/proxies', { method: 'POST', body: JSON.stringify(data) }),
   updateProxy:   (id: string, data: Partial<TelegramProxy>) => apiFetch<TelegramProxy>(`/admin/proxies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProxy:   (id: string) => apiFetch<void>(`/admin/proxies/${id}`, { method: 'DELETE' }),
+
+  // Tariff — duplicate endpoint
+  duplicateTariff: (id: string) => apiFetch<any>(`/admin/tariffs/${id}/duplicate`, { method: 'POST' }),
 
   // Landing
   landingSections:     () => apiFetch<Array<{ key: string; value: string }>>('/admin/landing/sections'),

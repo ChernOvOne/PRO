@@ -15,6 +15,9 @@ const CreateOrderSchema = z.object({
     days: z.number().int().min(1).optional(),
     devices: z.number().int().min(1).optional(),
   }).optional(),
+  // Bundled paid squads — squadUuid list chosen at tariff purchase time.
+  // Pricing read from the tariff's paidSquads config; per-month × months.
+  addonSquadUuids: z.array(z.string()).optional(),
 })
 
 export async function paymentRoutes(app: FastifyInstance) {
@@ -104,6 +107,32 @@ export async function paymentRoutes(app: FastifyInstance) {
           discountPct: pct,
           originalAmount: originalPrice,
         }
+      }
+    }
+
+    // Bundled paid squads: add their cost to the tariff total. Prices
+    // come from the tariff's own paidSquads config (snapshotted here so
+    // we don't re-resolve at webhook time).
+    if (body.addonSquadUuids && body.addonSquadUuids.length > 0) {
+      const { parsePaidSquads } = await import('../services/squad-addons')
+      const paidSquads = parsePaidSquads((tariff as any).paidSquads)
+      const wanted = new Set(body.addonSquadUuids)
+      const picked = paidSquads.filter(p => wanted.has(p.squadUuid))
+      const months = Math.max(1, Math.round(actualDays / 30))
+
+      const snapshots = picked.map(p => ({
+        squadUuid:     p.squadUuid,
+        title:         p.title,
+        pricePerMonth: p.pricePerMonth,
+        priceRub:      Math.ceil(p.pricePerMonth * months),
+      }))
+      const addonsTotal = snapshots.reduce((s, a) => s + a.priceRub, 0)
+      actualPrice += addonsTotal
+      if (actualPriceUsdt != null) actualPriceUsdt += addonsTotal / 90
+      paymentMeta = {
+        ...(paymentMeta || {}),
+        _addons: snapshots,
+        _addonsTotal: addonsTotal,
       }
     }
 

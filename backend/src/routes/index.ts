@@ -50,6 +50,7 @@ import { ticketRoutes }            from './tickets'
 import { publicTicketRoutes }      from './tickets-public'
 import { adminTicketRoutes }       from './admin-tickets'
 import { adminSupportWizardRoutes, publicSupportWizardRoutes } from './admin-support-wizards'
+import { userSquadAddonRoutes }   from './user-squad-addons'
 
 export async function registerRoutes(app: FastifyInstance) {
   const healthHandler = async () => {
@@ -147,6 +148,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminTicketRoutes,        { prefix: '/api/admin/tickets'        })
   await app.register(adminSupportWizardRoutes, { prefix: '/api/admin/support'         })
   await app.register(publicSupportWizardRoutes, { prefix: '/api/support'              })
+  await app.register(userSquadAddonRoutes,     { prefix: '/api/user/squad-addons'     })
 
   // Serve uploaded files
   app.register(import('@fastify/static'), { root: '/app/uploads', prefix: '/uploads/', decorateReply: false })

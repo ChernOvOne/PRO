@@ -508,11 +508,18 @@ export class PaymentService {
     tariff:   Tariff
     provider: 'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA'
     currency?: string
-    purpose?: 'SUBSCRIPTION' | 'TOPUP' | 'GIFT'
+    purpose?: 'SUBSCRIPTION' | 'TOPUP' | 'GIFT' | 'SQUAD_ADDON'
     paymentMethod?: number  // for Platega
+    // For SQUAD_ADDON / TOPUP: carry metadata so confirmPayment can
+    // reconstruct the purchase (addon ids, prorated days, etc.)
+    metadata?: Record<string, any>
   }) {
     const { user, tariff, provider } = params
     const orderId = randomUUID()
+
+    const purpose  = params.purpose || 'SUBSCRIPTION'
+    // SQUAD_ADDON and TOPUP don't reference a real Tariff row
+    const virtualPurpose = purpose === 'TOPUP' || purpose === 'SQUAD_ADDON'
 
     // Create pending payment record
     // YuKassa & Platega both in RUB; only CryptoPay uses USDT/TON/etc.
@@ -521,12 +528,14 @@ export class PaymentService {
       data: {
         id:       orderId,
         userId:   user.id,
-        tariffId: tariff.id,
+        tariffId: virtualPurpose ? null : tariff.id,
         provider,
         amount:   isRubProvider ? tariff.priceRub : (tariff.priceUsdt ?? 0),
         currency: isRubProvider ? 'RUB' : (params.currency ?? 'USDT'),
         status:   'PENDING',
-        purpose:  params.purpose || 'SUBSCRIPTION',
+        purpose,
+        // Stash metadata inside yukassaStatus field (used for misc JSON blobs already)
+        ...(params.metadata ? { yukassaStatus: JSON.stringify(params.metadata) } : {}),
       },
     })
 
@@ -736,7 +745,7 @@ export class PaymentService {
       data: updateData,
     })
 
-    const { user, tariff } = payment
+    const { user } = payment
 
     if (!user) {
       logger.info(`Payment ${orderId} confirmed but no user linked, skipping subscription activation`)
@@ -747,9 +756,12 @@ export class PaymentService {
     let meta: any = null
     try { meta = JSON.parse(payment.yukassaStatus || '{}') } catch {}
 
-    let effectiveDays = tariff.durationDays
-    let effectiveTrafficGb = tariff.trafficGb
-    let effectiveDeviceLimit = tariff.deviceLimit
+    // Non-subscription purposes have no tariff; handle them first and return.
+    // The SUBSCRIPTION path below assumes `tariff` is present.
+    const tariff = payment.tariff
+    let effectiveDays = tariff?.durationDays ?? 0
+    let effectiveTrafficGb = tariff?.trafficGb ?? null
+    let effectiveDeviceLimit = tariff?.deviceLimit ?? 3
 
     if (meta?._mode === 'variant') {
       effectiveDays = meta.days ?? effectiveDays
@@ -760,6 +772,48 @@ export class PaymentService {
       effectiveDays = meta.days ?? effectiveDays
       effectiveTrafficGb = meta.trafficGb ?? effectiveTrafficGb
       effectiveDeviceLimit = meta.devices ?? effectiveDeviceLimit
+    }
+
+    // Handle squad addon purchase — activate, sync squads
+    if (payment.purpose === 'SQUAD_ADDON') {
+      try {
+        const { syncUserSquadsToRemnawave } = await import('./squad-addons')
+        let meta: any = {}
+        try { meta = JSON.parse(payment.yukassaStatus || '{}') } catch {}
+        if (meta?._type !== 'squad_addon') {
+          logger.warn(`SQUAD_ADDON payment ${orderId} has no metadata — skipping activation`)
+          return
+        }
+        const expireAt = new Date(meta.expireAt)
+        await prisma.userSquadAddon.upsert({
+          where: { userId_squadUuid: { userId: user.id, squadUuid: meta.squadUuid } },
+          create: {
+            userId:              user.id,
+            squadUuid:           meta.squadUuid,
+            title:               meta.title || 'Доп. сервер',
+            expireAt,
+            pricePerMonthLocked: meta.pricePerMonthLocked ?? 0,
+            pricePerDayLocked:   meta.pricePerDayLocked,
+            paymentId:           payment.id,
+            source:              'PURCHASE',
+            cancelledAt:         null,
+          },
+          update: {
+            title:               meta.title || 'Доп. сервер',
+            expireAt,
+            pricePerMonthLocked: meta.pricePerMonthLocked ?? 0,
+            pricePerDayLocked:   meta.pricePerDayLocked,
+            paymentId:           payment.id,
+            cancelledAt:         null,
+            source:              'PURCHASE',
+          },
+        })
+        await syncUserSquadsToRemnawave(user.id)
+        logger.info(`Squad addon activated: ${orderId}, user ${user.id}, squad ${meta.squadUuid}`)
+      } catch (err: any) {
+        logger.error(`Squad addon activation failed for ${orderId}: ${err?.message}`)
+      }
+      return
     }
 
     // Handle balance top-up
@@ -790,6 +844,10 @@ export class PaymentService {
           }
         } catch {}
 
+        if (!payment.tariffId) {
+          logger.warn(`Gift payment ${orderId} has no tariffId — cannot create gift`)
+          return
+        }
         await giftService.createGift({
           fromUserId:     user.id,
           tariffId:       payment.tariffId,
@@ -801,6 +859,12 @@ export class PaymentService {
       } catch (err) {
         logger.error(`Failed to create gift from payment ${orderId}:`, err)
       }
+      return
+    }
+
+    // From here on we're activating a SUBSCRIPTION — requires a real tariff.
+    if (!tariff) {
+      logger.info(`Payment ${orderId} has no tariff — non-subscription purpose already handled, skipping activation`)
       return
     }
 
@@ -925,6 +989,52 @@ export class PaymentService {
         currentPlanTag: tariff.remnawaveTag ?? null,
       },
     })
+
+    // Bundled squad addons: metadata._addons = [{ squadUuid, title, pricePerMonth }]
+    // — snapshot taken at checkout. Addons expire together with the subscription.
+    if (meta?._addons && Array.isArray(meta._addons) && meta._addons.length > 0) {
+      try {
+        const { syncUserSquadsToRemnawave } = await import('./squad-addons')
+        for (const item of meta._addons) {
+          if (!item?.squadUuid) continue
+          const pricePerMonth = Number(item.pricePerMonth) || 0
+          const pricePerDayLocked = pricePerMonth / 30
+          await prisma.userSquadAddon.upsert({
+            where: { userId_squadUuid: { userId: user.id, squadUuid: item.squadUuid } },
+            create: {
+              userId:              user.id,
+              squadUuid:           item.squadUuid,
+              title:               item.title || 'Доп. сервер',
+              expireAt:            baseLocal,
+              pricePerMonthLocked: pricePerMonth,
+              pricePerDayLocked,
+              paymentId:           payment.id,
+              source:              'BUNDLED',
+              cancelledAt:         null,
+            },
+            update: {
+              title:               item.title || 'Доп. сервер',
+              expireAt:            baseLocal,
+              pricePerMonthLocked: pricePerMonth,
+              pricePerDayLocked,
+              paymentId:           payment.id,
+              cancelledAt:         null,
+              source:              'BUNDLED',
+            },
+          })
+        }
+        await syncUserSquadsToRemnawave(user.id)
+      } catch (err: any) {
+        logger.warn(`Bundled addons activation failed for ${orderId}: ${err?.message}`)
+      }
+    } else {
+      // No bundled addons — re-sync anyway so active addons survive any
+      // base-squad changes in the tariff.
+      try {
+        const { syncUserSquadsToRemnawave } = await import('./squad-addons')
+        await syncUserSquadsToRemnawave(user.id).catch(() => {})
+      } catch {}
+    }
 
     // Handle referral bonus (uses new referral service with admin settings)
     if (user.referredById) {

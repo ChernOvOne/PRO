@@ -432,6 +432,15 @@ const TABS: TabDef[] = [
     ],
   },
   {
+    id: 'autorenew', icon: RefreshCw, title: 'Автопродление',
+    fields: [
+      { key: 'auto_renew_enabled', label: 'Автопродление включено глобально', type: 'toggle' },
+      { key: 'auto_renew_lead_hours', label: 'За сколько часов до истечения пытаться списать', type: 'number', placeholder: '1' },
+      { key: 'tg_msg_auto_renew_success', label: 'Telegram-сообщение при успехе', type: 'textarea', placeholder: '🔁 Подписка продлена автоматически\n\nТариф: {tariffName}\nСписано: {amount} ₽\nДействует до: {expireAt}\nОстаток: {balance} ₽' },
+      { key: 'tg_msg_auto_renew_failed', label: 'Telegram-сообщение при провале', type: 'textarea', placeholder: '❌ Не удалось продлить подписку\n\nПричина: {reason}\nТребуется: {required} ₽\nНа балансе: {balance} ₽' },
+    ],
+  },
+  {
     id: 'referrals', icon: Users, title: 'Рефералы',
     fields: [
       { key: 'referral_enabled', label: 'Реферальная программа', type: 'toggle' },

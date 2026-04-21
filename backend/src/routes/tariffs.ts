@@ -6,6 +6,7 @@ const PUBLIC_FIELDS = {
   durationDays: true, priceRub: true, priceUsdt: true,
   deviceLimit: true, trafficGb: true, trafficAddonGb: true,
   trafficStrategy: true, isFeatured: true, sortOrder: true,
+  paidSquads: true,
 } as const
 
 export async function tariffRoutes(app: FastifyInstance) {

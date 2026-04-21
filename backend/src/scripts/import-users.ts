@@ -13,6 +13,38 @@ import fs               from 'fs'
 
 const prisma = new PrismaClient()
 
+/**
+ * Pick the most likely Tariff for an imported user based on which Remnawave
+ * squads are active on the user vs. which squads each Tariff configures.
+ *
+ * Best fit: highest squad-intersection size, with ties broken by the tariff
+ * that has the FEWEST extra (non-matching) squads. Returns null when no
+ * tariff shares any squads with the user.
+ */
+async function detectTariffFromSquads(activeSquadUuids: string[]) {
+  if (!activeSquadUuids.length) return null
+  const tariffs = await prisma.tariff.findMany({
+    where: { isActive: true, type: 'SUBSCRIPTION' },
+    select: { id: true, name: true, remnawaveTag: true, remnawaveSquads: true },
+  })
+  let best: typeof tariffs[number] | null = null
+  let bestScore = 0
+  let bestExtra = Number.POSITIVE_INFINITY
+  const userSet = new Set(activeSquadUuids)
+
+  for (const t of tariffs) {
+    const inter = t.remnawaveSquads.filter(s => userSet.has(s)).length
+    if (inter === 0) continue
+    const extra = Math.abs(t.remnawaveSquads.length - inter)
+    if (inter > bestScore || (inter === bestScore && extra < bestExtra)) {
+      best = t
+      bestScore = inter
+      bestExtra = extra
+    }
+  }
+  return best
+}
+
 interface ImportRow {
   email?:       string
   telegram_id?: string
@@ -85,6 +117,14 @@ async function importUsers() {
         if (rmUser) matchedBy = 'telegram_id'
       }
 
+      // For active imported users, detect which tariff they're on by
+      // intersecting their Remnawave squads with each Tariff.remnawaveSquads.
+      // This only applies when the subscription is ACTIVE (expireAt in future);
+      // expired users are shown the tariff picker and we don't backfill.
+      const isActive = rmUser?.expireAt && new Date(rmUser.expireAt) > new Date()
+      const activeSquadUuids = (rmUser?.activeInternalSquads ?? []).map(s => s.uuid)
+      const detectedTariff  = isActive ? await detectTariffFromSquads(activeSquadUuids) : null
+
       if (existing) {
         // Update existing user with REMNAWAVE data
         await prisma.user.update({
@@ -94,6 +134,8 @@ async function importUsers() {
             subStatus:     rmUser ? 'ACTIVE' : 'INACTIVE',
             subExpireAt:   rmUser?.expireAt ? new Date(rmUser.expireAt) : null,
             subLink:       rmUser ? remnawave.getSubscriptionUrl(rmUser.uuid) : null,
+            currentPlan:    detectedTariff?.name ?? existing.currentPlan ?? null,
+            currentPlanTag: detectedTariff?.remnawaveTag ?? existing.currentPlanTag ?? null,
           },
         })
 
@@ -125,6 +167,8 @@ async function importUsers() {
             subStatus:     rmUser ? 'ACTIVE' : 'INACTIVE',
             subExpireAt:   rmUser?.expireAt ? new Date(rmUser.expireAt) : null,
             subLink:       rmUser ? remnawave.getSubscriptionUrl(rmUser.uuid) : null,
+            currentPlan:    detectedTariff?.name ?? null,
+            currentPlanTag: detectedTariff?.remnawaveTag ?? null,
           },
         })
 

@@ -58,6 +58,11 @@ model User {
   currentPlanTag  String?   @map("current_plan_tag")
   firstSeenAt     DateTime? @map("first_seen_at")
 
+  // Auto-renew from balance: covers both subscription and paid squad addons.
+  // User opts in — disabled by default.
+  autoRenew           Boolean   @default(false) @map("auto_renew")
+  lastAutoRenewAt     DateTime? @map("last_auto_renew_at")
+
   // Partner link (for investor/partner role users)
   buhPartnerId    String?   @map("buh_partner_id")
   buhPartner      BuhPartner? @relation(fields: [buhPartnerId], references: [id])
@@ -96,6 +101,9 @@ model User {
   tickets            Ticket[]               @relation("TicketUser")
   assignedTickets    Ticket[]               @relation("TicketAssignee")
   ticketMessages     TicketMessage[]        @relation("TicketMessageAuthor")
+
+  // ── Squad addons ────────────────────────────────────────
+  squadAddons        UserSquadAddon[]
 
   @@map("users")
 }
@@ -150,9 +158,18 @@ model Tariff {
   configurator    Json?       @map("configurator")    // {traffic:{pricePerUnit,min,max,step,default},days:{...},devices:{...}}
 
   // REMNAWAVE config (for SUBSCRIPTION type)
-  remnawaveSquads String[]    @default([]) @map("remnawave_squads")   // Internal squad UUIDs
+  remnawaveSquads String[]    @default([]) @map("remnawave_squads")   // Internal squad UUIDs (free — included in tariff)
   remnawaveTag    String?     @map("remnawave_tag")
   remnawaveTagIds String[]    @default([]) @map("remnawave_tag_ids")  // legacy
+
+  // Paid squad addons — admin configures which extra squads are sold on top
+  // of this tariff and at what price. Shape:
+  // [{ squadUuid, title, pricePerMonth, description?, country?, icon? }]
+  paidSquads      Json        @default("[]") @map("paid_squads")
+
+  // If false — auto-renew is disabled for this tariff (e.g. trial), user's
+  // global autoRenew flag is ignored for this particular tariff.
+  autoRenewAllowed Boolean    @default(true) @map("auto_renew_allowed")
 
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
@@ -168,8 +185,8 @@ model Payment {
   id              String        @id @default(uuid())
   userId          String?       @map("user_id")
   user            User?         @relation(fields: [userId], references: [id])
-  tariffId        String        @map("tariff_id")
-  tariff          Tariff        @relation(fields: [tariffId], references: [id])
+  tariffId        String?       @map("tariff_id")
+  tariff          Tariff?       @relation(fields: [tariffId], references: [id])
 
   provider        PaymentProvider
   providerOrderId String?       @map("provider_order_id")
@@ -1353,6 +1370,38 @@ enum PaymentPurpose {
   SUBSCRIPTION
   TOPUP
   GIFT
+  SQUAD_ADDON
+}
+
+enum UserSquadAddonSource {
+  PURCHASE
+  BUNDLED
+  IMPORTED
+  GRANTED
+}
+
+// Self-contained: stores a snapshot of title + price at the moment of
+// purchase, so that subsequent edits to Tariff.paidSquads don't retroactively
+// break already-purchased addons.
+model UserSquadAddon {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  squadUuid         String   @map("squad_uuid")
+  title             String                                    // snapshot
+  expireAt          DateTime @map("expire_at")
+  pricePerMonthLocked Decimal @default(0) @db.Decimal(10, 2) @map("price_per_month_locked")
+  pricePerDayLocked Decimal  @default(0) @db.Decimal(10, 4) @map("price_per_day_locked")
+  paymentId         String?  @map("payment_id")
+  source            UserSquadAddonSource @default(PURCHASE)
+  autoRenew         Boolean  @default(true) @map("auto_renew")
+  cancelledAt       DateTime? @map("cancelled_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, squadUuid])
+  @@index([userId, cancelledAt])
+  @@index([expireAt])
+  @@map("user_squad_addons")
 }
 
 enum TariffType {

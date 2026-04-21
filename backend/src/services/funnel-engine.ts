@@ -401,7 +401,7 @@ async function checkCondition(condition: string, userId: string): Promise<boolea
   if (condition === 'none') return true
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { subStatus: true, remnawaveUuid: true, subExpireAt: true },
+    select: { subStatus: true, remnawaveUuid: true, subExpireAt: true, lastAutoRenewAt: true },
   })
   if (!user) return false
 
@@ -418,7 +418,18 @@ async function checkCondition(condition: string, userId: string): Promise<boolea
       } catch { return true }
     }
     case 'no_subscription': return user.subStatus !== 'ACTIVE'
-    case 'expired': return user.subStatus !== 'ACTIVE' && !!user.subExpireAt && user.subExpireAt < new Date()
+    case 'expired': {
+      if (user.subStatus === 'ACTIVE') return false
+      if (!user.subExpireAt || user.subExpireAt >= new Date()) return false
+      // Race guard: auto-renew just ran for this user within the last 6 hours —
+      // don't fire "expired" funnel messages; the subscription was already
+      // extended (or will be via the next cron tick).
+      if (user.lastAutoRenewAt) {
+        const hoursSince = (Date.now() - user.lastAutoRenewAt.getTime()) / 3600_000
+        if (hoursSince < 6) return false
+      }
+      return true
+    }
     default: return true
   }
 }

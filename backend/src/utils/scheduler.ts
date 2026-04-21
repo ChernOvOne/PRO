@@ -111,5 +111,17 @@ export async function setupCronJobs() {
     },
   })
 
+  // Auto-renew (subscription + paid squads) every 15 minutes.
+  // Also expires past-due addons after the renew attempt.
+  scheduler.register({
+    name:     'auto-renew',
+    interval: 15 * 60_000,
+    fn:       async () => {
+      const { runAutoRenew, expireAddonsAfterRenew } = await import('../services/auto-renew')
+      await runAutoRenew()
+      await expireAddonsAfterRenew()
+    },
+  })
+
   scheduler.start()
 }

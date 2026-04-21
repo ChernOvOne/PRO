@@ -7,6 +7,7 @@ import {
   Shield, LayoutDashboard, CreditCard, BookOpen,
   Users, LogOut, Menu, X, Zap, Bell,
   Wifi, Newspaper, Settings, Wallet, CheckCheck, LifeBuoy,
+  Server,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { useBrand } from '@/hooks/useBrand'

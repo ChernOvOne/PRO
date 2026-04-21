@@ -37,6 +37,83 @@ export class NotificationService {
     logger.info(`Notification sent: payment confirmed for ${userId}`)
   }
 
+  // ── Auto-renew: success ─────────────────────────────────────
+  async autoRenewSuccess(userId: string, vars: { tariffName: string; amount: number; expireAt: Date; balance: number }) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { telegramId: true, email: true },
+    })
+    if (!user) return
+    const expireStr = vars.expireAt.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })
+
+    // Telegram
+    if (user.telegramId) {
+      try {
+        const tpl = await prisma.setting.findUnique({ where: { key: 'tg_msg_auto_renew_success' } })
+        const body = (tpl?.value || `🔁 Подписка продлена автоматически\n\nТариф: {tariffName}\nСписано: {amount} ₽\nДействует до: {expireAt}\nОстаток: {balance} ₽`)
+          .replace('{tariffName}', vars.tariffName)
+          .replace('{amount}', String(vars.amount))
+          .replace('{expireAt}', expireStr)
+          .replace('{balance}', String(vars.balance))
+        const { sendTelegramMessage } = await import('../bot')
+        await sendTelegramMessage(user.telegramId, body)
+      } catch (err: any) { logger.warn('TG auto-renew success failed:', err?.message) }
+    }
+
+    // Email
+    if (user.email) {
+      await emailService.sendAutoRenewSuccess(user.email, vars).catch(err =>
+        logger.warn('Email auto-renew success failed:', err?.message))
+    }
+
+    // In-app (notifications table)
+    try {
+      await prisma.notification.create({
+        data: {
+          userId, type: 'SUCCESS',
+          title: 'Подписка продлена',
+          message: `${vars.tariffName} · до ${expireStr} · списано ${vars.amount} ₽ с баланса`,
+        },
+      })
+    } catch (err: any) { logger.warn('Notification insert failed:', err?.message) }
+  }
+
+  // ── Auto-renew: failed ──────────────────────────────────────
+  async autoRenewFailed(userId: string, vars: { reason: string; required: number; balance: number }) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { telegramId: true, email: true },
+    })
+    if (!user) return
+
+    if (user.telegramId) {
+      try {
+        const tpl = await prisma.setting.findUnique({ where: { key: 'tg_msg_auto_renew_failed' } })
+        const body = (tpl?.value || `❌ Не удалось продлить подписку\n\nПричина: {reason}\nТребуется: {required} ₽\nНа балансе: {balance} ₽\n\nПополните баланс чтобы не потерять доступ.`)
+          .replace('{reason}', vars.reason)
+          .replace('{required}', String(vars.required))
+          .replace('{balance}', String(vars.balance))
+        const { sendTelegramMessage } = await import('../bot')
+        await sendTelegramMessage(user.telegramId, body)
+      } catch (err: any) { logger.warn('TG auto-renew failed notify failed:', err?.message) }
+    }
+
+    if (user.email) {
+      await emailService.sendAutoRenewFailed(user.email, vars).catch(err =>
+        logger.warn('Email auto-renew failed notify failed:', err?.message))
+    }
+
+    try {
+      await prisma.notification.create({
+        data: {
+          userId, type: 'WARNING',
+          title: 'Не удалось продлить подписку',
+          message: `${vars.reason} · требуется ${vars.required} ₽, на балансе ${vars.balance} ₽`,
+        },
+      })
+    } catch (err: any) { logger.warn('Notification insert failed:', err?.message) }
+  }
+
   // ── Expiry warning ────────────────────────────────────────────
   async expiryWarning(userId: string, daysLeft: number) {
     const user = await prisma.user.findUnique({

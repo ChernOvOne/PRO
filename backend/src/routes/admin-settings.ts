@@ -88,6 +88,8 @@ const EMAIL_TEMPLATES = [
   { key: 'expiry',          name: '⚠️ Подписка истекает',    description: 'Напоминание за N дней до окончания',  vars: ['daysLeft', 'appUrl', 'appName'] },
   { key: 'gift',            name: '🎁 Подарок-подписка',     description: 'Кто-то подарил VPN-подписку',         vars: ['senderName', 'tariffName', 'giftCode', 'appUrl', 'appName'] },
   { key: 'trial_offer',     name: '🎁 Пробный период',        description: 'Предложение активировать trial',      vars: ['trialDays', 'appUrl', 'appName'] },
+  { key: 'auto_renew_success', name: '🔁 Автопродление: успех',  description: 'Подписка/доп.серверы продлены с баланса', vars: ['tariffName', 'amount', 'expireAt', 'balance', 'appName', 'appUrl'] },
+  { key: 'auto_renew_failed',  name: '❌ Автопродление: провал', description: 'Не удалось списать с баланса — баланс/тариф', vars: ['reason', 'required', 'balance', 'appName', 'appUrl'] },
 ]
 
 export async function adminSettingsRoutes(app: FastifyInstance) {

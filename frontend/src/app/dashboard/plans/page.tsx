@@ -5,10 +5,15 @@ import { CheckCircle2, CreditCard, Bitcoin, Loader2,
          Star, X, ExternalLink, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+interface PaidSquad {
+  squadUuid: string; title: string; pricePerMonth: number
+  description?: string | null; country?: string | null; icon?: string | null
+}
 interface Tariff {
   id: string; name: string; description?: string
   durationDays: number; priceRub: number; priceUsdt?: number
   deviceLimit: number; trafficGb?: number; isFeatured: boolean
+  paidSquads?: PaidSquad[]
 }
 
 interface ProviderOption {
@@ -26,6 +31,7 @@ export default function PlansPage() {
   const [providers, setProviders]   = useState<ProviderOption[]>([])
   const [provider, setProvider]     = useState<string>('YUKASSA')
   const [currency, setCurrency]     = useState<'USDT' | 'TON' | 'BTC'>('USDT')
+  const [selectedAddonUuids, setSelectedAddonUuids] = useState<string[]>([])
 
   useEffect(() => {
     fetch('/api/tariffs')
@@ -42,7 +48,21 @@ export default function PlansPage() {
         }
       })
       .catch(() => {})
+
   }, [])
+
+  // Reset selection when tariff changes
+  useEffect(() => { setSelectedAddonUuids([]) }, [selected?.id])
+
+  const addons = selected?.paidSquads ?? []
+  const tariffMonths = selected ? Math.max(1, Math.round(selected.durationDays / 30)) : 0
+  const bundledAddons = addons.filter(a => selectedAddonUuids.includes(a.squadUuid))
+  const bundledTotal  = bundledAddons.reduce((s, a) => s + Math.ceil(a.pricePerMonth * tariffMonths), 0)
+  const grandTotalRub = (selected?.priceRub || 0) + bundledTotal
+
+  const toggleAddon = (uuid: string) => {
+    setSelectedAddonUuids(ids => ids.includes(uuid) ? ids.filter(x => x !== uuid) : [...ids, uuid])
+  }
 
   const currentProviderOpt = providers.find(p => p.id === provider)
 
@@ -55,6 +75,7 @@ export default function PlansPage() {
       if (provider === 'PLATEGA' && currentProviderOpt?.meta?.paymentMethod) {
         body.paymentMethod = currentProviderOpt.meta.paymentMethod
       }
+      if (selectedAddonUuids.length > 0) body.addonSquadUuids = selectedAddonUuids
 
       const res = await fetch('/api/payments/create', {
         method:      'POST',
@@ -214,6 +235,47 @@ export default function PlansPage() {
             </div>
           )}
 
+          {/* Paid squad addons configured on this tariff */}
+          {addons.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm">Дополнительные серверы</h3>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                Добавь платные сервера к тарифу. Цена = цена за месяц × {tariffMonths} мес.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {addons.map(a => {
+                  const active = selectedAddonUuids.includes(a.squadUuid)
+                  const cost = Math.ceil(a.pricePerMonth * tariffMonths)
+                  return (
+                    <button
+                      key={a.squadUuid}
+                      type="button"
+                      onClick={() => toggleAddon(a.squadUuid)}
+                      className="text-left p-3 rounded-xl transition-colors"
+                      style={active
+                        ? { background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.4)' }
+                        : { background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-sm flex items-center gap-2">
+                          {a.icon && <span>{a.icon}</span>}
+                          {a.title}
+                        </span>
+                        {active ? <CheckCircle2 className="w-4 h-4 text-brand-500" /> : null}
+                      </div>
+                      {a.country && (
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{a.country}</div>
+                      )}
+                      <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        <b>{cost.toLocaleString('ru')} ₽</b>
+                        <span className="opacity-60"> · {a.pricePerMonth} ₽/мес</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Summary */}
           <div className="p-4 rounded-xl space-y-2" style={{ background: 'var(--surface-2)' }}>
             <div className="flex justify-between text-sm">
@@ -224,12 +286,26 @@ export default function PlansPage() {
               <span style={{ color: 'var(--text-secondary)' }}>Период</span>
               <span>{selected.durationDays} дней</span>
             </div>
+            {bundledAddons.length > 0 && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: 'var(--text-secondary)' }}>Тариф (база)</span>
+                  <span>{selected.priceRub.toLocaleString('ru')} ₽</span>
+                </div>
+                {bundledAddons.map(a => (
+                  <div key={a.squadUuid} className="flex justify-between text-sm">
+                    <span style={{ color: 'var(--text-secondary)' }}>+ {a.title}</span>
+                    <span>{Math.ceil(a.pricePerMonth * tariffMonths).toLocaleString('ru')} ₽</span>
+                  </div>
+                ))}
+              </>
+            )}
             <div className="flex justify-between font-semibold pt-2 mt-2" style={{ borderTop: '1px solid var(--glass-border)' }}>
               <span>Итого</span>
               <span>
                 {provider === 'CRYPTOPAY'
-                  ? `~${selected.priceUsdt} ${currency}`
-                  : `${selected.priceRub.toLocaleString('ru')} ₽`}
+                  ? `~${((selected.priceUsdt || 0) + bundledTotal / 90).toFixed(2)} ${currency}`
+                  : `${grandTotalRub.toLocaleString('ru')} ₽`}
               </span>
             </div>
           </div>

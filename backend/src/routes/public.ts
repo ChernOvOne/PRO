@@ -14,6 +14,7 @@ export async function publicRoutes(app: FastifyInstance) {
         durationDays: true, priceRub: true, priceUsdt: true,
         deviceLimit: true, trafficGb: true, isFeatured: true,
         mode: true, variants: true, configurator: true,
+        paidSquads: true,
       },
     }),
   )

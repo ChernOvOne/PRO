@@ -36,6 +36,7 @@ node_modules/
 dist/
 **/dist/
 *.log
+*.tsbuildinfo
 
 # Runtime backups (created by updater sidecar)
 data/backups/

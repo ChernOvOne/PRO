@@ -66,6 +66,15 @@ const TariffSchema = z.object({
   mode:             z.enum(['simple', 'variants', 'configurator']).default('simple'),
   variants:         z.any().optional().nullable(),
   configurator:     z.any().optional().nullable(),
+  paidSquads:       z.array(z.object({
+    squadUuid:     z.string().min(1),
+    title:         z.string().min(1),
+    pricePerMonth: z.coerce.number().min(0),
+    description:   z.string().optional().nullable(),
+    country:       z.string().optional().nullable(),
+    icon:          z.string().optional().nullable(),
+  })).default([]),
+  autoRenewAllowed: z.boolean().default(true),
 })
 
 const InstructionSchema = z.object({
@@ -388,6 +397,23 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     await prisma.tariff.delete({ where: { id } })
     return { ok: true }
+  })
+
+  app.post('/tariffs/:id/duplicate', admin, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const src = await prisma.tariff.findUnique({ where: { id } })
+    if (!src) return reply.status(404).send({ error: 'Not found' })
+    const { id: _i, createdAt, updatedAt, ...rest } = src
+    const copy = await prisma.tariff.create({
+      data: {
+        ...(rest as any),
+        name:      `Копия — ${src.name}`,
+        isActive:  false,
+        isVisible: false,
+        sortOrder: src.sortOrder + 1,
+      },
+    })
+    return reply.status(201).send(copy)
   })
 
 

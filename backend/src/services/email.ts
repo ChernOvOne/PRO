@@ -151,6 +151,29 @@ class EmailService {
     return this.send({ to: email, subject: `✅ Оплата прошла — ${appName}`, html: this.wrap(content, undefined, appName) })
   }
 
+  async sendAutoRenewSuccess(email: string, vars: { tariffName: string; amount: number; expireAt: Date; balance: number }) {
+    const { getBrandName } = await import('./brand')
+    const appName = await getBrandName()
+    const expireStr = vars.expireAt.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })
+    const defaultHtml = `<h2>🔁 Подписка продлена автоматически</h2><p>Тариф: <strong>${vars.tariffName}</strong></p><p>Списано с баланса: <strong>${vars.amount} ₽</strong></p><p>Подписка активна до: <strong>${expireStr}</strong></p><p>Остаток на балансе: <strong>${vars.balance} ₽</strong></p><a href="${config.appUrl}/dashboard" class="btn">Открыть кабинет</a>`
+    const content = await this.getTemplate('auto_renew_success', {
+      tariffName: vars.tariffName, amount: String(vars.amount), expireAt: expireStr,
+      balance: String(vars.balance), appUrl: config.appUrl, appName,
+    }, defaultHtml)
+    return this.send({ to: email, subject: `🔁 Подписка продлена — ${appName}`, html: this.wrap(content, undefined, appName) })
+  }
+
+  async sendAutoRenewFailed(email: string, vars: { reason: string; required: number; balance: number }) {
+    const { getBrandName } = await import('./brand')
+    const appName = await getBrandName()
+    const defaultHtml = `<h2>❌ Не удалось продлить подписку</h2><p>Причина: ${vars.reason}</p><p>Требуется: <strong>${vars.required} ₽</strong></p><p>На балансе: <strong>${vars.balance} ₽</strong></p><p>Пополните баланс, чтобы сохранить доступ к VPN.</p><a href="${config.appUrl}/dashboard" class="btn">Пополнить баланс</a>`
+    const content = await this.getTemplate('auto_renew_failed', {
+      reason: vars.reason, required: String(vars.required), balance: String(vars.balance),
+      appUrl: config.appUrl, appName,
+    }, defaultHtml)
+    return this.send({ to: email, subject: `❌ Не удалось продлить подписку — ${appName}`, html: this.wrap(content, undefined, appName) })
+  }
+
   async sendExpiryWarning(email: string, daysLeft: number) {
     const { getBrandName } = await import('./brand')
     const appName = await getBrandName()
@@ -311,6 +334,8 @@ class EmailService {
       reset: `<h2>Сброс пароля</h2><p>Код:</p><div style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px;background:rgba(85,105,255,0.15);border-radius:12px;color:#f1f5f9;">{code}</div>`,
       admin_password: `<h2>🔑 Доступ к ${appName} через сайт</h2><p>Администратор сгенерировал для вас пароль.</p><p>Email: <b>{email}</b></p><p>Пароль: <code>{password}</code></p><a href="${config.appUrl}/auth" class="btn">Войти в личный кабинет</a>`,
       email_changed: `<h2>⚠️ Ваш email был изменён</h2><p>Был: {oldEmail}<br/>Стал: {newEmail}</p><p>Если это не вы — напишите в поддержку.</p>`,
+      auto_renew_success: `<h2>🔁 Подписка продлена автоматически</h2><p>Тариф: <b>{tariffName}</b></p><p>Списано с баланса: <b>{amount} ₽</b></p><p>Подписка активна до: <b>{expireAt}</b></p><p>Остаток на балансе: <b>{balance} ₽</b></p><a href="${config.appUrl}/dashboard" class="btn">Открыть кабинет</a>`,
+      auto_renew_failed: `<h2>❌ Не удалось продлить подписку</h2><p>Причина: {reason}</p><p>Требуется: <b>{required} ₽</b></p><p>На балансе: <b>{balance} ₽</b></p><p>Пополните баланс, чтобы сохранить доступ к VPN и доп. серверам.</p><a href="${config.appUrl}/dashboard" class="btn">Пополнить баланс</a>`,
     }
     return defaults[key] || null
   }

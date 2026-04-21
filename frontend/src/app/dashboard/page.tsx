@@ -75,6 +75,7 @@ export default function DashboardPage() {
   /* ── variant / configurator state ── */
   const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0)
   const [cfgValues, setCfgValues] = useState<{ trafficGb: number; days: number; devices: number }>({ trafficGb: 50, days: 30, devices: 3 })
+  const [selectedAddonUuids, setSelectedAddonUuids] = useState<string[]>([])
 
   /* ── gift modal ── */
   const [giftTariff, setGiftTariff]           = useState<any>(null)
@@ -207,6 +208,9 @@ export default function DashboardPage() {
       }
       if (payTariff.mode === 'configurator') {
         extra.config = { ...cfgValues }
+      }
+      if (selectedAddonUuids.length > 0) {
+        extra.addonSquadUuids = selectedAddonUuids
       }
 
       if (provider === 'BALANCE') {
@@ -807,6 +811,10 @@ export default function DashboardPage() {
               Пополнить
             </button>
           </div>
+
+          {/* Auto-renew toggle */}
+          <AutoRenewToggle />
+
           {balance?.history?.length > 0 && (
             <div className="space-y-0.5 max-h-24 overflow-y-auto">
               {balance.history.slice(0, 3).map((tx: any) => (
@@ -1279,7 +1287,7 @@ export default function DashboardPage() {
         </Modal>
       )}
 
-      {/* ── TARIFFS MODAL ── */}
+      {/* ── TARIFFS MODAL (premium redesign) ── */}
       {showTariffs && (() => {
         const getBasePrice = () => {
           if (!payTariff) return 0
@@ -1303,17 +1311,39 @@ export default function DashboardPage() {
           if (hasPayDiscount) return Math.round(base * (1 - activeDiscount.discountPct / 100))
           return base
         }
-
-        const pillClass = "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px]"
-        const pillStyle = { background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }
+        const payDaysForAddons = (() => {
+          if (!payTariff) return 0
+          if (payTariff.mode === 'variants' && payTariff.variants?.[selectedVariantIdx]) return payTariff.variants[selectedVariantIdx].days
+          if (payTariff.mode === 'configurator') return cfgValues.days
+          return payTariff.durationDays || 0
+        })()
+        const payTariffMonths = Math.max(1, Math.round(payDaysForAddons / 30))
+        const paidSquadsArr: any[] = Array.isArray(payTariff?.paidSquads) ? payTariff.paidSquads : []
+        const bundledAddonsPicked = paidSquadsArr.filter(a => selectedAddonUuids.includes(a.squadUuid))
+        const bundledAddonsTotal  = bundledAddonsPicked.reduce((s: number, a: any) => s + Math.ceil(a.pricePerMonth * payTariffMonths), 0)
+        const grandTotalRub = getCurrentPrice() + bundledAddonsTotal
+        const pricePerDay = payDaysForAddons > 0 ? Math.round(getCurrentPrice() / payDaysForAddons) : 0
 
         return (
         <Modal close={() => { setShowTariffs(false); setPayTariff(null) }} wide>
 
           {!payTariff ? (
             <>
-              <h3 className="font-semibold text-lg mb-1">Тарифы</h3>
-              <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>Выберите подходящий план</p>
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+                     style={{
+                       background: 'linear-gradient(135deg, rgba(6,182,212,0.18), rgba(14,165,233,0.12))',
+                       border: '1px solid rgba(6,182,212,0.25)',
+                       boxShadow: '0 6px 20px rgba(6,182,212,0.15), inset 0 1px 0 rgba(255,255,255,0.05)',
+                     }}>
+                  <CreditCard className="w-5 h-5" style={{ color: 'var(--accent-1)' }} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg leading-tight">Выберите тариф</h3>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Подключение — сразу после оплаты</p>
+                </div>
+              </div>
 
               {tariffs.length > 0 ? (
                 <div className="space-y-3">
@@ -1322,140 +1352,177 @@ export default function DashboardPage() {
                     const startPrice = tMode === 'variants' && t.variants?.length
                       ? Math.min(...t.variants.map((v: any) => v.priceRub))
                       : t.priceRub
+                    const hasDiscount = activeDiscount && activeDiscount.discountPct &&
+                      (activeDiscount.tariffIds.length === 0 || activeDiscount.tariffIds.includes(t.id))
+                    const discountedPrice = hasDiscount ? Math.round(startPrice * (1 - activeDiscount.discountPct / 100)) : startPrice
+                    const perDay = t.durationDays > 0 ? Math.round(discountedPrice / t.durationDays) : 0
 
                     return (
                       <div key={t.id}
-                           className="rounded-2xl p-5 transition-all"
+                           className="group relative rounded-2xl overflow-hidden transition-all"
                            style={{
-                             background: 'var(--glass-bg)',
-                             border: t.isFeatured ? '1.5px solid rgba(6,182,212,0.3)' : '1px solid var(--glass-border)',
+                             background: t.isFeatured
+                               ? 'linear-gradient(145deg, rgba(6,182,212,0.06), rgba(14,165,233,0.02))'
+                               : 'var(--glass-bg)',
+                             border: t.isFeatured ? '1px solid rgba(6,182,212,0.35)' : '1px solid var(--glass-border)',
+                             boxShadow: t.isFeatured ? '0 12px 40px rgba(6,182,212,0.08)' : 'none',
                            }}>
 
+                        {/* Featured accent bar */}
                         {t.isFeatured && (
-                          <span className="badge-blue text-[10px] mb-2 inline-flex items-center gap-1">
-                            <Zap className="w-3 h-3" /> Популярный
-                          </span>
+                          <div className="absolute top-0 left-0 right-0 h-0.5"
+                               style={{ background: 'linear-gradient(90deg, transparent, var(--accent-1), transparent)' }} />
                         )}
 
-                        {(() => {
-                          const hasDiscount = activeDiscount && activeDiscount.discountPct &&
-                            (activeDiscount.tariffIds.length === 0 || activeDiscount.tariffIds.includes(t.id))
-                          const discountedPrice = hasDiscount ? Math.round(startPrice * (1 - activeDiscount.discountPct / 100)) : startPrice
-                          return (
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>{t.name}</h4>
+                        <div className="p-5">
+                          {/* Top row: badge + name + price */}
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                {t.isFeatured && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide"
+                                        style={{
+                                          background: 'var(--accent-gradient)',
+                                          color: '#fff',
+                                          boxShadow: '0 2px 8px rgba(6,182,212,0.35)',
+                                        }}>
+                                    <Zap className="w-2.5 h-2.5 fill-current" /> Популярный
+                                  </span>
+                                )}
                                 {hasDiscount && (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
-                                        style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.2)' }}>
-                                    -{activeDiscount.discountPct}%
+                                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
+                                        style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                                    −{activeDiscount.discountPct}%
                                   </span>
                                 )}
                               </div>
-                              <div className="text-right">
-                                {hasDiscount && (
-                                  <p className="text-xs line-through" style={{ color: 'var(--text-tertiary)' }}>
-                                    {startPrice.toLocaleString('ru')} ₽
-                                  </p>
-                                )}
-                                <p className="text-xl font-extrabold" style={{ color: hasDiscount ? 'var(--success)' : 'var(--text-primary)' }}>
-                                  {tMode === 'variants' ? 'от ' : ''}{discountedPrice.toLocaleString('ru')}
-                                  <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                                </p>
-                              </div>
+                              <h4 className="font-bold text-[17px] leading-tight truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</h4>
+                              {t.description && (
+                                <p className="text-[11px] mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{t.description}</p>
+                              )}
                             </div>
-                          )
-                        })()}
+                            <div className="text-right flex-shrink-0">
+                              {hasDiscount && (
+                                <p className="text-[11px] line-through leading-none mb-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                  {startPrice.toLocaleString('ru')} ₽
+                                </p>
+                              )}
+                              <div className="flex items-baseline justify-end gap-0.5">
+                                {tMode === 'variants' && (
+                                  <span className="text-[10px] font-medium mr-0.5" style={{ color: 'var(--text-tertiary)' }}>от</span>
+                                )}
+                                <span className="text-2xl font-extrabold leading-none"
+                                      style={{ color: hasDiscount ? 'var(--success)' : 'var(--text-primary)' }}>
+                                  {discountedPrice.toLocaleString('ru')}
+                                </span>
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>₽</span>
+                              </div>
+                              {perDay > 0 && t.type !== 'TRAFFIC_ADDON' && (
+                                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                  ~{perDay} ₽ / день
+                                </p>
+                              )}
+                            </div>
+                          </div>
 
-                        {t.description && (
-                          <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>{t.description}</p>
-                        )}
-
-                        {/* Countries / Protocol / Speed */}
-                        {(t.countries || t.protocol || t.speed) && (
-                          <div className="mb-3 space-y-2">
-                            {t.countries && (
-                              <div>
-                                <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>Локации</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {t.countries.split(',').map((c: string, ci: number) => {
-                                    const name = c.trim()
-                                    const code = getCountryCode(name)
-                                    return (
-                                      <span key={ci} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs"
-                                            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                                        {code && <img src={`https://flagcdn.com/20x15/${code}.png`} alt="" className="w-5 h-3.5 rounded-sm object-cover" />}
-                                        {name}
-                                      </span>
-                                    )
-                                  })}
+                          {/* Feature icons strip */}
+                          <div className="flex items-center gap-3 mb-3 py-2.5 px-3 rounded-xl"
+                               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
+                            {t.type === 'TRAFFIC_ADDON' ? (
+                              <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                <Zap className="w-3.5 h-3.5" style={{ color: 'var(--accent-1)' }} />
+                                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>+{t.trafficAddonGb} ГБ</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                  <Clock className="w-3.5 h-3.5" style={{ color: 'var(--accent-1)' }} />
+                                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.durationDays}</span> дн.
                                 </div>
-                              </div>
-                            )}
-                            {(t.protocol || t.speed) && (
-                              <div className="flex flex-wrap gap-2">
-                                {t.protocol && (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
-                                        style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
-                                    Протокол: {t.protocol}
-                                  </span>
-                                )}
-                                {t.speed && (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
-                                        style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', color: 'var(--success)' }}>
-                                    Скорость: {t.speed}
-                                  </span>
-                                )}
-                              </div>
+                                <div className="w-px h-3" style={{ background: 'var(--glass-border)' }} />
+                                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                  <Wifi className="w-3.5 h-3.5" style={{ color: 'var(--accent-2)' }} />
+                                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.trafficGb || '∞'}</span> ГБ
+                                </div>
+                                <div className="w-px h-3" style={{ background: 'var(--glass-border)' }} />
+                                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                  <Smartphone className="w-3.5 h-3.5" style={{ color: 'var(--warning)' }} />
+                                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.deviceLimit === 0 ? '∞' : t.deviceLimit}</span> устр.
+                                </div>
+                              </>
                             )}
                           </div>
-                        )}
 
-                        {/* Feature pills */}
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          {t.type === 'TRAFFIC_ADDON' ? (
-                            <span className={pillClass} style={pillStyle}>
-                              <Zap className="w-3 h-3" /> +{t.trafficAddonGb} ГБ
-                            </span>
-                          ) : (
-                            <>
-                              <span className={pillClass} style={pillStyle}>
-                                <Clock className="w-3 h-3" /> {t.durationDays} дн.
-                              </span>
-                              <span className={pillClass} style={pillStyle}>
-                                <Wifi className="w-3 h-3" /> {t.trafficGb || '∞'} ГБ
-                              </span>
-                              <span className={pillClass} style={pillStyle}>
-                                <Smartphone className="w-3 h-3" /> {t.deviceLimit === 0 ? '∞' : t.deviceLimit} устр.
-                              </span>
-                            </>
+                          {/* Countries */}
+                          {t.countries && (
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              {t.countries.split(',').slice(0, 8).map((c: string, ci: number) => {
+                                const name = c.trim()
+                                const code = getCountryCode(name)
+                                return (
+                                  <span key={ci} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10.5px]"
+                                        style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                                    {code && <img src={`https://flagcdn.com/20x15/${code}.png`} alt="" className="w-4 h-3 rounded-[2px] object-cover" />}
+                                    {name}
+                                  </span>
+                                )
+                              })}
+                              {t.countries.split(',').length > 8 && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px]"
+                                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-tertiary)' }}>
+                                  +{t.countries.split(',').length - 8}
+                                </span>
+                              )}
+                            </div>
                           )}
-                        </div>
 
-                        {/* Action buttons */}
-                        <div className="flex gap-2">
-                          <button
-                            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
-                            style={{ background: 'var(--accent-gradient)', boxShadow: '0 4px 12px rgba(6,182,212,0.2)' }}
-                            onClick={() => {
-                              setPayTariff(t); setProvider('YUKASSA')
-                              if (tMode === 'variants') setSelectedVariantIdx(0)
-                              if (tMode === 'configurator' && t.configurator) {
-                                setCfgValues({
-                                  trafficGb: t.configurator.traffic?.default ?? 50,
-                                  days: t.configurator.days?.default ?? 30,
-                                  devices: t.configurator.devices?.default ?? 3,
-                                })
-                              }
-                            }}>
-                            Выбрать
-                          </button>
-                          <button
-                            className="py-2.5 px-4 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5"
-                            style={{ background: 'transparent', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}
-                            onClick={() => { setGiftTariff(t); setGiftProvider('YUKASSA'); setGiftLink(null) }}>
-                            <Gift className="w-3.5 h-3.5" /> Подарить
-                          </button>
+                          {/* Protocol / Speed accent row */}
+                          {(t.protocol || t.speed) && (
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              {t.protocol && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
+                                      style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
+                                  {t.protocol}
+                                </span>
+                              )}
+                              {t.speed && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
+                                      style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', color: 'var(--success)' }}>
+                                  {t.speed}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-1.5 hover:brightness-110"
+                              style={{
+                                background: 'var(--accent-gradient)',
+                                boxShadow: '0 6px 18px rgba(6,182,212,0.28)',
+                              }}
+                              onClick={() => {
+                                setPayTariff(t); setProvider('YUKASSA')
+                                setSelectedAddonUuids([])
+                                if (tMode === 'variants') setSelectedVariantIdx(0)
+                                if (tMode === 'configurator' && t.configurator) {
+                                  setCfgValues({
+                                    trafficGb: t.configurator.traffic?.default ?? 50,
+                                    days: t.configurator.days?.default ?? 30,
+                                    devices: t.configurator.devices?.default ?? 3,
+                                  })
+                                }
+                              }}>
+                              Выбрать <ChevronRight className="w-4 h-4" />
+                            </button>
+                            <button
+                              className="py-3 px-4 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 hover:bg-white/5"
+                              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}
+                              onClick={() => { setGiftTariff(t); setGiftProvider('YUKASSA'); setGiftLink(null) }}>
+                              <Gift className="w-4 h-4" style={{ color: 'var(--accent-2)' }} /> Подарить
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )
@@ -1472,55 +1539,95 @@ export default function DashboardPage() {
               )}
             </>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
+              {/* Back */}
               <button onClick={() => setPayTariff(null)}
-                      className="flex items-center gap-1 text-xs mb-1"
+                      className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:text-white"
                       style={{ color: 'var(--text-tertiary)' }}>
-                <ChevronLeft className="w-3.5 h-3.5" /> Назад
+                <ChevronLeft className="w-3.5 h-3.5" /> К списку тарифов
               </button>
 
-              {/* Header: name + price */}
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-lg">{payTariff.name}</h3>
-                <div className="text-right">
-                  {hasPayDiscount && (
-                    <p className="text-xs line-through" style={{ color: 'var(--text-tertiary)' }}>
-                      {getBasePrice().toLocaleString('ru')} ₽
-                    </p>
-                  )}
-                  <p className="text-2xl font-extrabold" style={{ color: hasPayDiscount ? 'var(--success)' : 'var(--accent-1)' }}>
-                    {getCurrentPrice().toLocaleString('ru')}
-                    <span className="text-xs font-normal ml-0.5" style={{ color: 'var(--text-tertiary)' }}>₽</span>
-                  </p>
-                </div>
-              </div>
-              {hasPayDiscount && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                     style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)' }}>
-                  <Tag className="w-3.5 h-3.5" style={{ color: 'var(--success)' }} />
-                  <span className="text-xs" style={{ color: 'var(--success)' }}>
-                    Промокод <strong>{activeDiscount.code}</strong> · скидка {activeDiscount.discountPct}%
-                  </span>
-                </div>
-              )}
+              {/* ── HERO: name + price ── */}
+              <div className="relative rounded-2xl p-5 overflow-hidden"
+                   style={{
+                     background: 'linear-gradient(135deg, rgba(6,182,212,0.12) 0%, rgba(14,165,233,0.04) 60%, transparent 100%)',
+                     border: '1px solid rgba(6,182,212,0.25)',
+                     boxShadow: '0 12px 40px rgba(6,182,212,0.08), inset 0 1px 0 rgba(255,255,255,0.04)',
+                   }}>
+                {/* Decorative glow */}
+                <div className="absolute -top-20 -right-20 w-48 h-48 rounded-full opacity-30 pointer-events-none"
+                     style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.4) 0%, transparent 70%)' }} />
 
-              {/* Description + details */}
-              {(payTariff.description || payTariff.countries || payTariff.protocol || payTariff.speed) && (
-                <div className="space-y-2 rounded-xl p-3" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                  {payTariff.description && (
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{payTariff.description}</p>
-                  )}
+                <div className="relative flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider"
+                            style={{ background: 'rgba(6,182,212,0.15)', color: 'var(--accent-1)', border: '1px solid rgba(6,182,212,0.25)' }}>
+                        <Shield className="w-2.5 h-2.5" /> Премиум VPN
+                      </span>
+                      {hasPayDiscount && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold"
+                              style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                          <Tag className="w-2.5 h-2.5" /> −{activeDiscount.discountPct}%
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-extrabold text-xl leading-tight mb-0.5" style={{ color: 'var(--text-primary)' }}>{payTariff.name}</h3>
+                    {payTariff.description && (
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{payTariff.description}</p>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {hasPayDiscount && (
+                      <p className="text-xs line-through" style={{ color: 'var(--text-tertiary)' }}>
+                        {getBasePrice().toLocaleString('ru')} ₽
+                      </p>
+                    )}
+                    <div className="flex items-baseline justify-end gap-0.5">
+                      <span className="text-[32px] font-extrabold leading-none tracking-tight"
+                            style={{
+                              background: hasPayDiscount
+                                ? 'linear-gradient(135deg, #10b981, #059669)'
+                                : 'linear-gradient(135deg, #06b6d4, #0ea5e9)',
+                              WebkitBackgroundClip: 'text',
+                              WebkitTextFillColor: 'transparent',
+                              backgroundClip: 'text',
+                            }}>
+                        {getCurrentPrice().toLocaleString('ru')}
+                      </span>
+                      <span className="text-base font-bold" style={{ color: hasPayDiscount ? 'var(--success)' : 'var(--accent-1)' }}>₽</span>
+                    </div>
+                    {pricePerDay > 0 && (
+                      <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>≈ {pricePerDay} ₽ в день</p>
+                    )}
+                  </div>
+                </div>
+
+                {hasPayDiscount && (
+                  <div className="relative mt-3 flex items-center gap-2 px-3 py-2 rounded-xl"
+                       style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                    <Tag className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--success)' }} />
+                    <span className="text-[11px]" style={{ color: 'var(--success)' }}>
+                      Промокод <strong>{activeDiscount.code}</strong> — скидка {activeDiscount.discountPct}% применена
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Tariff details (locations + protocol + speed) ── */}
+              {(payTariff.countries || payTariff.protocol || payTariff.speed) && (
+                <div className="space-y-3">
                   {payTariff.countries && (
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>Локации</p>
-                      <div className="flex flex-wrap gap-1">
+                      <p className="text-[10px] uppercase tracking-wider mb-1.5 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Локации</p>
+                      <div className="flex flex-wrap gap-1.5">
                         {payTariff.countries.split(',').map((c: string, ci: number) => {
                           const name = c.trim()
                           const code = getCountryCode(name)
                           return (
-                            <span key={ci} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]"
-                                  style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-                              {code && <img src={`https://flagcdn.com/16x12/${code}.png`} alt="" className="w-4 h-3 rounded-sm object-cover" />}
+                            <span key={ci} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px]"
+                                  style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                              {code && <img src={`https://flagcdn.com/20x15/${code}.png`} alt="" className="w-4 h-3 rounded-[2px] object-cover" />}
                               {name}
                             </span>
                           )
@@ -1531,13 +1638,15 @@ export default function DashboardPage() {
                   {(payTariff.protocol || payTariff.speed) && (
                     <div className="flex flex-wrap gap-2">
                       {payTariff.protocol && (
-                        <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                          Протокол: <strong style={{ color: 'var(--accent-1)' }}>{payTariff.protocol}</strong>
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
+                              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.15)', color: 'var(--accent-1)' }}>
+                          Протокол · {payTariff.protocol}
                         </span>
                       )}
                       {payTariff.speed && (
-                        <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                          Скорость: <strong style={{ color: 'var(--success)' }}>{payTariff.speed}</strong>
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium"
+                              style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', color: 'var(--success)' }}>
+                          Скорость · {payTariff.speed}
                         </span>
                       )}
                     </div>
@@ -1545,140 +1654,306 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* ── Variants: compact rounded buttons ── */}
+              {/* ── Variants: premium pill tabs ── */}
               {payTariff.mode === 'variants' && payTariff.variants?.length > 0 && (
                 <div>
-                  <div className="inline-flex rounded-xl p-0.5 gap-0.5" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                  <p className="text-[10px] uppercase tracking-wider mb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Период</p>
+                  <div className="flex flex-wrap rounded-xl p-1 gap-1"
+                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                     {payTariff.variants.map((vr: any, idx: number) => {
                       const active = selectedVariantIdx === idx
                       return (
                         <button key={idx} onClick={() => setSelectedVariantIdx(idx)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                          style={{
-                            background: active ? 'var(--accent-gradient)' : 'transparent',
-                            color: active ? '#fff' : 'var(--text-tertiary)',
-                          }}>
+                          className="flex-1 min-w-[64px] px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+                          style={active
+                            ? { background: 'var(--accent-gradient)', color: '#fff', boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }
+                            : { background: 'transparent', color: 'var(--text-secondary)' }}>
                           {vr.label}
                         </button>
                       )
                     })}
                   </div>
-                  <div className="flex gap-4 mt-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <div className="grid grid-cols-3 gap-2 mt-3">
                     {(() => { const v = payTariff.variants[selectedVariantIdx]; if (!v) return null; return (<>
-                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" style={{ color: 'var(--accent-1)' }} /> {v.days} дней</span>
-                      <span className="flex items-center gap-1"><Wifi className="w-3 h-3" style={{ color: 'var(--accent-2)' }} /> {(v.trafficGb ?? payTariff.trafficGb) || '∞'} ГБ</span>
-                      <span className="flex items-center gap-1"><Smartphone className="w-3 h-3" style={{ color: 'var(--warning)' }} /> {(v.deviceLimit ?? payTariff.deviceLimit) === 0 ? '∞' : (v.deviceLimit ?? payTariff.deviceLimit)} устр.</span>
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <Clock className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-1)' }} />
+                        <div className="min-w-0">
+                          <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Период</p>
+                          <p className="text-xs font-bold truncate">{v.days} дн.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <Wifi className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-2)' }} />
+                        <div className="min-w-0">
+                          <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Трафик</p>
+                          <p className="text-xs font-bold truncate">{(v.trafficGb ?? payTariff.trafficGb) || '∞'} ГБ</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <Smartphone className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--warning)' }} />
+                        <div className="min-w-0">
+                          <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Устройства</p>
+                          <p className="text-xs font-bold truncate">{(v.deviceLimit ?? payTariff.deviceLimit) === 0 ? '∞' : (v.deviceLimit ?? payTariff.deviceLimit)}</p>
+                        </div>
+                      </div>
                     </>) })()}
                   </div>
                 </div>
               )}
 
-              {/* ── Configurator: sliders ── */}
+              {/* ── Configurator: premium sliders with value cards ── */}
               {payTariff.mode === 'configurator' && payTariff.configurator && (() => {
                 const cfg = payTariff.configurator as any
                 return (
                   <div className="space-y-3">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>Настройте под себя</p>
                     {cfg.traffic && (
-                      <div className="flex items-center gap-3">
-                        <Wifi className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-1)' }} />
-                        <div className="flex-1">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span style={{ color: 'var(--text-secondary)' }}>Трафик</span>
-                            <span className="font-bold" style={{ color: 'var(--accent-1)' }}>{cfgValues.trafficGb} ГБ</span>
+                      <div className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.12)' }}>
+                              <Wifi className="w-3.5 h-3.5" style={{ color: 'var(--accent-1)' }} />
+                            </div>
+                            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Трафик</span>
                           </div>
-                          <input type="range" min={cfg.traffic.min} max={cfg.traffic.max} step={cfg.traffic.step}
-                            value={cfgValues.trafficGb}
-                            onChange={e => setCfgValues(prev => ({ ...prev, trafficGb: +e.target.value }))}
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                            style={{ background: 'var(--glass-border)', accentColor: '#06b6d4' }} />
+                          <span className="text-sm font-bold" style={{ color: 'var(--accent-1)' }}>{cfgValues.trafficGb} ГБ</span>
                         </div>
+                        <input type="range" min={cfg.traffic.min} max={cfg.traffic.max} step={cfg.traffic.step}
+                          value={cfgValues.trafficGb}
+                          onChange={e => setCfgValues(prev => ({ ...prev, trafficGb: +e.target.value }))}
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: '#06b6d4' }} />
                       </div>
                     )}
                     {cfg.days && (
-                      <div className="flex items-center gap-3">
-                        <Clock className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-2)' }} />
-                        <div className="flex-1">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span style={{ color: 'var(--text-secondary)' }}>Период</span>
-                            <span className="font-bold" style={{ color: 'var(--accent-2)' }}>{cfgValues.days} дн.</span>
+                      <div className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(244,114,182,0.12)' }}>
+                              <Clock className="w-3.5 h-3.5" style={{ color: 'var(--accent-2)' }} />
+                            </div>
+                            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Период</span>
                           </div>
-                          <input type="range" min={cfg.days.min} max={cfg.days.max} step={cfg.days.step}
-                            value={cfgValues.days}
-                            onChange={e => setCfgValues(prev => ({ ...prev, days: +e.target.value }))}
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                            style={{ background: 'var(--glass-border)', accentColor: '#8b5cf6' }} />
+                          <span className="text-sm font-bold" style={{ color: 'var(--accent-2)' }}>{cfgValues.days} дн.</span>
                         </div>
+                        <input type="range" min={cfg.days.min} max={cfg.days.max} step={cfg.days.step}
+                          value={cfgValues.days}
+                          onChange={e => setCfgValues(prev => ({ ...prev, days: +e.target.value }))}
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: '#f472b6' }} />
                       </div>
                     )}
                     {cfg.devices && (
-                      <div className="flex items-center gap-3">
-                        <Smartphone className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--warning)' }} />
-                        <div className="flex-1">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span style={{ color: 'var(--text-secondary)' }}>Устройства</span>
-                            <span className="font-bold" style={{ color: 'var(--warning)' }}>{cfgValues.devices}</span>
+                      <div className="p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.12)' }}>
+                              <Smartphone className="w-3.5 h-3.5" style={{ color: 'var(--warning)' }} />
+                            </div>
+                            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Устройства</span>
                           </div>
-                          <input type="range" min={cfg.devices.min} max={cfg.devices.max} step={cfg.devices.step}
-                            value={cfgValues.devices}
-                            onChange={e => setCfgValues(prev => ({ ...prev, devices: +e.target.value }))}
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                            style={{ background: 'var(--glass-border)', accentColor: '#f59e0b' }} />
+                          <span className="text-sm font-bold" style={{ color: 'var(--warning)' }}>{cfgValues.devices}</span>
                         </div>
+                        <input type="range" min={cfg.devices.min} max={cfg.devices.max} step={cfg.devices.step}
+                          value={cfgValues.devices}
+                          onChange={e => setCfgValues(prev => ({ ...prev, devices: +e.target.value }))}
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                          style={{ background: 'var(--glass-border)', accentColor: '#f59e0b' }} />
                       </div>
                     )}
                   </div>
                 )
               })()}
 
-              {/* ── Simple: inline features ── */}
+              {/* ── Simple mode: 3 feature cards ── */}
               {(!payTariff.mode || payTariff.mode === 'simple') && payTariff.type !== 'TRAFFIC_ADDON' && (
-                <div className="flex gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" style={{ color: 'var(--accent-1)' }} /> {payTariff.durationDays} дней</span>
-                  <span className="flex items-center gap-1"><Wifi className="w-3 h-3" style={{ color: 'var(--accent-2)' }} /> {payTariff.trafficGb ?? '∞'} ГБ</span>
-                  <span className="flex items-center gap-1"><Smartphone className="w-3 h-3" style={{ color: 'var(--warning)' }} /> {payTariff.deviceLimit === 0 ? '∞' : payTariff.deviceLimit} устр.</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Clock className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-1)' }} />
+                    <div className="min-w-0">
+                      <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Период</p>
+                      <p className="text-xs font-bold truncate">{payTariff.durationDays} дн.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Wifi className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-2)' }} />
+                    <div className="min-w-0">
+                      <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Трафик</p>
+                      <p className="text-xs font-bold truncate">{payTariff.trafficGb ?? '∞'} ГБ</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                    <Smartphone className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--warning)' }} />
+                    <div className="min-w-0">
+                      <p className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Устройства</p>
+                      <p className="text-xs font-bold truncate">{payTariff.deviceLimit === 0 ? '∞' : payTariff.deviceLimit}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {/* ── Payment: compact inline ── */}
-              <div className="pt-3" style={{ borderTop: '1px solid var(--glass-border)' }}>
-                <div className="flex flex-wrap gap-1.5 mb-3">
+              {/* ── Paid squad addons ── */}
+              {paidSquadsArr.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>Дополнительные серверы</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        Цена за месяц × {payTariffMonths} мес.
+                      </p>
+                    </div>
+                    {bundledAddonsPicked.length > 0 && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md"
+                            style={{ background: 'rgba(6,182,212,0.12)', color: 'var(--accent-1)' }}>
+                        +{bundledAddonsPicked.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {paidSquadsArr.map((a: any) => {
+                      const active = selectedAddonUuids.includes(a.squadUuid)
+                      const cost = Math.ceil(a.pricePerMonth * payTariffMonths)
+                      return (
+                        <button key={a.squadUuid} type="button"
+                                onClick={() => setSelectedAddonUuids(ids => ids.includes(a.squadUuid) ? ids.filter(x => x !== a.squadUuid) : [...ids, a.squadUuid])}
+                                className="text-left p-3 rounded-xl transition-all"
+                                style={active
+                                  ? { background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.4)', boxShadow: '0 4px 14px rgba(6,182,212,0.12)' }
+                                  : { background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                {a.icon && <span className="text-sm">{a.icon}</span>}
+                                <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{a.title}</span>
+                              </div>
+                              <div className="text-[11px] font-bold" style={{ color: active ? 'var(--accent-1)' : 'var(--text-secondary)' }}>
+                                {cost.toLocaleString('ru')} ₽
+                                <span className="font-normal ml-1 opacity-60">· {a.pricePerMonth} ₽/мес</span>
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all"
+                                 style={active
+                                   ? { background: 'var(--accent-gradient)' }
+                                   : { background: 'transparent', border: '1.5px solid var(--glass-border)' }}>
+                              {active && <CheckCircle2 className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Payment methods ── */}
+              <div>
+                <p className="text-[10px] uppercase tracking-wider mb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Способ оплаты</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(() => {
-                    const list: Array<{ key: string; top: string; bottom: string; meta?: any }> =
+                    const list: Array<{ key: string; top: string; bottom: string; meta?: any; icon: React.ReactNode }> =
                       enabledProviders.length > 0
                         ? enabledProviders.map(p => ({
                             key: p.id,
                             top: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
                             bottom: p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
                             meta: p.meta,
+                            icon: p.icon === 'bitcoin'
+                              ? <Wallet className="w-4 h-4" />
+                              : <CreditCard className="w-4 h-4" />,
                           }))
                         : [
-                            { key: 'YUKASSA', top: 'ЮKassa', bottom: 'Карта · СБП' },
-                            { key: 'CRYPTOPAY', top: 'CryptoPay', bottom: 'TON · USDT' },
+                            { key: 'YUKASSA', top: 'ЮKassa', bottom: 'Карта · СБП', icon: <CreditCard className="w-4 h-4" /> },
+                            { key: 'CRYPTOPAY', top: 'CryptoPay', bottom: 'TON · USDT', icon: <Wallet className="w-4 h-4" /> },
                           ]
-                    list.push({ key: 'BALANCE', top: 'Баланс', bottom: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    list.push({
+                      key: 'BALANCE',
+                      top: 'Баланс',
+                      bottom: `${(balance?.balance ?? 0).toFixed(0)} ₽`,
+                      icon: <Wallet className="w-4 h-4" />,
+                    })
                     return list.map(p => {
-                    const active = provider === p.key
-                    return (
-                      <button key={p.key} onClick={() => setProvider(p.key as any)}
-                              className="flex-1 min-w-[90px] py-2.5 rounded-xl text-center transition-all"
-                              style={{
-                                background: active ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
-                                border: `1px solid ${active ? 'var(--accent-1)' : 'var(--glass-border)'}`,
-                                color: active ? 'var(--accent-1)' : 'var(--text-tertiary)',
-                              }}>
-                        <p className="text-[11px] font-semibold">{p.top}</p>
-                        <p className="text-[9px]" style={{color: active ? 'var(--accent-1)' : 'var(--text-tertiary)'}}>{p.bottom}</p>
-                      </button>
-                    )
-                  })
+                      const active = provider === p.key
+                      return (
+                        <button key={p.key} onClick={() => setProvider(p.key as any)}
+                                className="p-3 rounded-xl text-left transition-all"
+                                style={active
+                                  ? { background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.4)', boxShadow: '0 4px 14px rgba(6,182,212,0.12)' }
+                                  : { background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                                 style={{
+                                   background: active ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.04)',
+                                   color: active ? '#fff' : 'var(--text-secondary)',
+                                 }}>
+                              {p.icon}
+                            </div>
+                            {active && (
+                              <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--accent-1)' }} />
+                            )}
+                          </div>
+                          <p className="text-[12px] font-semibold leading-tight"
+                             style={{ color: active ? 'var(--text-primary)' : 'var(--text-primary)' }}>{p.top}</p>
+                          <p className="text-[10px] mt-0.5" style={{ color: active ? 'var(--accent-1)' : 'var(--text-tertiary)' }}>{p.bottom}</p>
+                        </button>
+                      )
+                    })
                   })()}
                 </div>
-                <button onClick={handleBuy} disabled={paying}
-                        className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all"
-                        style={{ background: 'var(--accent-gradient)', boxShadow: '0 4px 12px rgba(6,182,212,0.2)' }}>
-                  {paying ? 'Переход...' : `Оплатить ${getCurrentPrice().toLocaleString('ru')} ₽`}
-                </button>
               </div>
+
+              {/* ── Order summary (receipt-style) ── */}
+              <div className="rounded-2xl p-4 space-y-2"
+                   style={{
+                     background: 'linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+                     border: '1px solid var(--glass-border)',
+                   }}>
+                <div className="flex justify-between text-xs">
+                  <span style={{ color: 'var(--text-secondary)' }}>Тариф</span>
+                  <span className="font-medium">{getCurrentPrice().toLocaleString('ru')} ₽</span>
+                </div>
+                {bundledAddonsPicked.map(a => (
+                  <div key={a.squadUuid} className="flex justify-between text-xs">
+                    <span style={{ color: 'var(--text-secondary)' }}>+ {a.title}</span>
+                    <span className="font-medium">{Math.ceil(a.pricePerMonth * payTariffMonths).toLocaleString('ru')} ₽</span>
+                  </div>
+                ))}
+                <div className="h-px my-1" style={{ background: 'var(--glass-border)' }} />
+                <div className="flex justify-between items-baseline">
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Итого</span>
+                  <div className="flex items-baseline gap-0.5">
+                    <span className="text-xl font-extrabold"
+                          style={{
+                            background: 'linear-gradient(135deg, #06b6d4, #0ea5e9)',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                          }}>
+                      {grandTotalRub.toLocaleString('ru')}
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--accent-1)' }}>₽</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Pay button ── */}
+              <button onClick={handleBuy} disabled={paying}
+                      className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2 hover:brightness-110 disabled:opacity-60"
+                      style={{
+                        background: 'var(--accent-gradient)',
+                        boxShadow: '0 10px 28px rgba(6,182,212,0.35)',
+                      }}>
+                {paying ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Создание платежа...</>
+                ) : (
+                  <>
+                    Оплатить {grandTotalRub.toLocaleString('ru')} ₽
+                    <ExternalLink className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              <p className="text-[10px] text-center" style={{ color: 'var(--text-tertiary)' }}>
+                Подключение активируется автоматически после подтверждения платежа
+              </p>
             </div>
           )}
         </Modal>
@@ -1978,6 +2253,56 @@ function DashboardSkeleton() {
       </div>
       <div className="h-40 skeleton rounded-2xl" />
       <div className="h-24 skeleton rounded-2xl" />
+    </div>
+  )
+}
+
+function AutoRenewToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/user/squad-addons', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setEnabled(!!d?.autoRenew))
+      .catch(() => setEnabled(false))
+  }, [])
+
+  const toggle = async () => {
+    if (enabled === null || saving) return
+    const next = !enabled
+    setSaving(true)
+    try {
+      const res = await fetch('/api/user/squad-addons/auto-renew', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      if (!res.ok) throw new Error('fail')
+      setEnabled(next)
+      toast.success(next ? 'Автопродление включено' : 'Автопродление выключено')
+    } catch { toast.error('Ошибка') } finally { setSaving(false) }
+  }
+
+  if (enabled === null) return null
+
+  return (
+    <div className="flex items-start gap-3 p-2.5 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+      <RefreshCw className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--accent-1)' }} />
+      <div className="flex-1">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold">Автопродление с баланса</p>
+          <button onClick={toggle} disabled={saving}
+                  className="relative w-10 h-5 rounded-full transition-colors"
+                  style={{ background: enabled ? 'var(--accent-1)' : 'var(--glass-border)' }}>
+            <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                  style={{ transform: enabled ? 'translateX(22px)' : 'translateX(2px)' }} />
+          </button>
+        </div>
+        <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+          Подписка и доп. серверы продлеваются автоматически с <b>внутреннего баланса сервиса</b>, не с карты. Пополняйте заранее.
+        </p>
+      </div>
     </div>
   )
 }

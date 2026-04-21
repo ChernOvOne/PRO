@@ -13,6 +13,14 @@ interface Squad  { uuid: string; name: string; info: { membersCount: number } }
 interface TariffVariant { days: number; priceRub: number; priceUsdt?: number; label: string; trafficGb?: number; deviceLimit?: number }
 interface ConfiguratorParam { pricePerUnit: number; min: number; max: number; step: number; default: number }
 interface TariffConfigurator { traffic?: ConfiguratorParam; days?: ConfiguratorParam; devices?: ConfiguratorParam }
+interface PaidSquad {
+  squadUuid:     string
+  title:         string
+  pricePerMonth: number
+  description?:  string | null
+  country?:      string | null
+  icon?:         string | null
+}
 interface Tariff {
   id: string; name: string; description?: string; type: 'SUBSCRIPTION' | 'TRAFFIC_ADDON'
   durationDays: number; priceRub: number; priceUsdt?: number
@@ -23,6 +31,8 @@ interface Tariff {
   variants?: TariffVariant[]
   configurator?: TariffConfigurator
   countries?: string; protocol?: string; speed?: string
+  paidSquads?: PaidSquad[]
+  autoRenewAllowed?: boolean
 }
 
 const EMPTY_SUB: Partial<Tariff> = {
@@ -578,11 +588,11 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
                 className="glass-input font-mono" />
             </div>
 
-            {/* Squads */}
+            {/* Free base squads */}
             {squads.length > 0 && (
               <div className="space-y-2.5">
                 <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  Серверные группы Remnawave
+                  Базовые серверы (входят в тариф бесплатно)
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {squads.map(sq => {
@@ -607,6 +617,94 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
                 </div>
               </div>
             )}
+
+            {/* Paid squad addons */}
+            {squads.length > 0 && (
+              <div className="space-y-2.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Платные серверы (клиент докупает сверх тарифа)
+                  </label>
+                  <button type="button"
+                          onClick={() => {
+                            const current = form.paidSquads ?? []
+                            const used = new Set([...(form.remnawaveSquads ?? []), ...current.map(p => p.squadUuid)])
+                            const first = squads.find(s => !used.has(s.uuid))
+                            if (!first) { toast.error('Свободных сквадов нет'); return }
+                            set('paidSquads', [...current, {
+                              squadUuid: first.uuid, title: first.name, pricePerMonth: 0,
+                            }])
+                          }}
+                          className="text-xs px-2.5 py-1 rounded-lg"
+                          style={{ background: 'rgba(6,182,212,0.1)', color: 'var(--accent-1)' }}>
+                    + Добавить
+                  </button>
+                </div>
+                <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                  Цена в месяц. При покупке вместе с тарифом: цена × число месяцев. При добавлении к уже активной подписке: по дням пропорционально.
+                </p>
+                {(form.paidSquads ?? []).length === 0 && (
+                  <div className="text-xs italic p-3 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px dashed var(--glass-border)', color: 'var(--text-tertiary)' }}>
+                    Нет платных серверов. Клиент получает только базовые сквады выше.
+                  </div>
+                )}
+                {(form.paidSquads ?? []).map((p, idx) => {
+                  const usedElsewhere = new Set([
+                    ...(form.remnawaveSquads ?? []),
+                    ...(form.paidSquads ?? []).filter((_, i) => i !== idx).map(x => x.squadUuid),
+                  ])
+                  return (
+                    <div key={idx} className="grid grid-cols-[1fr_1.2fr_120px_40px] gap-2 items-center p-2 rounded-xl"
+                         style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                      <select className="glass-input text-xs"
+                              value={p.squadUuid}
+                              onChange={e => {
+                                const s = squads.find(x => x.uuid === e.target.value)
+                                const next = [...(form.paidSquads ?? [])]
+                                next[idx] = { ...p, squadUuid: e.target.value, title: p.title || s?.name || '' }
+                                set('paidSquads', next)
+                              }}>
+                        {squads.filter(s => !usedElsewhere.has(s.uuid) || s.uuid === p.squadUuid).map(s => (
+                          <option key={s.uuid} value={s.uuid}>{s.name}</option>
+                        ))}
+                      </select>
+                      <input className="glass-input text-xs" placeholder="Название для клиента (🇩🇪 Германия Premium)"
+                             value={p.title}
+                             onChange={e => {
+                               const next = [...(form.paidSquads ?? [])]
+                               next[idx] = { ...p, title: e.target.value }
+                               set('paidSquads', next)
+                             }} />
+                      <div className="relative">
+                        <input className="glass-input text-xs pr-10" type="number" min={0} step={1}
+                               value={p.pricePerMonth}
+                               onChange={e => {
+                                 const next = [...(form.paidSquads ?? [])]
+                                 next[idx] = { ...p, pricePerMonth: Number(e.target.value) || 0 }
+                                 set('paidSquads', next)
+                               }} />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>₽/мес</span>
+                      </div>
+                      <button type="button"
+                              onClick={() => set('paidSquads', (form.paidSquads ?? []).filter((_, i) => i !== idx))}
+                              className="p-2 rounded-lg hover:bg-red-500/10 text-red-400">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Auto-renew allowed */}
+            <label className="flex items-center gap-2 text-xs cursor-pointer pt-1"
+                   style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox"
+                     checked={form.autoRenewAllowed ?? true}
+                     onChange={e => set('autoRenewAllowed', e.target.checked)}
+                     className="w-4 h-4 rounded accent-[var(--accent-1)]" />
+              Разрешить автопродление этого тарифа с баланса (выключи для триала/акций)
+            </label>
           </>
         )}
 
@@ -671,13 +769,14 @@ function TariffForm({ initial, squads, onSave, onCancel }: {
 /* ================================================================
    TARIFF CARD (expandable)
    ================================================================ */
-function TariffCard({ tariff, squads, expanded, onToggle, onSave, onDelete }: {
+function TariffCard({ tariff, squads, expanded, onToggle, onSave, onDelete, onDuplicate }: {
   tariff: Tariff
   squads: Squad[]
   expanded: boolean
   onToggle: () => void
   onSave: (t: Tariff) => void
   onDelete: () => void
+  onDuplicate: () => void
 }) {
   const isAddon = tariff.type === 'TRAFFIC_ADDON'
   const mode = tariff.mode ?? 'simple'
@@ -742,9 +841,18 @@ function TariffCard({ tariff, squads, expanded, onToggle, onSave, onDelete }: {
           <span className="text-lg font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
             {priceRange()}
           </span>
+          <button onClick={e => { e.stopPropagation(); onDuplicate() }}
+            className="p-2 rounded-lg transition-all flex-shrink-0"
+            style={{ color: 'var(--text-tertiary)' }}
+            title="Дублировать"
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-1)'; e.currentTarget.style.background = 'rgba(6,182,212,0.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
+            <Layers className="w-4 h-4" />
+          </button>
           <button onClick={e => { e.stopPropagation(); onDelete() }}
             className="p-2 rounded-lg transition-all flex-shrink-0"
             style={{ color: 'var(--text-tertiary)' }}
+            title="Удалить"
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent' }}>
             <Trash2 className="w-4 h-4" />
@@ -787,6 +895,15 @@ export default function AdminTariffsPage() {
       req('GET', '/api/admin/squads').then(d => setSquads(d.squads ?? [])).catch(() => {}),
     ]).finally(() => setLoading(false))
   }, [])
+
+  const duplicateTariff = async (id: string) => {
+    try {
+      const copy = await req('POST', `/api/admin/tariffs/${id}/duplicate`)
+      setTariffs(list => [...list, copy])
+      setExpandedId(copy.id)
+      toast.success(`Скопирован как "${copy.name}"`)
+    } catch { toast.error('Не удалось скопировать') }
+  }
 
   const deleteTariff = async (id: string) => {
     if (!confirm('Удалить тариф?')) return
@@ -898,6 +1015,7 @@ export default function AdminTariffsPage() {
               setExpandedId(null)
             }}
             onDelete={() => deleteTariff(t.id)}
+            onDuplicate={() => duplicateTariff(t.id)}
           />
         ))}
       </div>
