@@ -166,11 +166,14 @@ export async function authRoutes(app: FastifyInstance) {
   // ── Me ─────────────────────────────────────────────────────
   app.get('/me', {
     preHandler: [app.authenticate],
-  }, async (req) => {
+  }, async (req, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: (req.user as any).sub },
     })
-    if (!user) throw new Error('User not found')
+    // A stale JWT (e.g. after a DB reset) will have a valid signature but
+    // a sub that no longer exists. Return 401 — the frontend layout catches
+    // this and redirects to /login, instead of crashing on a 500.
+    if (!user) return reply.status(401).send({ error: 'User not found' })
     const { passwordHash, ...safe } = user as any
 
     // Aggregate referral-bonus days earned (for dashboard "подписка от рефералов" label)
