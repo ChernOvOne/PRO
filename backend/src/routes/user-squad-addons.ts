@@ -53,10 +53,21 @@ export async function userSquadAddonRoutes(app: FastifyInstance) {
     }
   })
 
+  // Admin-level kill switch: auto_renew_enabled in settings. If disabled,
+  // users can only turn it OFF, not ON — prevents re-enabling after admin cut.
+  async function assertAutoRenewAllowed(enabled: boolean): Promise<string | null> {
+    if (!enabled) return null // turning OFF is always allowed
+    const row = await prisma.setting.findUnique({ where: { key: 'auto_renew_enabled' } }).catch(() => null)
+    const on = row?.value == null ? true : (row.value === '1' || row.value === 'true')
+    return on ? null : 'Автопродление сейчас отключено администратором'
+  }
+
   /* ── Global auto-renew toggle (subscription + addons) ──── */
-  app.post('/auto-renew', auth, async (req) => {
+  app.post('/auto-renew', auth, async (req, reply) => {
     const userId = (req.user as any).sub
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body)
+    const err = await assertAutoRenewAllowed(enabled)
+    if (err) return reply.status(403).send({ error: err })
     await prisma.user.update({ where: { id: userId }, data: { autoRenew: enabled } })
     return { autoRenew: enabled }
   })
@@ -66,6 +77,8 @@ export async function userSquadAddonRoutes(app: FastifyInstance) {
     const userId = (req.user as any).sub
     const { id } = req.params as { id: string }
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body)
+    const err = await assertAutoRenewAllowed(enabled)
+    if (err) return reply.status(403).send({ error: err })
 
     const row = await prisma.userSquadAddon.findUnique({ where: { id } })
     if (!row || row.userId !== userId) return reply.status(404).send({ error: 'Not found' })

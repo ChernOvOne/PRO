@@ -812,8 +812,8 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {/* Auto-renew toggle */}
-          <AutoRenewToggle />
+          {/* Auto-renew toggle — hidden if admin disabled it globally */}
+          {config.features?.autoRenew !== false && <AutoRenewToggle />}
 
           {balance?.history?.length > 0 && (
             <div className="space-y-0.5 max-h-24 overflow-y-auto">
@@ -1865,12 +1865,15 @@ export default function DashboardPage() {
                             { key: 'YUKASSA', top: 'ЮKassa', bottom: 'Карта · СБП', icon: <CreditCard className="w-4 h-4" /> },
                             { key: 'CRYPTOPAY', top: 'CryptoPay', bottom: 'TON · USDT', icon: <Wallet className="w-4 h-4" /> },
                           ]
-                    list.push({
-                      key: 'BALANCE',
-                      top: 'Баланс',
-                      bottom: `${(balance?.balance ?? 0).toFixed(0)} ₽`,
-                      icon: <Wallet className="w-4 h-4" />,
-                    })
+                    // BALANCE — only if the admin has enabled it
+                    if (config.features?.balance !== false) {
+                      list.push({
+                        key: 'BALANCE',
+                        top: 'Баланс',
+                        bottom: `${(balance?.balance ?? 0).toFixed(0)} ₽`,
+                        icon: <Wallet className="w-4 h-4" />,
+                      })
+                    }
                     return list.map(p => {
                       const active = provider === p.key
                       return (
@@ -2147,7 +2150,9 @@ export default function DashboardPage() {
                             { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта · СБП' },
                             { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'TON · USDT' },
                           ]
-                    list.push({ key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    if (config.features?.balance !== false) {
+                      list.push({ key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    }
                     return list.map(p => {
                     const active = giftProvider === p.key
                     return (

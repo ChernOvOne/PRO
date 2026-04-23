@@ -20,12 +20,28 @@ export async function publicRoutes(app: FastifyInstance) {
   )
 
   // Platform config for frontend
-  app.get('/config', async () => ({
-    features:    config.features,
-    botName:     config.telegram.botName,
-    domain:      config.domain,
-    referralBonusDays: config.referral.bonusDays,
-  }))
+  app.get('/config', async () => {
+    // Feature toggles live in DB (admin settings UI). Fall back to env-driven
+    // config.features.* when the row is missing. Stored as "1"/"0" or "true"/"false".
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['balance_payments_enabled', 'auto_renew_enabled'] } },
+    }).catch(() => [])
+    const map: Record<string, string> = {}
+    rows.forEach(r => { map[r.key] = r.value })
+    const isOn = (v: string | undefined, fallback: boolean) =>
+      v == null ? fallback : (v === '1' || v === 'true')
+
+    return {
+      features: {
+        ...config.features,
+        balance:   isOn(map.balance_payments_enabled, config.features.balance),
+        autoRenew: isOn(map.auto_renew_enabled, true),
+      },
+      botName:     config.telegram.botName,
+      domain:      config.domain,
+      referralBonusDays: config.referral.bonusDays,
+    }
+  })
 
   // Available payment providers for the checkout UI.
   // Only returns providers that are BOTH toggled on AND have credentials.

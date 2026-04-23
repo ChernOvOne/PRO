@@ -442,6 +442,17 @@ export async function userRoutes(app: FastifyInstance) {
     const userId = (req.user as any).sub
     const { tariffId } = z.object({ tariffId: z.string() }).parse(req.body)
 
+    // Respect the admin-side "balance payments enabled" toggle. If turned off,
+    // users should not be able to complete a balance purchase even if the UI
+    // still shows the button (until their page refreshes).
+    const flag = await prisma.setting.findUnique({ where: { key: 'balance_payments_enabled' } }).catch(() => null)
+    const balanceOn = flag?.value == null
+      ? true /* default on if never configured */
+      : (flag.value === '1' || flag.value === 'true')
+    if (!balanceOn) {
+      return reply.status(403).send({ error: 'Оплата с баланса сейчас отключена администратором' })
+    }
+
     const [user, tariff] = await Promise.all([
       prisma.user.findUnique({ where: { id: userId } }),
       prisma.tariff.findUnique({ where: { id: tariffId } }),
