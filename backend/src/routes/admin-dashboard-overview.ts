@@ -469,12 +469,23 @@ async function collectOverview(days: Days, customFrom?: string, customTo?: strin
     },
   }).catch(() => 0)
 
-  // Count unique users who blocked the bot (across all broadcasts)
-  const blockedUsersCount = await prisma.broadcastRecipient.findMany({
-    where: { botBlocked: true },
-    select: { userId: true },
-    distinct: ['userId'],
-  }).then(r => r.length).catch(() => 0)
+  // Count unique users who blocked the bot — from broadcasts OR from the
+  // 'bot_blocked' tag the funnel engine sets when Telegram returns 403.
+  const blockedUsersCount = await (async () => {
+    const [fromBroadcasts, fromTag] = await Promise.all([
+      prisma.broadcastRecipient.findMany({
+        where: { botBlocked: true },
+        select: { userId: true },
+        distinct: ['userId'],
+      }).then(r => new Set(r.map(x => x.userId))).catch(() => new Set<string>()),
+      prisma.userTag.findMany({
+        where: { tag: 'bot_blocked' },
+        select: { userId: true },
+      }).then(r => new Set(r.map(x => x.userId))).catch(() => new Set<string>()),
+    ])
+    const union = new Set<string>([...fromBroadcasts, ...fromTag])
+    return union.size
+  })()
 
   // Support tickets alerts
   const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000)

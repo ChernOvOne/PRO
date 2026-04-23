@@ -13,6 +13,8 @@ RUN npx prisma generate
 COPY tsconfig.json ./
 COPY src ./src/
 RUN npm run build
+# Copy non-TS seed assets (SQL templates) next to compiled JS so __dirname works
+RUN cp -r src/services/seed-data dist/services/seed-data
 
 # ── Production ───────────────────────────────────────────────
 FROM node:20-alpine AS production

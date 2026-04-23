@@ -111,6 +111,10 @@ export async function buildUsersWhere(q: Record<string, any>): Promise<any> {
   if (q.has_leadteh === 'yes') where.leadtehId = { not: null }
   if (q.has_leadteh === 'no') where.leadtehId = null
 
+  // Bot-blocked filter (driven by UserTag 'bot_blocked' set when TG returns 403)
+  if (q.bot_blocked === 'yes') where.userTags = { some: { tag: 'bot_blocked' } }
+  if (q.bot_blocked === 'no')  where.userTags = { none: { tag: 'bot_blocked' } }
+
   // Payments filter
   if (q.has_payments === 'yes') where.paymentsCount = { gt: 0 }
   if (q.has_payments === 'no') where.paymentsCount = 0
@@ -324,7 +328,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/stats', admin, async () => {
     const [
       totalUsers, activeUsers, totalRevenue,
-      todayRevenue, pendingPayments, rmStats,
+      todayRevenue, pendingPayments, rmStats, botBlockedUsers,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { subStatus: 'ACTIVE' } }),
@@ -341,6 +345,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
       prisma.payment.count({ where: { status: 'PENDING' } }),
       remnawave.getSystemStats().catch(() => null),
+      prisma.userTag.count({ where: { tag: 'bot_blocked' } }),
     ])
 
     // Revenue last 30 days by day
@@ -361,6 +366,7 @@ export async function adminRoutes(app: FastifyInstance) {
       totalRevenue:   totalRevenue._sum.amount ?? 0,
       todayRevenue:   todayRevenue._sum.amount ?? 0,
       pendingPayments,
+      botBlockedUsers,
       remnawave:      rmStats,
       revenueChart:   revChart,
     }
@@ -451,6 +457,7 @@ export async function adminRoutes(app: FastifyInstance) {
       has_email?: string
       has_telegram?: string
       has_leadteh?: string
+      bot_blocked?: string
       sort?: string
       // Extended filters
       search_id?: string

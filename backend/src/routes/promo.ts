@@ -134,11 +134,22 @@ export async function adminPromoRoutes(app: FastifyInstance) {
 export async function userPromoRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticate] }
 
-  // Get active discount for user
+  // Get active discount for user — excludes expired promos (for TTL-based auto-discounts)
   app.get('/active-discount', auth, async (req) => {
     const userId = (req.user as any).sub
+    const now = new Date()
     const usage = await prisma.promoUsage.findFirst({
-      where: { userId, promo: { type: 'discount', isActive: true } },
+      where: {
+        userId,
+        promo: {
+          type: 'discount',
+          isActive: true,
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: now } },
+          ],
+        },
+      },
       include: { promo: true },
       orderBy: { usedAt: 'desc' },
     })
@@ -149,6 +160,7 @@ export async function userPromoRoutes(app: FastifyInstance) {
       discountPct: usage.promo.discountPct,
       tariffIds: usage.promo.tariffIds,
       description: usage.promo.description,
+      expiresAt: usage.promo.expiresAt,
     }
   })
 

@@ -88,9 +88,19 @@ export async function paymentRoutes(app: FastifyInstance) {
       paymentMeta = { _mode: 'configurator', trafficGb, days, devices, price }
     }
 
-    // Check for active discount promo
+    // Check for active discount promo (TTL-aware — expired promos ignored)
     const activeDiscount = await prisma.promoUsage.findFirst({
-      where: { userId, promo: { type: 'discount', isActive: true } },
+      where: {
+        userId,
+        promo: {
+          type: 'discount',
+          isActive: true,
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: new Date() } },
+          ],
+        },
+      },
       include: { promo: true },
     })
     if (activeDiscount?.promo?.discountPct) {

@@ -676,7 +676,7 @@ export default function AdminUsers() {
       </FilterSection>
 
       <FilterSection icon={Settings2} title="Прочее" color="#94a3b8"
-        count={countActive(['role', 'has_leadteh', 'has_email', 'has_telegram'])}>
+        count={countActive(['role', 'has_leadteh', 'has_email', 'has_telegram', 'bot_blocked'])}>
         <Select label="Роль" value={filters.role || ''} onChange={(v: string) => setFilter('role', v)}
           options={[
             { value: '', label: 'Все' },
@@ -691,6 +691,12 @@ export default function AdminUsers() {
             { value: '', label: 'Не важно' },
             { value: 'yes', label: 'Импортирован' },
             { value: 'no', label: 'Новый' },
+          ]} />
+        <Select label="Заблокировал бота" value={filters.bot_blocked || ''} onChange={(v: string) => setFilter('bot_blocked', v)}
+          options={[
+            { value: '', label: 'Не важно' },
+            { value: 'yes', label: 'Заблокировали' },
+            { value: 'no', label: 'Не блокировали' },
           ]} />
       </FilterSection>
 

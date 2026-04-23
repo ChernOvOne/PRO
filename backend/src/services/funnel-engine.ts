@@ -453,7 +453,19 @@ async function executeAction(step: any, userId: string, vars: Record<string, str
     case 'promo_balance': {
       const code = `FUNNEL_${nanoid(6).toUpperCase()}`
       const isDiscount = step.actionType === 'promo_discount'
-      await prisma.promoCode.create({
+
+      // Variant A: a newer auto-funnel discount replaces any prior ones for
+      // this user — so the LK shows the latest (biggest) discount, not a pile.
+      if (isDiscount) {
+        await prisma.promoUsage.deleteMany({
+          where: {
+            userId,
+            promo: { code: { startsWith: 'FUNNEL_' }, type: 'discount' },
+          },
+        })
+      }
+
+      const promo = await prisma.promoCode.create({
         data: {
           code,
           type: isDiscount ? 'discount' : 'balance',
@@ -464,8 +476,17 @@ async function executeAction(step: any, userId: string, vars: Record<string, str
           description: `Автоворонка`,
         },
       })
+
+      // Auto-apply the discount to this specific user so the LK/bot show prices
+      // already reduced — no manual code entry required.
+      if (isDiscount) {
+        await prisma.promoUsage.create({
+          data: { promoId: promo.id, userId },
+        }).catch(() => { /* unique constraint — already applied */ })
+      }
+
       vars.generatedPromo = code
-      logger.info(`Funnel action: promo ${code} (${step.actionType} ${step.actionValue}) for ${userId}`)
+      logger.info(`Funnel action: promo ${code} (${step.actionType} ${step.actionValue}) auto-applied for ${userId}`)
       break
     }
 
@@ -653,6 +674,24 @@ export async function triggerEvent(triggerId: string, userId: string, extraVars:
   }
 }
 
+// Detects Telegram responses that mean "this user won't receive anything ever again"
+// (blocked the bot, deactivated account, kicked the bot out). We tag these users
+// so subsequent funnel steps skip them instead of wasting API calls.
+function isTgBlockedError(err: any): boolean {
+  const msg = String(err?.message || err?.description || '')
+  if (err?.error_code === 403) return true
+  return /bot was blocked by the user|user is deactivated|bot can't initiate conversation|chat not found|chat_id is empty/i.test(msg)
+}
+
+async function markUserTgBlocked(userId: string, reason: string) {
+  await prisma.userTag.upsert({
+    where: { userId_tag: { userId, tag: 'bot_blocked' } },
+    create: { userId, tag: 'bot_blocked' },
+    update: {},
+  }).catch(() => {})
+  logger.warn(`[Funnel] user ${userId} tagged bot_blocked — ${reason}`)
+}
+
 // ── SEND NODE (new system) ─────────────────────────────────
 async function sendNode(node: any, funnelId: string, userId: string, extraVars: Record<string, string> = {}) {
   const vars = await buildVars(userId, extraVars)
@@ -662,13 +701,20 @@ async function sendNode(node: any, funnelId: string, userId: string, extraVars: 
   })
   if (!user) return
 
+  // Skip TG send if the user has previously blocked the bot. Email and LK channels
+  // are still delivered — only the Telegram channel is muted.
+  const tgBlocked = await prisma.userTag.findFirst({
+    where: { userId, tag: 'bot_blocked' },
+    select: { id: true },
+  })
+
   // Execute action if set
   if (node.actionType && node.actionType !== 'none') {
     await executeAction({ actionType: node.actionType, actionValue: Number(node.actionValue || 0), actionPromoExpiry: node.actionPromoExpiry || 7 } as any, userId, vars)
   }
 
   // TG
-  if (node.channelTg && user.telegramId && node.tgText) {
+  if (node.channelTg && user.telegramId && node.tgText && !tgBlocked) {
     const text = subVars(node.tgText, vars)
     const buttons = (node.tgButtons as any[] || []).filter((b: any) => b && !b._type)
     const kb = buttons.length > 0 ? buildKb(buttons, vars) : undefined
@@ -681,6 +727,12 @@ async function sendNode(node: any, funnelId: string, userId: string, extraVars: 
       })
       await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'sent' } })
     } catch (e: any) {
+      // Bot blocked / user deactivated → tag and stop hitting TG for this user
+      if (isTgBlockedError(e)) {
+        await markUserTgBlocked(userId, e.message)
+        await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'blocked', error: e.message } })
+        return
+      }
       // Если Telegram отверг из-за невалидной разметки — ретрай без parse_mode
       const isParseErr = /can't parse entities|can't find end of the entity/i.test(e.message || '')
       if (isParseErr) {
@@ -690,6 +742,11 @@ async function sendNode(node: any, funnelId: string, userId: string, extraVars: 
           logger.warn(`[Funnel] parse-mode fallback used for node ${node.id}`)
           return
         } catch (e2: any) {
+          if (isTgBlockedError(e2)) {
+            await markUserTgBlocked(userId, e2.message)
+            await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'blocked', error: e2.message } })
+            return
+          }
           await prisma.funnelLog.create({ data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'tg', status: 'failed', error: e2.message } })
           return
         }

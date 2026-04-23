@@ -41,6 +41,25 @@ async function bootstrap() {
 
     // Start background cron jobs (production only)
     await setupCronJobs()
+
+    // Fresh-install bootstrap: pre-populate ready-to-use bot constructor blocks
+    // and broadcast funnels so an admin isn't staring at an empty canvas on
+    // first launch. Existing deployments are skipped (the seeder probes the DB
+    // and bails if data is present).
+    try {
+      const { seedBotTemplates } = await import('./services/bot-templates-seed')
+      await seedBotTemplates()
+    } catch (e: any) {
+      logger.warn(`[bot-templates-seed] failed: ${e.message}`)
+    }
+
+    // Idempotently seed the retention retargeting funnel (disabled by default)
+    try {
+      const { seedRetentionFunnel } = await import('./services/retention-funnel-seed')
+      await seedRetentionFunnel()
+    } catch (e: any) {
+      logger.warn(`[retention-funnel-seed] failed: ${e.message}`)
+    }
   } catch (err) {
     logger.error('Failed to start server:', err)
     process.exit(1)
