@@ -91,17 +91,43 @@ export interface UpdateUserPayload {
 class RemnawaveService {
   private client: AxiosInstance
   public  configured: boolean
+  private credsCache: { url: string; token: string; expires: number } | null = null
+
+  /** Read URL + token from DB (admin settings) with env fallback, 30s cache. */
+  private async getCreds(): Promise<{ url: string; token: string }> {
+    const now = Date.now()
+    if (this.credsCache && now < this.credsCache.expires) return this.credsCache
+
+    // Lazy require to avoid circular import on first boot
+    const { prisma } = await import('../db')
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['remnawave_url', 'remnawave_token'] } },
+    }).catch(() => [])
+    const map: Record<string, string> = {}
+    rows.forEach(r => { map[r.key] = r.value })
+
+    const url   = map.remnawave_url   || config.remnawave.url   || ''
+    const token = map.remnawave_token || config.remnawave.token || ''
+    this.credsCache = { url, token, expires: now + 30_000 }
+    return this.credsCache
+  }
+
+  /** Called from admin-settings on save — forces a re-read on next request. */
+  invalidateCache() { this.credsCache = null }
 
   constructor() {
     this.configured = !!(config.remnawave.token)
-    this.client = axios.create({
-      baseURL: config.remnawave.url,
-      headers: {
-        'Authorization': `Bearer ${config.remnawave.token}`,
-        'Content-Type':  'application/json',
-        'accept':        'application/json',
-      },
-      timeout: 15_000,
+    // Creds resolved dynamically per-request via interceptor below.
+    this.client = axios.create({ timeout: 15_000 })
+
+    this.client.interceptors.request.use(async (cfg: any) => {
+      const { url, token } = await this.getCreds()
+      cfg.baseURL = url
+      cfg.headers = cfg.headers || {}
+      cfg.headers.Authorization  = `Bearer ${token}`
+      cfg.headers['Content-Type'] = 'application/json'
+      cfg.headers.accept          = 'application/json'
+      return cfg
     })
 
     this.client.interceptors.response.use(

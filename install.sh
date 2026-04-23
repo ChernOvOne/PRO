@@ -885,11 +885,52 @@ show_logs() {
 }
 
 restart_svc() {
+  step "Перезапуск сервиса"
+  # Detect which services are actually defined in docker-compose.yml
+  local svcs
+  svcs=$(docker compose config --services 2>/dev/null | sort)
+  if [[ -z "$svcs" ]]; then
+    err "Не удалось прочитать docker-compose.yml"; return 1
+  fi
+
+  # Show a numbered menu + two extra options: all (soft restart) / all (force recreate)
   echo ""
-  echo -e "  Сервисы: ${CYAN}backend frontend nginx postgres redis bot${RESET}"
-  printf "  Какой перезапустить? "; read -r svc
-  docker compose restart "$svc" 2>&1 | tee -a "$LOG_FILE"
-  ok "Сервис $svc перезапущен"
+  local i=1
+  declare -a choices
+  while IFS= read -r svc; do
+    local status
+    status=$(docker compose ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep "^hideyou_${svc} " | awk '{$1=""; print $0}' | sed 's/^ //' | cut -c1-30)
+    [[ -z "$status" ]] && status="(не запущен)"
+    echo -e "  ${CYAN}[$i]${RESET} ${BOLD}${svc}${RESET}  ${DIM}${status}${RESET}"
+    choices[$i]="$svc"
+    i=$((i+1))
+  done <<< "$svcs"
+
+  local all_soft=$i; echo -e "  ${CYAN}[$i]${RESET} ${GREEN}Все сервисы${RESET} ${DIM}(мягкий restart)${RESET}";  i=$((i+1))
+  local all_hard=$i; echo -e "  ${CYAN}[$i]${RESET} ${GREEN}Применить новые настройки${RESET} ${DIM}(пересоздание контейнеров, чтоб .env и настройки подхватились)${RESET}"
+
+  echo ""
+  printf "  ${BOLD}Выбери:${RESET} "; read -r c
+  [[ -z "$c" ]] && { info "Отмена"; return 0; }
+
+  if [[ "$c" == "$all_soft" ]]; then
+    info "Мягкий рестарт всех сервисов..."
+    docker compose restart 2>&1 | tee -a "$LOG_FILE"
+    ok "Все сервисы перезапущены"
+  elif [[ "$c" == "$all_hard" ]]; then
+    info "Пересоздаю контейнеры с актуальным .env..."
+    docker compose up -d --force-recreate --no-deps $(docker compose config --services 2>/dev/null | grep -vE '^(postgres|redis)$' | tr '\n' ' ') 2>&1 | tee -a "$LOG_FILE"
+    sleep 8
+    ok "Настройки применены"
+    docker compose ps --format 'table {{.Name}}\t{{.Status}}' | head -20
+  elif [[ -n "${choices[$c]:-}" ]]; then
+    local svc="${choices[$c]}"
+    info "Перезапуск ${BOLD}${svc}${RESET}..."
+    docker compose restart "$svc" 2>&1 | tee -a "$LOG_FILE"
+    ok "Сервис ${svc} перезапущен"
+  else
+    err "Неверный выбор"
+  fi
 }
 
 # ── Обновление ────────────────────────────────────────────────
@@ -1299,36 +1340,39 @@ main_menu() {
   while true; do
     banner
     echo -e "  ${BOLD}Главное меню${RESET}\n"
+
     echo -e "  ${CYAN}${BOLD}── Установка ─────────────────────────${RESET}"
-    echo -e "  ${BOLD}[1]${RESET}  Полная установка (с нуля)"
-    echo -e "  ${BOLD}[2]${RESET}  Настроить .env (домены, пароли)"
+    echo -e "  ${BOLD}[1]${RESET}  Полная установка ${DIM}(с нуля)${RESET}"
+    echo -e "  ${BOLD}[2]${RESET}  Настроить .env ${DIM}(домены, пароли)${RESET}"
     echo -e "  ${BOLD}[3]${RESET}  Настроить SSL"
+    echo -e "  ${BOLD}[4]${RESET}  ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, SMTP...)${RESET}"
     echo ""
-    echo -e "  ${CYAN}${BOLD}── Управление сервисами ──────────────${RESET}"
-    echo -e "  ${BOLD}[4]${RESET}  Запустить"
-    echo -e "  ${BOLD}[5]${RESET}  Остановить"
-    echo -e "  ${BOLD}[6]${RESET}  Перезапустить сервис"
-    echo -e "  ${BOLD}[7]${RESET}  Статус"
-    echo -e "  ${BOLD}[8]${RESET}  Логи"
+
+    echo -e "  ${CYAN}${BOLD}── Сервисы ───────────────────────────${RESET}"
+    echo -e "  ${BOLD}[5]${RESET}  Статус"
+    echo -e "  ${BOLD}[6]${RESET}  Логи"
+    echo -e "  ${BOLD}[7]${RESET}  Запустить всё"
+    echo -e "  ${BOLD}[8]${RESET}  Остановить всё"
+    echo -e "  ${BOLD}[9]${RESET}  Перезапустить ${DIM}(выбор сервиса / применить настройки)${RESET}"
+    echo -e "  ${BOLD}[10]${RESET} Включить/выключить Telegram-бот"
+    echo -e "  ${BOLD}[11]${RESET} Режим обслуживания ${DIM}(снять зависший баннер)${RESET}"
     echo ""
+
     echo -e "  ${CYAN}${BOLD}── Данные ────────────────────────────${RESET}"
-    echo -e "  ${BOLD}[9]${RESET}  Создать администратора"
-    echo -e "  ${BOLD}[10]${RESET} Импортировать пользователей"
-    echo -e "  ${BOLD}[11]${RESET} Миграции БД"
-    echo -e "  ${BOLD}[12]${RESET} Резервная копия"
-    echo -e "  ${BOLD}[13]${RESET} Восстановить БД"
-    echo -e "  ${BOLD}[20]${RESET} Дозалить шаблоны бота/воронок ${DIM}(если конструктор пуст)${RESET}"
+    echo -e "  ${BOLD}[12]${RESET} Создать/сбросить администратора"
+    echo -e "  ${BOLD}[13]${RESET} Импорт пользователей"
+    echo -e "  ${BOLD}[14]${RESET} Миграции БД ${DIM}(prisma db push)${RESET}"
+    echo -e "  ${BOLD}[15]${RESET} Дозалить шаблоны бота/воронок"
+    echo -e "  ${BOLD}[16]${RESET} Резервная копия БД"
+    echo -e "  ${BOLD}[17]${RESET} Восстановить БД из бэкапа"
     echo ""
-    echo -e "  ${CYAN}${BOLD}── Токены / Интеграции ───────────────${RESET}"
-    echo -e "  ${BOLD}[18]${RESET} ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, CryptoPay, SMTP...)${RESET}"
-    echo -e "  ${BOLD}[19]${RESET} Включить/выключить Telegram-бот"
-    echo -e "  ${BOLD}[21]${RESET} Режим обслуживания ${DIM}(снять зависший баннер)${RESET}"
-    echo ""
+
     echo -e "  ${CYAN}${BOLD}── Обслуживание ──────────────────────${RESET}"
-    echo -e "  ${BOLD}[14]${RESET} Обновить HIDEYOU"
-    echo -e "  ${BOLD}[15]${RESET} Пересобрать образы"
-    echo -e "  ${BOLD}[16]${RESET} Полный сброс ${RED}(⚠ удаляет всё)${RESET}"
-    echo -e "  ${BOLD}[17]${RESET} Переустановить команду lk"
+    echo -e "  ${BOLD}[18]${RESET} ${GREEN}Обновить HIDEYOU${RESET} ${DIM}(выпустить новый релиз)${RESET}"
+    echo -e "  ${BOLD}[19]${RESET} Пересобрать Docker-образы"
+    echo -e "  ${BOLD}[20]${RESET} Переустановить CLI-команду ${BOLD}lk${RESET}"
+    echo -e "  ${BOLD}[21]${RESET} Полный сброс ${RED}(⚠ удаляет всё)${RESET}"
+    echo ""
     echo -e "  ${BOLD}[0]${RESET}  Выход"
     echo ""; sep
     printf "  ${BOLD}Выбери пункт:${RESET} "
@@ -1337,24 +1381,24 @@ main_menu() {
       1)  full_install ;;
       2)  setup_env ;;
       3)  setup_ssl ;;
-      4)  start_all ;;
-      5)  stop_all ;;
-      6)  restart_svc ;;
-      7)  show_status ;;
-      8)  show_logs ;;
-      9)  create_admin ;;
-      10) import_users ;;
-      11) run_migrations ;;
-      12) do_backup ;;
-      13) do_restore ;;
-      14) do_update ;;
-      15) build_services ;;
-      16) full_reset ;;
-      17) install_lk_command ;;
-      18) configure_tokens ;;
-      19) toggle_bot ;;
-      20) reseed_bot_templates ;;
-      21) toggle_maintenance ;;
+      4)  configure_tokens ;;
+      5)  show_status ;;
+      6)  show_logs ;;
+      7)  start_all ;;
+      8)  stop_all ;;
+      9)  restart_svc ;;
+      10) toggle_bot ;;
+      11) toggle_maintenance ;;
+      12) create_admin ;;
+      13) import_users ;;
+      14) run_migrations ;;
+      15) reseed_bot_templates ;;
+      16) do_backup ;;
+      17) do_restore ;;
+      18) do_update ;;
+      19) build_services ;;
+      20) install_lk_command ;;
+      21) full_reset ;;
       0)  echo ""; info "До свидания!"; echo ""; exit 0 ;;
       *)  warn "Неизвестный пункт: $choice" ;;
     esac

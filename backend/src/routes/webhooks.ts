@@ -119,10 +119,10 @@ export async function webhookRoutes(app: FastifyInstance) {
 
       if (
         signature &&
-        !paymentService.cryptopay.verifyWebhookSignature(
+        !(await paymentService.cryptopay.verifyWebhookSignature(
           signature,
           JSON.stringify(body),
-        )
+        ))
       ) {
         logger.warn('CryptoPay webhook: invalid signature')
         return reply.status(401).send({ error: 'Invalid signature' })

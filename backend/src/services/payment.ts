@@ -172,11 +172,33 @@ interface YukassaRefund {
 // ── ЮKassa ───────────────────────────────────────────────────
 class YukassaService {
   private readonly BASE_URL = 'https://api.yookassa.ru/v3'
-  private readonly shopId   = config.yukassa.shopId!
-  private readonly secret   = config.yukassa.secretKey!
 
-  private get auth() {
-    return Buffer.from(`${this.shopId}:${this.secret}`).toString('base64')
+  /** Credentials live in DB (admin settings) with env as fallback.
+   *  Cached 30s so we don't pound the DB for every payment call. */
+  private credsCache: { shopId: string; secret: string; expires: number } | null = null
+
+  private async getCreds(): Promise<{ shopId: string; secret: string }> {
+    const now = Date.now()
+    if (this.credsCache && now < this.credsCache.expires) return this.credsCache
+
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['yukassa_shop_id', 'yukassa_secret'] } },
+    }).catch(() => [])
+    const map: Record<string, string> = {}
+    rows.forEach(r => { map[r.key] = r.value })
+
+    const shopId = map.yukassa_shop_id || config.yukassa.shopId || ''
+    const secret = map.yukassa_secret  || config.yukassa.secretKey || ''
+    this.credsCache = { shopId, secret, expires: now + 30_000 }
+    return this.credsCache
+  }
+
+  /** Force a re-read on next request — called from admin-settings when creds change. */
+  invalidateCache() { this.credsCache = null }
+
+  private async getAuth(): Promise<string> {
+    const { shopId, secret } = await this.getCreds()
+    return Buffer.from(`${shopId}:${secret}`).toString('base64')
   }
 
   async createPayment(params: {
@@ -229,7 +251,7 @@ class YukassaService {
       body,
       {
         headers: {
-          Authorization:     `Basic ${this.auth}`,
+          Authorization:     `Basic ${await this.getAuth()}`,
           'Content-Type':    'application/json',
           'Idempotence-Key': randomUUID(),
         },
@@ -244,14 +266,14 @@ class YukassaService {
 
   async getPayment(yukassaId: string) {
     const res = await axios.get(`${this.BASE_URL}/payments/${yukassaId}`, {
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${await this.getAuth()}` },
     })
     return res.data
   }
 
   async getPaymentFull(yukassaId: string): Promise<YukassaPaymentFull> {
     const res = await axios.get(`${this.BASE_URL}/payments/${yukassaId}`, {
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${await this.getAuth()}` },
     })
     return res.data as YukassaPaymentFull
   }
@@ -276,7 +298,7 @@ class YukassaService {
 
     const qs = new URLSearchParams(query).toString()
     const res = await axios.get(`${this.BASE_URL}/payments?${qs}`, {
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${await this.getAuth()}` },
     })
 
     const data = res.data as { type: string; items: YukassaPaymentFull[]; next_cursor?: string }
@@ -302,7 +324,7 @@ class YukassaService {
 
     const qs = new URLSearchParams(query).toString()
     const res = await axios.get(`${this.BASE_URL}/refunds?${qs}`, {
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${await this.getAuth()}` },
     })
 
     const data = res.data as { type: string; items: YukassaRefund[]; next_cursor?: string }
@@ -319,7 +341,7 @@ class YukassaService {
     }
     const res = await axios.post(`${this.BASE_URL}/refunds`, body, {
       headers: {
-        Authorization: `Basic ${this.auth}`,
+        Authorization: `Basic ${await this.getAuth()}`,
         'Content-Type': 'application/json',
         'Idempotence-Key': randomUUID(),
       },
@@ -341,12 +363,37 @@ class YukassaService {
 
 // ── CryptoPay ────────────────────────────────────────────────
 class CryptoPayService {
-  private readonly BASE_URL = config.cryptopay.network === 'mainnet'
-    ? 'https://pay.crypt.bot/api'
-    : 'https://testnet-pay.crypt.bot/api'
+  private credsCache: { token: string; baseUrl: string; expires: number } | null = null
 
-  private get headers() {
-    return { 'Crypto-Pay-API-Token': config.cryptopay.apiToken! }
+  private async getCreds(): Promise<{ token: string; baseUrl: string }> {
+    const now = Date.now()
+    if (this.credsCache && now < this.credsCache.expires) return this.credsCache
+
+    const rows = await prisma.setting.findMany({
+      where: { key: { in: ['crypto_token', 'crypto_network'] } },
+    }).catch(() => [])
+    const map: Record<string, string> = {}
+    rows.forEach(r => { map[r.key] = r.value })
+
+    const token   = map.crypto_token   || config.cryptopay.apiToken || ''
+    const network = map.crypto_network || config.cryptopay.network  || 'mainnet'
+    const baseUrl = network === 'mainnet'
+      ? 'https://pay.crypt.bot/api'
+      : 'https://testnet-pay.crypt.bot/api'
+    this.credsCache = { token, baseUrl, expires: now + 30_000 }
+    return this.credsCache
+  }
+
+  invalidateCache() { this.credsCache = null }
+
+  private async buildHeaders(): Promise<Record<string, string>> {
+    const { token } = await this.getCreds()
+    return { 'Crypto-Pay-API-Token': token }
+  }
+
+  private async apiUrl(path: string): Promise<string> {
+    const { baseUrl } = await this.getCreds()
+    return `${baseUrl}${path}`
   }
 
   async createInvoice(params: {
@@ -357,7 +404,7 @@ class CryptoPayService {
     expiresIn?:  number // seconds, default 3600
   }) {
     const res = await axios.post(
-      `${this.BASE_URL}/createInvoice`,
+      await this.apiUrl('/createInvoice'),
       {
         asset:         params.currency,
         amount:        params.amount.toString(),
@@ -367,7 +414,7 @@ class CryptoPayService {
         allow_comments: false,
         allow_anonymous: false,
       },
-      { headers: this.headers },
+      { headers: await this.buildHeaders() },
     )
     if (!res.data.ok) throw new Error(`CryptoPay error: ${JSON.stringify(res.data)}`)
     return res.data.result as {
@@ -379,16 +426,17 @@ class CryptoPayService {
   }
 
   async getInvoice(invoiceId: number) {
-    const res = await axios.get(`${this.BASE_URL}/getInvoices`, {
+    const res = await axios.get(await this.apiUrl('/getInvoices'), {
       params:  { invoice_ids: String(invoiceId) },
-      headers: this.headers,
+      headers: await this.buildHeaders(),
     })
     return res.data.result?.items?.[0]
   }
 
-  verifyWebhookSignature(token: string, body: string): boolean {
+  async verifyWebhookSignature(token: string, body: string): Promise<boolean> {
+    const { token: apiToken } = await this.getCreds()
     const secretKey = createHash('sha256')
-      .update(config.cryptopay.apiToken!)
+      .update(apiToken)
       .digest()
     const checkHash = createHmac('sha256', secretKey)
       .update(body)
@@ -425,6 +473,8 @@ class PlategaService {
     this.credsCache = { merchantId, secret, expires: now + 30_000 }
     return this.credsCache
   }
+
+  invalidateCache() { this.credsCache = null }
 
   private async buildHeaders() {
     const { merchantId, secret } = await this.getCreds()

@@ -209,6 +209,35 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
       } catch { /* ignore */ }
     }
 
+    // Invalidate service-credential caches so next API call reads fresh values.
+    // Without this, PaymentService / Remnawave / Email all keep the old creds
+    // for up to 30 seconds even after the admin saved new ones.
+    const changed = settingsArray.map(s => s.key)
+    try {
+      if (changed.some(k => k.startsWith('smtp_'))) {
+        const { emailService } = await import('../services/email')
+        await (emailService as any).reload?.()
+      }
+      if (changed.some(k => k.startsWith('yukassa_'))) {
+        const { paymentService } = await import('../services/payment')
+        ;(paymentService.yukassa as any).invalidateCache?.()
+      }
+      if (changed.some(k => k.startsWith('crypto_'))) {
+        const { paymentService } = await import('../services/payment')
+        ;(paymentService.cryptopay as any).invalidateCache?.()
+      }
+      if (changed.some(k => k.startsWith('platega_'))) {
+        const { paymentService } = await import('../services/payment')
+        ;(paymentService.platega as any).invalidateCache?.()
+      }
+      if (changed.some(k => k.startsWith('remnawave_'))) {
+        const { remnawave } = await import('../services/remnawave')
+        ;(remnawave as any).invalidateCache?.()
+      }
+    } catch (e: any) {
+      logger.warn('Cache invalidation partial failure: ' + e.message)
+    }
+
     // Sync to .env
     if (settingsArray.length > 0) {
       const envUpdates: Record<string, string> = {}

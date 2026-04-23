@@ -35,23 +35,34 @@ class EmailService {
 
     this.dbChecked = true
     try {
+      // Admin UI saves under smtp_login/smtp_password/smtp_from_email — the older
+      // smtp_user/smtp_pass/smtp_from keys are still checked for back-compat.
       const rows = await prisma.setting.findMany({
-        where: { key: { in: ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from'] } },
+        where: { key: { in: [
+          'smtp_host', 'smtp_port', 'smtp_encryption',
+          'smtp_login', 'smtp_user',
+          'smtp_password', 'smtp_pass',
+          'smtp_from_email', 'smtp_from',
+          'smtp_from_name',
+        ] } },
       })
       const s: Record<string, string> = {}
       for (const r of rows) s[r.key] = r.value
 
-      if (s.smtp_host && s.smtp_user && s.smtp_pass) {
+      const user = s.smtp_login    || s.smtp_user
+      const pass = s.smtp_password || s.smtp_pass
+      const from = s.smtp_from_email || s.smtp_from || user
+      if (s.smtp_host && user && pass) {
         const port = Number(s.smtp_port || 587)
         this.transporter = nodemailer.createTransport({
           host:   s.smtp_host,
           port,
-          secure: port === 465,
-          auth: { user: s.smtp_user, pass: s.smtp_pass },
+          secure: s.smtp_encryption === 'ssl' || port === 465,
+          auth: { user, pass },
         })
-        this.fromAddress = s.smtp_from || s.smtp_user
+        this.fromAddress = from
         this.enabled = true
-        logger.info(`Email service configured from DB: ${s.smtp_host} (${s.smtp_user})`)
+        logger.info(`Email service configured from DB: ${s.smtp_host} (${user})`)
         return true
       }
     } catch (err) {
