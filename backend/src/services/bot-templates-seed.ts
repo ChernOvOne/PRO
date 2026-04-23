@@ -37,10 +37,18 @@ async function runSeedFile(): Promise<SeedResult> {
     return { ok: 0, fail: 0, total: 0, skipped: true, reason: `seed file missing: ${e.message}` }
   }
 
+  // pg_dump --inserts --column-inserts writes one logical INSERT per "row", but
+  // a value that contains a literal newline (happens in bot_blocks.text) breaks
+  // naive ";$" splitting. Split on the ON CONFLICT marker instead — pg_dump
+  // puts that at the end of every statement and it cannot occur inside values.
   const statements = sql
-    .split(/;\s*$/m)
-    .map(s => s.trim())
-    .filter(s => s.startsWith('INSERT'))
+    .split(/ON CONFLICT DO NOTHING;\s*/)
+    .map(chunk => {
+      const idx = chunk.indexOf('INSERT')
+      if (idx < 0) return null
+      return chunk.slice(idx).trim() + ' ON CONFLICT DO NOTHING;'
+    })
+    .filter((s): s is string => s !== null && s.length > 40)
 
   let ok = 0
   let fail = 0

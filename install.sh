@@ -765,6 +765,18 @@ reseed_bot_templates() {
     UNION ALL SELECT 'funnel_nodes', COUNT(*) FROM funnel_nodes;" 2>&1 | tee -a "$LOG_FILE"
 }
 
+# Stamp the current git version into the settings table so /admin/updates
+# and the `hy` CLI show the right thing after a CLI-driven update. Mirrors
+# what the updater sidecar does after UI-driven updates.
+persist_current_version() {
+  local version="${1:-unknown}"
+  docker compose exec -T postgres psql -U hideyou -d hideyou -v ON_ERROR_STOP=0 \
+    -c "INSERT INTO settings (key, value, created_at, updated_at)
+        VALUES ('current_version', '${version}', NOW(), NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();" \
+    >/dev/null 2>&1 || true
+}
+
 # ── Миграции БД ───────────────────────────────────────────────
 # ИСПРАВЛЕНО:
 #  1. Prisma теперь перенесён в dependencies (не devDependencies) — доступен в проде
@@ -993,7 +1005,10 @@ do_update() {
 
   install_lk_command 2>/dev/null || true
 
-  ok "Обновлено до $(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+  local new_version
+  new_version="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+  persist_current_version "$new_version"
+  ok "Обновлено до ${new_version}"
 
   if [[ "$script_changed" == "true" ]]; then
     echo ""
@@ -1176,7 +1191,12 @@ full_install() {
 
   install_lk_command
 
-  echo ""; sep; ok "HIDEYOU успешно установлен!"; sep; echo ""
+  # Stamp current version into settings so /admin/updates shows it
+  local installed_version
+  installed_version="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+  persist_current_version "$installed_version"
+
+  echo ""; sep; ok "HIDEYOU успешно установлен! (${installed_version})"; sep; echo ""
 
   local domain;       domain=$(grep "^DOMAIN="       "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "IP-сервера")
   local admin_domain; admin_domain=$(grep "^ADMIN_DOMAIN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "")
