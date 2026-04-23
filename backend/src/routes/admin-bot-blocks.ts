@@ -13,6 +13,25 @@ const BotBlockTypeEnum = z.enum([
 export async function adminBotBlockRoutes(app: FastifyInstance) {
   const admin = { preHandler: [app.adminOnly] }
 
+  // ── POST /reseed-templates — re-apply the bundled bot/funnel templates ─
+  // Idempotent thanks to ON CONFLICT DO NOTHING in the seed SQL. Safe to hit
+  // after a partially-successful first boot (admin canvas looks empty).
+  app.post('/reseed-templates', admin, async () => {
+    const { reseedBotTemplates } = await import('../services/bot-templates-seed')
+    const { seedRetentionFunnel } = await import('../services/retention-funnel-seed')
+    const tplResult = await reseedBotTemplates()
+    let retentionStatus: 'created' | 'already-exists' | 'error' = 'already-exists'
+    try {
+      const before = await prisma.funnel.count({ where: { name: 'Ретаргет — подписка закончилась' } })
+      await seedRetentionFunnel()
+      const after = await prisma.funnel.count({ where: { name: 'Ретаргет — подписка закончилась' } })
+      retentionStatus = after > before ? 'created' : 'already-exists'
+    } catch {
+      retentionStatus = 'error'
+    }
+    return { templates: tplResult, retention: retentionStatus }
+  })
+
   // ═══════════════════════════════════════════════════════════════
   // GROUPS
   // ═══════════════════════════════════════════════════════════════

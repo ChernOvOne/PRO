@@ -692,6 +692,51 @@ start_all() {
 }
 stop_all()       { step "Остановка сервисов";   docker compose down 2>&1 | tee -a "$LOG_FILE"; ok "Остановлено"; }
 
+# ── Дозалить шаблоны конструктора бота / воронок ─────────────
+# Safe to call anytime — the SQL uses ON CONFLICT (id) DO NOTHING so existing
+# rows are kept untouched and only missing templates get added.
+reseed_bot_templates() {
+  step "Дозагрузка шаблонов бота и воронок"
+
+  if ! docker compose ps backend 2>/dev/null | grep -q "Up\|running"; then
+    info "Запускаю backend (нужен для seed-файла)..."
+    docker compose up -d backend 2>&1 | tee -a "$LOG_FILE"
+    sleep 5
+  fi
+
+  local tmp=/tmp/hideyou-bot-templates-$$.sql
+  info "Копирую SQL из образа backend..."
+  if ! docker compose cp backend:/app/dist/services/seed-data/bot-templates-raw.sql "$tmp" 2>&1 | tee -a "$LOG_FILE"; then
+    err "Не нашёл seed-файл в образе. Вероятно установлена старая версия (< v5.9.3)."
+    ask "Попробовать скачать из GitHub (ветка main)? [д/Н]"; read -r a
+    if [[ "$a" =~ ^[дДyY]$ ]]; then
+      curl -sfL "https://raw.githubusercontent.com/ChernOvOne/PRO/main/backend/src/services/seed-data/bot-templates-raw.sql" -o "$tmp" \
+        || { err "Не удалось скачать. Проверь интернет."; return 1; }
+    else
+      return 1
+    fi
+  fi
+
+  info "Применяю к базе данных..."
+  if cat "$tmp" | docker compose exec -T postgres psql -U hideyou -d hideyou 2>&1 | tee -a "$LOG_FILE"; then
+    ok "Шаблоны дозалиты"
+  else
+    err "Ошибки при применении SQL (подробности в логе)"
+  fi
+
+  rm -f "$tmp"
+
+  # Report the result
+  info "Текущее состояние:"
+  docker compose exec -T postgres psql -U hideyou -d hideyou -c "
+    SELECT 'bot_block_groups' AS table_name, COUNT(*) FROM bot_block_groups
+    UNION ALL SELECT 'bot_blocks', COUNT(*) FROM bot_blocks
+    UNION ALL SELECT 'bot_buttons', COUNT(*) FROM bot_buttons
+    UNION ALL SELECT 'bot_triggers', COUNT(*) FROM bot_triggers
+    UNION ALL SELECT 'funnels', COUNT(*) FROM funnels
+    UNION ALL SELECT 'funnel_nodes', COUNT(*) FROM funnel_nodes;" 2>&1 | tee -a "$LOG_FILE"
+}
+
 # ── Миграции БД ───────────────────────────────────────────────
 # ИСПРАВЛЕНО:
 #  1. Prisma теперь перенесён в dependencies (не devDependencies) — доступен в проде
@@ -1178,6 +1223,7 @@ main_menu() {
     echo -e "  ${BOLD}[11]${RESET} Миграции БД"
     echo -e "  ${BOLD}[12]${RESET} Резервная копия"
     echo -e "  ${BOLD}[13]${RESET} Восстановить БД"
+    echo -e "  ${BOLD}[20]${RESET} Дозалить шаблоны бота/воронок ${DIM}(если конструктор пуст)${RESET}"
     echo ""
     echo -e "  ${CYAN}${BOLD}── Токены / Интеграции ───────────────${RESET}"
     echo -e "  ${BOLD}[18]${RESET} ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, CryptoPay, SMTP...)${RESET}"
@@ -1212,6 +1258,7 @@ main_menu() {
       17) install_lk_command ;;
       18) configure_tokens ;;
       19) toggle_bot ;;
+      20) reseed_bot_templates ;;
       0)  echo ""; info "До свидания!"; echo ""; exit 0 ;;
       *)  warn "Неизвестный пункт: $choice" ;;
     esac

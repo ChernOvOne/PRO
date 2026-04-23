@@ -1,19 +1,22 @@
 /**
  * Bot & funnel templates seeder.
  *
- * On fresh installs the admin gets:
- *   - ready-to-use bot constructor blocks (menus, welcome flow, support, etc.)
- *   - 8 pre-built broadcast funnels (trial reminders, expiring alerts, etc.)
+ * Writes ready-to-use bot constructor blocks + 8 broadcast funnels so a fresh
+ * install has something on the canvas immediately.
  *
- * Every INSERT in the accompanying .sql is guarded with `ON CONFLICT (id) DO
- * NOTHING`, so re-running is a no-op. Admin edits via UI always win — the
- * seeder never overwrites modified records.
+ * Every INSERT in the SQL is `ON CONFLICT (id) DO NOTHING`, so re-running is
+ * completely safe — admin edits via UI are never overwritten.
  *
- * Safety rails:
- *   - Runs once per boot (skipped if the data already looks populated)
- *   - A single failed INSERT does NOT block the rest (we split on ';' and
- *     execute statements one by one, logging failures)
- *   - Loading this file does not touch the DB — only `seedBotTemplates()` does
+ * Why we always run the INSERTs (and don't short-circuit on "some data exists"):
+ * the first boot can fail mid-way (network hiccup, race with schema push,
+ * constraint error on a single row). A short-circuit check meant that after
+ * a partial first run the second boot skipped everything and the admin was
+ * left with a half-populated canvas. Now we always attempt the full file —
+ * successful rows are no-ops, missing rows get added.
+ *
+ * Exports:
+ *   - seedBotTemplates()        — called on backend bootstrap
+ *   - reseedBotTemplates()      — public API for the admin "reseed" button
  */
 
 import fs from 'fs'
@@ -23,26 +26,17 @@ import { logger } from '../utils/logger'
 
 const SQL_PATH = path.join(__dirname, 'seed-data', 'bot-templates-raw.sql')
 
-export async function seedBotTemplates(): Promise<void> {
-  // Quick probe — if admin already has custom blocks, don't reseed.
-  // (New installs start at 0 so this skip only fires on established servers.)
-  const alreadyHasData = await prisma.botBlock.count().catch(() => 0)
-  if (alreadyHasData > 0) {
-    logger.info(`[bot-templates-seed] skipped — ${alreadyHasData} blocks already present`)
-    return
-  }
+type SeedResult = { ok: number; fail: number; total: number; skipped?: true; reason?: string }
 
+async function runSeedFile(): Promise<SeedResult> {
   let sql: string
   try {
     sql = fs.readFileSync(SQL_PATH, 'utf-8')
   } catch (e: any) {
     logger.warn(`[bot-templates-seed] seed file missing at ${SQL_PATH} — ${e.message}`)
-    return
+    return { ok: 0, fail: 0, total: 0, skipped: true, reason: `seed file missing: ${e.message}` }
   }
 
-  // Split into individual statements. The file is a straight list of INSERTs
-  // (one per line), so a naive split is fine here. Do NOT split the giant
-  // CSV-like value blocks — Postgres INSERT stays on one line in pg_dump.
   const statements = sql
     .split(/;\s*$/m)
     .map(s => s.trim())
@@ -56,8 +50,32 @@ export async function seedBotTemplates(): Promise<void> {
       ok++
     } catch (e: any) {
       fail++
-      logger.warn(`[bot-templates-seed] statement failed: ${e.message?.slice(0, 160)}`)
+      logger.warn(`[bot-templates-seed] statement failed: ${e.message?.slice(0, 200)}`)
     }
   }
-  logger.info(`[bot-templates-seed] inserted ${ok} rows (${fail} failed) — ${statements.length} total`)
+  return { ok, fail, total: statements.length }
+}
+
+/**
+ * Called at backend boot. Always attempts INSERTs because ON CONFLICT DO
+ * NOTHING makes it idempotent — already-present rows simply don't count.
+ */
+export async function seedBotTemplates(): Promise<void> {
+  const res = await runSeedFile()
+  if (res.skipped) {
+    logger.info(`[bot-templates-seed] skipped — ${res.reason}`)
+    return
+  }
+  // ok === new inserts, fail === non-conflict errors.
+  // Conflicts (ON CONFLICT DO NOTHING) succeed silently with ok++ (they just
+  // don't affect any row), which is what we want.
+  logger.info(`[bot-templates-seed] finished — ${res.ok} statements applied, ${res.fail} failed (out of ${res.total})`)
+}
+
+/**
+ * Explicit "redeploy templates" action triggered by the admin from the UI.
+ * Same logic as boot-time seeding but returns counts for the response.
+ */
+export async function reseedBotTemplates(): Promise<SeedResult> {
+  return runSeedFile()
 }
