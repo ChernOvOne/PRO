@@ -212,7 +212,7 @@ export async function adminSetupV2Routes(app: FastifyInstance) {
               source: 'system',
               externalHash: hash,
               isHistorical: true,
-              createdById: (req as any).user?.id || null,
+              createdById: (req as any).user?.sub || null,
             },
           })
           stats.transactions++
@@ -281,7 +281,8 @@ export async function adminSetupV2Routes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Confirmation phrase mismatch' })
     }
 
-    const callerId = (req as any).user?.id
+    // JWT payload puts the user id under `sub` (Fastify jwt default) — not `id`
+    const callerId = (req as any).user?.sub
     if (!callerId) return reply.status(401).send({ error: 'Unauthorized' })
 
     const s = body.scopes

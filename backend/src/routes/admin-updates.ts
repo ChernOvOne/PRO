@@ -104,7 +104,7 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
    */
   app.post('/install', admin, async (req, reply) => {
     const body = z.object({ tag: z.string().min(1) }).parse(req.body)
-    const userId = (req as any).user?.id
+    const userId = (req as any).user?.sub
 
     // Create event row in 'pending' state
     const event = await prisma.updateEvent.create({
@@ -132,7 +132,7 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
    */
   app.post('/rollback/:backupId', admin, async (req, reply) => {
     const { backupId } = z.object({ backupId: z.string() }).parse(req.params)
-    const userId = (req as any).user?.id
+    const userId = (req as any).user?.sub
 
     const backup = await prisma.backup.findUnique({ where: { id: backupId } })
     if (!backup) return reply.status(404).send({ error: 'Backup not found' })
@@ -202,7 +202,7 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
    * POST /backups — create manual backup
    */
   app.post('/backups', admin, async (req) => {
-    const userId = (req as any).user?.id
+    const userId = (req as any).user?.sub
     const event = await prisma.updateEvent.create({
       data: { status: 'pending', triggeredBy: userId || null },
     })
