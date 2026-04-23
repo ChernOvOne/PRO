@@ -707,9 +707,29 @@ apply_nginx_conf() {
   fi
 }
 
+# Освобождает имена наших контейнеров — защита от "container name already in use",
+# когда контейнер "застрял" с меткой другого compose-проекта (например, updater
+# создавал под project=lkhy, а install.sh — под project=hideyou). Никакие данные
+# не теряются: volumes отдельные, postgres/redis мы не трогаем.
+purge_container_names() {
+  local names=(hideyou_backend hideyou_frontend hideyou_bot hideyou_nginx hideyou_certbot)
+  for n in "${names[@]}"; do
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${n}$"; then
+      # Проверяем под какой compose-меткой контейнер живёт
+      local label; label="$(docker inspect "$n" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || echo '')"
+      local our_project; our_project="$(basename "$HIDEYOU_REPO_ROOT")"
+      if [[ -z "$label" || "$label" != "$our_project" ]]; then
+        info "Сношу контейнер $n (label='$label' ≠ '$our_project')"
+        docker rm -f "$n" >/dev/null 2>&1 || true
+      fi
+    fi
+  done
+}
+
 start_all() {
   step "Запуск сервисов"
   apply_nginx_conf
+  purge_container_names
   local bot_flag=""
   local feat_bot; feat_bot=$(grep "^FEATURE_BOT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
   if [[ "$feat_bot" == "false" ]]; then
@@ -919,6 +939,7 @@ restart_svc() {
     ok "Все сервисы перезапущены"
   elif [[ "$c" == "$all_hard" ]]; then
     info "Пересоздаю контейнеры с актуальным .env..."
+    purge_container_names
     docker compose up -d --force-recreate --no-deps $(docker compose config --services 2>/dev/null | grep -vE '^(postgres|redis)$' | tr '\n' ' ') 2>&1 | tee -a "$LOG_FILE"
     sleep 8
     ok "Настройки применены"
@@ -1073,6 +1094,7 @@ do_update() {
 
   info "Перезапускаю сервисы..."
   apply_nginx_conf
+  purge_container_names
   docker compose up -d 2>&1 | tee -a "$LOG_FILE"
   # Перезапускаем nginx чтобы сбросить DNS-кеш после смены IP контейнеров
   sleep 3
