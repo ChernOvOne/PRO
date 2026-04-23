@@ -781,8 +781,8 @@ toggle_maintenance() {
     ask "Выключить? [Д/н]"; read -r ans
     if [[ ! "$ans" =~ ^[нНnN]$ ]]; then
       docker compose exec -T postgres psql -U hideyou -d hideyou \
-        -c "INSERT INTO settings (key, value, created_at, updated_at)
-            VALUES ('maintenance_mode', '0', NOW(), NOW())
+        -c "INSERT INTO settings (key, value, updated_at)
+            VALUES ('maintenance_mode', '0', NOW())
             ON CONFLICT (key) DO UPDATE SET value = '0', updated_at = NOW();" >/dev/null
       ok "Режим обслуживания ВЫКЛЮЧЕН — баннер пропадёт в течение минуты"
     fi
@@ -791,8 +791,8 @@ toggle_maintenance() {
     ask "Включить? [д/Н]"; read -r ans
     if [[ "$ans" =~ ^[дДyY]$ ]]; then
       docker compose exec -T postgres psql -U hideyou -d hideyou \
-        -c "INSERT INTO settings (key, value, created_at, updated_at)
-            VALUES ('maintenance_mode', '1', NOW(), NOW())
+        -c "INSERT INTO settings (key, value, updated_at)
+            VALUES ('maintenance_mode', '1', NOW())
             ON CONFLICT (key) DO UPDATE SET value = '1', updated_at = NOW();" >/dev/null
       ok "Режим обслуживания ВКЛЮЧЁН — баннер появится в течение минуты"
     fi
@@ -805,8 +805,8 @@ toggle_maintenance() {
 persist_current_version() {
   local version="${1:-unknown}"
   docker compose exec -T postgres psql -U hideyou -d hideyou -v ON_ERROR_STOP=0 \
-    -c "INSERT INTO settings (key, value, created_at, updated_at)
-        VALUES ('current_version', '${version}', NOW(), NOW())
+    -c "INSERT INTO settings (key, value, updated_at)
+        VALUES ('current_version', '${version}', NOW())
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();" \
     >/dev/null 2>&1 || true
 }
