@@ -46,7 +46,12 @@ const TG_MAX_BYTES      = 50 * 1024 * 1024 // 50 MB limit for Bot API
 
 const GITHUB_REPO       = 'ChernOvOne/PRO'
 const HEALTH_TIMEOUT_MS = 90_000
-const BACKUP_RETENTION  = 5
+// Raised from 5 to 20. "pre-update" + "uploaded" + "pre-restore" + rollbacks
+// compound quickly; 5 slots were getting evicted within a day of heavy work.
+const BACKUP_RETENTION  = 20
+// Daily auto-backup: run if most recent backup is older than this.
+const DAILY_THRESHOLD_MS = 20 * 60 * 60 * 1000 // 20 h
+const DAILY_CHECK_HOUR   = 4 // Europe/Moscow 04:00
 
 const BASE_URL          = process.env.INTERNAL_HEALTH_URL || 'http://backend:4000'
 
@@ -286,17 +291,41 @@ async function runInstall(job) {
   const oldSha = gitCurrentSha()
   const oldTag = gitCurrentTag()
 
-  await updateEventRow(eventId, { status: 'running', phase: 'backup' })
+  await updateEventRow(eventId, { status: 'running', phase: 'sanity' })
+
+  // ── Sanity check BEFORE maintenance mode, so a broken system
+  //    doesn't get flagged as "under maintenance" for no reason.
+  try {
+    await emit(eventId, 'sanity', 'Проверяю текущее состояние…')
+    await preUpdateSanityCheck()
+  } catch (e) {
+    await emit(eventId, 'failed', `Система не в рабочем состоянии: ${e.message}. Почини сначала текущее, потом обновляй.`)
+    await updateEventRow(eventId, {
+      status: 'failed', phase: null,
+      error_message: `sanity: ${e.message}`,
+      finished_at: new Date(),
+    })
+    return
+  }
 
   // ── Enable maintenance mode ────────────────────────────
   await emit(eventId, 'maintenance', 'Включаю режим обслуживания…')
   await setMaintenance(true)
 
   let backupId = null
+  let backupPath = null
   try {
     // 1. Backup
     const bk = await createFullBackup({ reason: 'pre-update', eventId, createdBy: triggeredBy })
     backupId = bk.backupId
+    backupPath = path.join(BACKUPS_DIR, bk.filename)
+    // Verify before we touch anything — if backup is bogus, abort NOW.
+    try {
+      verifyBackup(backupPath)
+      await emit(eventId, 'backup', `✓ Бэкап прошёл проверку`)
+    } catch (e) {
+      throw new Error(`Бэкап невалиден (${e.message}) — обновление отменено, система не тронута`)
+    }
     await updateEventRow(eventId, { backup_id: backupId, phase: 'fetch' })
 
     // 2. Fetch & checkout target tag
@@ -501,11 +530,88 @@ async function processJob(job) {
   }
 }
 
+/* ── Daily auto-backup ─────────────────────────────────────
+ * Checks every hour. At DAILY_CHECK_HOUR local time, if no backup
+ * has been created in DAILY_THRESHOLD_MS, enqueues one. Doesn't
+ * hold the Redis lock — uses the standard queue so it serializes
+ * with updates/rollbacks naturally.
+ */
+async function maybeRunDailyBackup() {
+  try {
+    const now = new Date()
+    // Run check only at top of the configured hour (allow 59 min window).
+    if (now.getHours() !== DAILY_CHECK_HOUR) return
+    // Already something queued or recently created?
+    const c = new PgClient({ connectionString: DATABASE_URL })
+    await c.connect()
+    let last
+    try {
+      const r = await c.query(
+        `SELECT created_at FROM backups ORDER BY created_at DESC LIMIT 1`
+      )
+      last = r.rows[0]?.created_at
+    } finally { await c.end() }
+
+    if (last && (Date.now() - new Date(last).getTime()) < DAILY_THRESHOLD_MS) {
+      return
+    }
+    log('Daily backup threshold met, enqueueing…')
+    await pub.rpush(QUEUE_KEY, JSON.stringify({ type: 'backup', reason: 'daily' }))
+  } catch (e) {
+    err('daily backup check failed:', e.message)
+  }
+}
+
+/* ── Pre-update safety gate ────────────────────────────────
+ * Before applying an update, make sure current system is sane
+ * enough that rollback would actually work. If it's already
+ * broken, we refuse to proceed rather than bury the corpse.
+ */
+async function preUpdateSanityCheck() {
+  // 1. DB reachable
+  const c = new PgClient({ connectionString: DATABASE_URL })
+  await c.connect()
+  try {
+    await c.query('SELECT 1')
+  } finally { await c.end() }
+
+  // 2. Repo has .git
+  if (!fs.existsSync(path.join(REPO_DIR, '.git'))) {
+    throw new Error(`Repo at ${REPO_DIR} is not a git checkout`)
+  }
+
+  // 3. No uncommitted local changes that git reset --hard would silently nuke
+  //    (we reset anyway, but log a warning)
+  try {
+    const dirty = sh(`git -C ${REPO_DIR} status --porcelain`)
+    if (dirty) log('WARN: working tree has local changes, they will be reset')
+  } catch {}
+}
+
+/* ── Verify backup is actually usable ──────────────────────
+ * Tarball must exist, be non-empty, contain meta.json + db.sql.
+ */
+function verifyBackup(fullPath) {
+  if (!fs.existsSync(fullPath)) throw new Error('Backup file missing after creation')
+  const size = fs.statSync(fullPath).size
+  if (size < 10_000) throw new Error(`Backup too small (${size} bytes) — likely empty`)
+  const names = sh(`tar tzf "${fullPath}"`).split('\n')
+  if (!names.some(n => n.endsWith('meta.json'))) throw new Error('Backup missing meta.json')
+  if (!names.some(n => n.endsWith('db.sql'))) throw new Error('Backup missing db.sql')
+}
+
 async function main() {
   log('Updater worker starting')
   log(`REPO_DIR=${REPO_DIR}, GITHUB_REPO=${GITHUB_REPO}`)
 
   ensureDir(BACKUPS_DIR)
+
+  // Daily backup scheduler — tick every 60 min. Using wall-clock tick rather
+  // than node-cron keeps container dependencies slim.
+  setInterval(() => { maybeRunDailyBackup().catch(() => {}) }, 60 * 60 * 1000)
+  // Also run once on startup in case the container was restarted during the
+  // window and we missed the slot.
+  maybeRunDailyBackup().catch(() => {})
 
   // Record current version so the admin UI has something to show on first run.
   try {

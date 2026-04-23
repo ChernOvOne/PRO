@@ -1094,28 +1094,126 @@ do_update() {
 }
 
 # ── Резервное копирование ─────────────────────────────────────
+# Единая точка входа: предпочитаем полный бэкап через updater-контейнер
+# (формат tar.gz со всем: БД + uploads + .env + nginx.conf.d + letsencrypt).
+# Fallback на простой pg_dump.sql.gz если updater не поднят (ранняя установка).
 do_backup() {
   step "Резервная копия"
-  mkdir -p ./backups
-  local f="./backups/hideyou_$(date '+%Y%m%d_%H%M%S').sql.gz"
-  docker compose exec -T postgres pg_dump -U hideyou hideyou 2>/dev/null | gzip > "$f"
-  ok "Сохранено: $f  ($(du -sh "$f" | cut -f1))"
+  mkdir -p ./data/backups
+
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hideyou_updater$'; then
+    info "Полный бэкап через updater (БД + uploads + env + nginx + letsencrypt)…"
+    # Публикуем задачу в Redis-очередь — updater сам запишет в БД и ротирует
+    local redis_pw; redis_pw="$(grep '^REDIS_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+    if docker exec hideyou_updater node -e "
+      const Redis = require('ioredis');
+      const r = new Redis(process.env.REDIS_URL);
+      r.rpush('update:queue', JSON.stringify({ type: 'backup', reason: 'manual-cli' }))
+        .then(() => { console.log('queued'); r.disconnect(); })
+        .catch(e => { console.error(e.message); process.exit(1); });
+    " 2>&1 | tee -a "$LOG_FILE"; then
+      ok "Задача поставлена в очередь — бэкап создаётся в фоне (1-2 минуты)"
+      info "Проверить: ls -lh ./data/backups/"
+    else
+      warn "Не удалось поставить задачу, падаю на pg_dump"
+      local f="./backups/hideyou_$(date '+%Y%m%d_%H%M%S').sql.gz"
+      mkdir -p ./backups
+      docker compose exec -T postgres pg_dump -U hideyou hideyou 2>/dev/null | gzip > "$f"
+      ok "Сохранено: $f  ($(du -sh "$f" | cut -f1))"
+    fi
+  else
+    mkdir -p ./backups
+    local f="./backups/hideyou_$(date '+%Y%m%d_%H%M%S').sql.gz"
+    docker compose exec -T postgres pg_dump -U hideyou hideyou 2>/dev/null | gzip > "$f"
+    ok "Сохранено: $f  ($(du -sh "$f" | cut -f1))"
+  fi
 }
 
+# Восстановление поддерживает оба формата:
+#   • ./data/backups/*.tar.gz   — полный (updater, предпочтительный)
+#   • ./backups/*.sql.gz        — legacy (только БД)
+# Перед restore ВСЕГДА делаем pre-restore бэкап текущего состояния,
+# чтобы можно было откатиться назад если выбран не тот файл.
 do_restore() {
-  step "Восстановление базы"
-  [[ -z "$(ls ./backups/*.sql.gz 2>/dev/null)" ]] && { warn "Резервных копий нет"; return; }
-  echo ""; local i=1; declare -a files
+  step "Восстановление из бэкапа"
+
+  # Собираем список из обеих папок
+  local -a files=() labels=()
+  local i=0
   while IFS= read -r f; do
-    echo -e "  ${CYAN}[$i]${RESET} $(basename "$f")  $(du -sh "$f" | cut -f1)"
-    files[$i]="$f"; i=$((i+1))
-  done < <(ls -t ./backups/*.sql.gz)
-  printf "\n  Выбери [1]: "; read -r c; c="${c:-1}"
-  local sel="${files[$c]:-}"; [[ -z "$sel" ]] && { err "Неверный выбор"; return; }
-  warn "Это ПЕРЕЗАПИШЕТ базу!"; ask "Точно? [д/Н]"; read -r ans
+    [[ -z "$f" ]] && continue
+    i=$((i+1))
+    files+=("$f")
+    labels+=("[tar.gz] $(basename "$f")  $(du -sh "$f" | cut -f1)  $(stat -c '%y' "$f" 2>/dev/null | cut -d. -f1)")
+  done < <(ls -t ./data/backups/*.tar.gz 2>/dev/null)
+
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    i=$((i+1))
+    files+=("$f")
+    labels+=("[sql.gz] $(basename "$f")  $(du -sh "$f" | cut -f1)  $(stat -c '%y' "$f" 2>/dev/null | cut -d. -f1)")
+  done < <(ls -t ./backups/*.sql.gz 2>/dev/null)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    warn "Резервных копий нет ни в ./data/backups/*.tar.gz, ни в ./backups/*.sql.gz"
+    return
+  fi
+
+  echo ""
+  local n=1
+  for l in "${labels[@]}"; do
+    echo -e "  ${CYAN}[$n]${RESET} $l"
+    n=$((n+1))
+  done
+
+  printf "\n  Выбери номер [1]: "; read -r c; c="${c:-1}"
+  if ! [[ "$c" =~ ^[0-9]+$ ]] || [[ "$c" -lt 1 ]] || [[ "$c" -gt ${#files[@]} ]]; then
+    err "Неверный выбор"; return
+  fi
+  local sel="${files[$((c-1))]}"
+  info "Выбран: $(basename "$sel")"
+
+  warn "Это ПЕРЕЗАПИШЕТ текущую базу данных!"
+  ask "Точно? [д/Н]"; read -r ans
   [[ "$ans" =~ ^[дДyY]$ ]] || return
-  gunzip -c "$sel" | docker compose exec -T postgres psql -U hideyou -d hideyou 2>&1 | tee -a "$LOG_FILE"
-  ok "База восстановлена"
+
+  # Safety-net: бэкап текущего состояния перед restore
+  info "Делаю страховочный бэкап текущего состояния…"
+  if docker ps --format '{{.Names}}' | grep -q '^hideyou_updater$'; then
+    docker exec hideyou_updater node -e "
+      const Redis = require('ioredis');
+      const r = new Redis(process.env.REDIS_URL);
+      r.rpush('update:queue', JSON.stringify({ type: 'backup', reason: 'pre-restore-cli' }))
+        .then(() => { r.disconnect(); });
+    " 2>/dev/null || warn "Страховочный бэкап не поставился в очередь"
+    info "Жду 15 сек чтобы бэкап начался…"
+    sleep 15
+  fi
+
+  case "$sel" in
+    *.tar.gz)
+      if ! docker ps --format '{{.Names}}' | grep -q '^hideyou_updater$'; then
+        err "Контейнер hideyou_updater не запущен — запусти сервисы командой [5]"; return
+      fi
+      info "Восстановление через updater…"
+      # Копируем выбранный файл в /backups внутри контейнера (если его там ещё нет)
+      local base; base="$(basename "$sel")"
+      docker exec hideyou_updater bash -c "test -f /backups/$base || cp '$sel' /backups/$base" 2>/dev/null || true
+      docker exec -e POSTGRES_PASSWORD="$(grep ^POSTGRES_PASSWORD= "$ENV_FILE" | cut -d= -f2-)" \
+        hideyou_updater /app/restore.sh "/backups/$base" 2>&1 | tee -a "$LOG_FILE"
+      if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+        err "Восстановление упало — смотри лог выше"; return
+      fi
+      info "Пересобираю и перезапускаю сервисы…"
+      docker compose up -d --no-deps --force-recreate backend frontend bot nginx 2>&1 | tee -a "$LOG_FILE"
+      ok "База восстановлена из $base"
+      ;;
+    *.sql.gz)
+      gunzip -c "$sel" | docker compose exec -T postgres psql -U hideyou -d hideyou 2>&1 | tee -a "$LOG_FILE"
+      docker compose restart backend 2>&1 | tee -a "$LOG_FILE"
+      ok "База восстановлена (legacy sql.gz)"
+      ;;
+  esac
 }
 
 # ── Администратор ─────────────────────────────────────────────

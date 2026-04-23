@@ -5,6 +5,9 @@ import Redis from 'ioredis'
 import { logger } from '../utils/logger'
 import * as fs from 'fs'
 import * as path from 'path'
+import { pipeline } from 'stream/promises'
+import { createWriteStream } from 'fs'
+import { execSync } from 'child_process'
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379'
 const BACKUPS_DIR = '/app/data/backups'  // mounted from host
@@ -230,6 +233,84 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
     } catch {}
     await prisma.backup.delete({ where: { id } })
     return { ok: true }
+  })
+
+  /**
+   * GET /backups/:id/download — stream backup tar.gz to admin
+   */
+  app.get('/backups/:id/download', admin, async (req, reply) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params)
+    const b = await prisma.backup.findUnique({ where: { id } })
+    if (!b) return reply.status(404).send({ error: 'Not found' })
+    const fp = path.join(BACKUPS_DIR, b.filename)
+    if (!fs.existsSync(fp)) return reply.status(404).send({ error: 'File missing on disk' })
+    const stat = fs.statSync(fp)
+    reply.header('Content-Type', 'application/gzip')
+    reply.header('Content-Length', stat.size)
+    reply.header('Content-Disposition', `attachment; filename="${b.filename}"`)
+    return reply.send(fs.createReadStream(fp))
+  })
+
+  /**
+   * POST /backups/upload — accept uploaded tar.gz, place it into backups dir,
+   * create a DB row so admin can trigger rollback to it via the standard flow.
+   * Accepts up to 500 MB.
+   */
+  app.post('/backups/upload', admin, async (req, reply) => {
+    const userId = (req as any).user?.sub
+    // @ts-ignore - multipart is registered in index.ts
+    const data = await (req as any).file({ limits: { fileSize: 500 * 1024 * 1024 } })
+    if (!data) return reply.status(400).send({ error: 'No file' })
+    const origName = String(data.filename || 'backup.tar.gz')
+    if (!/\.tar\.gz$/i.test(origName)) {
+      return reply.status(400).send({ error: 'Only .tar.gz backups are accepted' })
+    }
+
+    // Normalize filename: keep timestamp+uploaded marker
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const safeBase = origName.replace(/[^A-Za-z0-9._-]/g, '_').replace(/\.tar\.gz$/i, '')
+    const finalName = `backup__${ts}__uploaded__${safeBase}.tar.gz`
+    const finalPath = path.join(BACKUPS_DIR, finalName)
+
+    try {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true })
+      await pipeline(data.file, createWriteStream(finalPath))
+    } catch (e: any) {
+      try { fs.unlinkSync(finalPath) } catch {}
+      return reply.status(500).send({ error: `Upload failed: ${e.message}` })
+    }
+
+    // Validate: must be a valid gzip tarball containing meta.json + db.sql
+    try {
+      execSync(`tar tzf "${finalPath}" | grep -E '^\\./(meta\\.json|db\\.sql)$' | wc -l`, { encoding: 'utf8' })
+    } catch {
+      try { fs.unlinkSync(finalPath) } catch {}
+      return reply.status(400).send({ error: 'Archive is not a valid HIDEYOU backup (missing meta.json or db.sql)' })
+    }
+
+    const stat = fs.statSync(finalPath)
+    // Parse meta for sha/tag (best-effort)
+    let sha: string | null = null
+    let tag: string | null = null
+    try {
+      const meta = execSync(`tar xzf "${finalPath}" -O ./meta.json 2>/dev/null`, { encoding: 'utf8' })
+      const parsed = JSON.parse(meta)
+      sha = parsed.git_sha || null
+      tag = parsed.git_tag || null
+    } catch {}
+
+    const row = await prisma.backup.create({
+      data: {
+        filename: finalName,
+        sizeBytes: BigInt(stat.size),
+        gitSha: sha,
+        gitTag: tag,
+        reason: 'uploaded',
+        createdBy: userId || null,
+      },
+    })
+
+    return { ok: true, id: row.id, filename: finalName, size: stat.size }
   })
 
   /**

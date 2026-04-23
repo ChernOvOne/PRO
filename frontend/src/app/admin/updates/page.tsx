@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import {
   Download, Package, History, HardDrive, Loader2, GitBranch,
   RefreshCw, PlayCircle, Undo2, AlertTriangle, CheckCircle2,
-  XCircle, Clock, Trash2, Plus, Power, ExternalLink,
+  XCircle, Clock, Trash2, Plus, Power, ExternalLink, Upload,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 
@@ -481,6 +481,9 @@ function BackupsTab() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [rollbackConfirm, setRollbackConfirm] = useState<any>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadPct, setUploadPct] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -522,22 +525,62 @@ function BackupsTab() {
     } catch (e: any) { toast.error(e.message || 'Ошибка') }
   }
 
+  const download = (b: any) => {
+    window.open(adminApi.backupsDownloadUrl(b.id), '_blank')
+  }
+
+  const onUploadClick = () => fileInputRef.current?.click()
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (!/\.tar\.gz$/i.test(file.name)) {
+      toast.error('Нужен .tar.gz'); return
+    }
+    setUploading(true); setUploadPct(0)
+    try {
+      await adminApi.backupsUpload(file, (loaded, total) => setUploadPct(Math.round(loaded / total * 100)))
+      toast.success('Бэкап загружен — теперь можно откатиться на него')
+      await load()
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка загрузки')
+    } finally {
+      setUploading(false); setUploadPct(0)
+    }
+  }
+
   if (loading) {
     return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-1)' }} /></div>
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Храним 5 последних. Автоматически удаляются старые.
+          Автобэкап перед каждым обновлением + ежедневно в 04:00. Можно скачать и загрузить свой.
         </div>
-        <button onClick={create} disabled={creating}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
-                style={{ background: 'var(--accent-1)', color: 'white' }}>
-          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          Создать бэкап
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".tar.gz,application/gzip"
+            className="hidden"
+            onChange={onFilePicked}
+          />
+          <button onClick={onUploadClick} disabled={uploading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}>
+            {uploading
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> {uploadPct}%</>
+              : <><Upload className="w-4 h-4" /> Загрузить бэкап</>}
+          </button>
+          <button onClick={create} disabled={creating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                  style={{ background: 'var(--accent-1)', color: 'white' }}>
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Создать бэкап
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -574,6 +617,12 @@ function BackupsTab() {
                   {b.reason && ` · ${b.reason}`}
                 </div>
               </div>
+              <button onClick={() => download(b)}
+                      title="Скачать"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs"
+                      style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)' }}>
+                <Download className="w-3.5 h-3.5" /> Скачать
+              </button>
               <button onClick={() => setRollbackConfirm(b)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
                       style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>

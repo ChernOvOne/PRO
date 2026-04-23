@@ -794,6 +794,29 @@ export const adminApi = {
     apiFetch<{ ok: true; eventId: string }>('/admin/updates/backups', { method: 'POST' }),
   backupsDelete: (id: string) =>
     apiFetch<void>(`/admin/updates/backups/${id}`, { method: 'DELETE' }),
+  backupsDownloadUrl: (id: string) =>
+    `/api/admin/updates/backups/${id}/download`,
+  backupsUpload: async (file: File, onProgress?: (loaded: number, total: number) => void) => {
+    const fd = new FormData()
+    fd.append('file', file, file.name)
+    return new Promise<{ ok: true; id: string; filename: string; size: number }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/admin/updates/backups/upload')
+      xhr.withCredentials = true
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total)
+      }
+      xhr.onload = () => {
+        try {
+          const j = JSON.parse(xhr.responseText)
+          if (xhr.status >= 200 && xhr.status < 300) resolve(j)
+          else reject(new Error(j.error || `HTTP ${xhr.status}`))
+        } catch (e: any) { reject(new Error(xhr.responseText || e.message)) }
+      }
+      xhr.onerror = () => reject(new Error('Network error'))
+      xhr.send(fd)
+    })
+  },
 
   setupListDomains: () =>
     apiFetch<any[]>('/admin/setup/domains'),
