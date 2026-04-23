@@ -18,6 +18,12 @@ DIM='\033[2m';     RESET='\033[0m'
 ENV_FILE=".env"
 LOG_FILE="./hideyou-install.log"
 
+# Absolute path to the repo on this host — updater & compose need it so they
+# can invoke `docker compose -f $HIDEYOU_REPO_ROOT/docker-compose.yml ...`
+# correctly from inside the sidecar container (path must match host ↔ mount).
+HIDEYOU_REPO_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+export HIDEYOU_REPO_ROOT
+
 log()  { echo -e "${DIM}[$(date '+%H:%M:%S')]${RESET} $*" | tee -a "$LOG_FILE"; }
 ok()   { echo -e "${GREEN}${BOLD}  ✓${RESET}  $*"; log "ОК: $*"; }
 warn() { echo -e "${YELLOW}${BOLD}  ⚠${RESET}  $*"; log "ВНИМАНИЕ: $*"; }
@@ -180,7 +186,18 @@ TG_BACKUP_TOKEN=
 TG_BACKUP_CHAT=
 
 LOG_LEVEL=info
+
+# ── Путь к репозиторию на этом хосте (заполняется автоматически) ─
+# Нужен updater-сидекару: docker compose внутри контейнера должен
+# видеть docker-compose.yml по тому же абсолютному пути что на хосте.
+HIDEYOU_REPO_ROOT=
 ENVEOF
+
+  # Immediately stamp in the real repo path so docker compose up works
+  # without warnings on first boot.
+  if [[ -n "$HIDEYOU_REPO_ROOT" ]]; then
+    sed -i "s|^HIDEYOU_REPO_ROOT=.*|HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}|" "$ENV_FILE"
+  fi
 }
 
 # Записать/обновить ключ в .env.
@@ -243,7 +260,18 @@ setup_env() {
   if [[ -f "$ENV_FILE" ]]; then
     warn "Файл .env уже существует"
     ask "Перезаписать? [д/Н]"; read -r ans
-    [[ "$ans" =~ ^[дДyY]$ ]] || { info "Оставляю существующий .env"; return 0; }
+    if [[ ! "$ans" =~ ^[дДyY]$ ]]; then
+      info "Оставляю существующий .env"
+      # Make sure the existing .env has HIDEYOU_REPO_ROOT — otherwise updater mount breaks
+      if ! grep -q '^HIDEYOU_REPO_ROOT=' "$ENV_FILE"; then
+        echo "HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}" >> "$ENV_FILE"
+        info "Дописан HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT} в .env"
+      elif [[ -z "$(grep '^HIDEYOU_REPO_ROOT=' "$ENV_FILE" | cut -d= -f2-)" ]]; then
+        sed -i "s|^HIDEYOU_REPO_ROOT=.*|HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}|" "$ENV_FILE"
+        info "Заполнен пустой HIDEYOU_REPO_ROOT в .env"
+      fi
+      return 0
+    fi
   fi
   create_env_template
   info "Создан .env"
@@ -928,6 +956,18 @@ do_update() {
     cp "$env_backup" "$ENV_FILE"
     rm -f "$env_backup"
     ok ".env восстановлен"
+  fi
+
+  # Heal .env on older servers — new versions rely on HIDEYOU_REPO_ROOT
+  # for the updater self-mount. Add/fill if missing.
+  if [[ -f "$ENV_FILE" ]]; then
+    if ! grep -q '^HIDEYOU_REPO_ROOT=' "$ENV_FILE"; then
+      echo "HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}" >> "$ENV_FILE"
+      info "Дописан HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}"
+    elif [[ -z "$(grep '^HIDEYOU_REPO_ROOT=' "$ENV_FILE" | cut -d= -f2-)" ]]; then
+      sed -i "s|^HIDEYOU_REPO_ROOT=.*|HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}|" "$ENV_FILE"
+      info "Заполнен HIDEYOU_REPO_ROOT=${HIDEYOU_REPO_ROOT}"
+    fi
   fi
 
   local after

@@ -165,17 +165,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       NGINX_CONTAINER: hideyou_nginx
       COMPOSE_PROJECT: lkhy
-      REPO_DIR: /opt/pro/LKHY
+      REPO_DIR: ${HIDEYOU_REPO_ROOT:-/opt/pro/LKHY}
       TG_BACKUP_TOKEN: ${TG_BACKUP_TOKEN:-}
       TG_BACKUP_CHAT: ${TG_BACKUP_CHAT:-}
       INTERNAL_HEALTH_URL: http://backend:4000
       TZ: Europe/Moscow
     volumes:
-      # Mount repo at SAME path inside container as on host.
-      # This way `docker compose -f /opt/pro/LKHY/docker-compose.yml ...`
-      # works correctly: compose CLI inside this container can read the file,
-      # AND docker daemon on the host resolves bind mounts to the same dir.
-      - /opt/pro/LKHY:/opt/pro/LKHY
+      # Mount repo at the SAME absolute path inside the container as on the host
+      # so `docker compose -f $HIDEYOU_REPO_ROOT/docker-compose.yml ...` invoked
+      # from inside the updater resolves correctly on the host docker daemon.
+      # HIDEYOU_REPO_ROOT is written to .env by install.sh (defaults to pwd).
+      - ${HIDEYOU_REPO_ROOT:-/opt/pro/LKHY}:${HIDEYOU_REPO_ROOT:-/opt/pro/LKHY}
       - ./data/backups:/backups
       - uploads_data:/uploads
       - /etc/letsencrypt:/letsencrypt
