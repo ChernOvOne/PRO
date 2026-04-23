@@ -796,6 +796,28 @@ export const adminApi = {
     apiFetch<void>(`/admin/updates/backups/${id}`, { method: 'DELETE' }),
   backupsDownloadUrl: (id: string) =>
     `/api/admin/updates/backups/${id}/download`,
+  backupSettingsGet: () =>
+    apiFetch<{
+      tgToken: string
+      tgChat: string
+      dailyEnabled: boolean
+      dailyHour: number
+      retention: number
+    }>('/admin/updates/backup-settings'),
+  backupSettingsSave: (data: {
+    tgToken?: string
+    tgChat?: string
+    dailyEnabled?: boolean
+    dailyHour?: number
+    retention?: number
+  }) =>
+    apiFetch<{ ok: true }>('/admin/updates/backup-settings', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+  backupSettingsTestTg: (data: { tgToken?: string; tgChat?: string }) =>
+    apiFetch<{ ok: true }>('/admin/updates/backup-settings/test-tg', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
   backupsUpload: async (file: File, onProgress?: (loaded: number, total: number) => void) => {
     const fd = new FormData()
     fd.append('file', file, file.name)

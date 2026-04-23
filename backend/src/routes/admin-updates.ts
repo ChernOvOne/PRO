@@ -344,6 +344,100 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
   })
 
   /**
+   * GET /backup-settings — where/when/how backups go
+   * All optional. Stored in `settings` table as individual keys.
+   */
+  app.get('/backup-settings', admin, async () => {
+    const keys = [
+      'backup_tg_token', 'backup_tg_chat',
+      'backup_daily_enabled', 'backup_daily_hour',
+      'backup_retention',
+    ]
+    const rows = await prisma.setting.findMany({ where: { key: { in: keys } } })
+    const m: Record<string, string> = {}
+    for (const r of rows) m[r.key] = r.value
+    return {
+      tgToken:        m['backup_tg_token']      || '',
+      tgChat:         m['backup_tg_chat']       || '',
+      dailyEnabled:   m['backup_daily_enabled'] !== '0',  // default on
+      dailyHour:      parseInt(m['backup_daily_hour']     || '4', 10),
+      retention:      parseInt(m['backup_retention']      || '20', 10),
+    }
+  })
+
+  /**
+   * POST /backup-settings — save
+   */
+  app.post('/backup-settings', admin, async (req, reply) => {
+    const body = z.object({
+      tgToken:      z.string().max(200).optional(),
+      tgChat:       z.string().max(100).optional(),
+      dailyEnabled: z.boolean().optional(),
+      dailyHour:    z.number().int().min(0).max(23).optional(),
+      retention:    z.number().int().min(3).max(100).optional(),
+    }).parse(req.body)
+
+    const upserts: Array<[string, string]> = []
+    if (body.tgToken !== undefined)      upserts.push(['backup_tg_token',      body.tgToken])
+    if (body.tgChat !== undefined)       upserts.push(['backup_tg_chat',       body.tgChat])
+    if (body.dailyEnabled !== undefined) upserts.push(['backup_daily_enabled', body.dailyEnabled ? '1' : '0'])
+    if (body.dailyHour !== undefined)    upserts.push(['backup_daily_hour',    String(body.dailyHour)])
+    if (body.retention !== undefined)    upserts.push(['backup_retention',     String(body.retention)])
+
+    for (const [key, value] of upserts) {
+      await prisma.setting.upsert({
+        where:  { key },
+        update: { value },
+        create: { key, value },
+      })
+    }
+    return { ok: true }
+  })
+
+  /**
+   * POST /backup-settings/test-tg — send a test message to the TG channel
+   * using the currently-saved (or body-override) token+chat. Useful right
+   * after filling the form to verify credentials without creating a backup.
+   */
+  app.post('/backup-settings/test-tg', admin, async (req, reply) => {
+    const body = z.object({
+      tgToken: z.string().optional(),
+      tgChat:  z.string().optional(),
+    }).parse(req.body || {})
+
+    let token = body.tgToken
+    let chat  = body.tgChat
+    if (!token || !chat) {
+      const rows = await prisma.setting.findMany({
+        where: { key: { in: ['backup_tg_token', 'backup_tg_chat'] } },
+      })
+      const m: Record<string, string> = {}
+      for (const r of rows) m[r.key] = r.value
+      token = token || m['backup_tg_token']
+      chat  = chat  || m['backup_tg_chat']
+    }
+    if (!token || !chat) return reply.status(400).send({ error: 'Не заполнены token и chat' })
+
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chat,
+          text: '✅ HIDEYOU: тестовое сообщение. Сюда будут приходить бэкапы.',
+          parse_mode: 'HTML',
+        }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const data = await res.json() as any
+      if (!data.ok) return reply.status(400).send({ error: data.description || 'Telegram API отказал' })
+      return { ok: true }
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message })
+    }
+  })
+
+  /**
    * POST /maintenance — manually toggle maintenance mode
    */
   app.post('/maintenance', admin, async (req) => {

@@ -39,19 +39,39 @@ const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD
 const NGINX_CONTAINER   = process.env.NGINX_CONTAINER || 'hideyou_nginx'
 const COMPOSE_PROJECT   = process.env.COMPOSE_PROJECT || 'lkhy'
 
-// Telegram backup credentials
-const TG_BACKUP_TOKEN   = process.env.TG_BACKUP_TOKEN || ''
-const TG_BACKUP_CHAT    = process.env.TG_BACKUP_CHAT  || ''
+// Telegram backup credentials — env is a fallback; runtime config lives in
+// the `settings` table (keys backup_tg_token / backup_tg_chat) so the admin
+// UI can change them without redeploying.
 const TG_MAX_BYTES      = 50 * 1024 * 1024 // 50 MB limit for Bot API
+
+async function loadBackupSettings() {
+  const c = new PgClient({ connectionString: DATABASE_URL })
+  await c.connect()
+  try {
+    const r = await c.query(
+      `SELECT key, value FROM settings WHERE key IN (
+         'backup_tg_token','backup_tg_chat',
+         'backup_daily_enabled','backup_daily_hour','backup_retention'
+       )`
+    )
+    const m = {}
+    for (const row of r.rows) m[row.key] = row.value
+    return {
+      tgToken:      m['backup_tg_token']      || process.env.TG_BACKUP_TOKEN || '',
+      tgChat:       m['backup_tg_chat']       || process.env.TG_BACKUP_CHAT  || '',
+      dailyEnabled: m['backup_daily_enabled'] == null ? true : m['backup_daily_enabled'] !== '0',
+      dailyHour:    parseInt(m['backup_daily_hour'] || '4', 10),
+      retention:    parseInt(m['backup_retention']  || '20', 10),
+    }
+  } finally { await c.end() }
+}
 
 const GITHUB_REPO       = 'ChernOvOne/PRO'
 const HEALTH_TIMEOUT_MS = 90_000
-// Raised from 5 to 20. "pre-update" + "uploaded" + "pre-restore" + rollbacks
-// compound quickly; 5 slots were getting evicted within a day of heavy work.
-const BACKUP_RETENTION  = 20
+// Default retention — can be overridden from settings.backup_retention.
+const BACKUP_RETENTION_DEFAULT = 20
 // Daily auto-backup: run if most recent backup is older than this.
 const DAILY_THRESHOLD_MS = 20 * 60 * 60 * 1000 // 20 h
-const DAILY_CHECK_HOUR   = 4 // Europe/Moscow 04:00
 
 const BASE_URL          = process.env.INTERNAL_HEALTH_URL || 'http://backend:4000'
 
@@ -184,8 +204,10 @@ async function setMaintenance(on, message = '🔧 Платформа обнов�
 
 /* ── Telegram backup upload ───────────────────────────────── */
 
-async function uploadToTelegram(filePath, caption) {
-  if (!TG_BACKUP_TOKEN || !TG_BACKUP_CHAT) {
+async function uploadToTelegram(filePath, caption, creds) {
+  const token = creds?.tgToken
+  const chat  = creds?.tgChat
+  if (!token || !chat) {
     log('TG backup skipped — no token/chat configured')
     return null
   }
@@ -196,10 +218,10 @@ async function uploadToTelegram(filePath, caption) {
   }
   try {
     const form = new FormData()
-    form.append('chat_id', TG_BACKUP_CHAT)
+    form.append('chat_id', chat)
     form.append('caption', caption || '')
     form.append('document', new Blob([fs.readFileSync(filePath)]), path.basename(filePath))
-    const res = await fetch(`https://api.telegram.org/bot${TG_BACKUP_TOKEN}/sendDocument`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
       method: 'POST',
       body: form,
       signal: AbortSignal.timeout(300_000),
@@ -211,8 +233,8 @@ async function uploadToTelegram(filePath, caption) {
     }
     const fileId = data.result?.document?.file_id
     const messageId = data.result?.message_id
-    const url = TG_BACKUP_CHAT.startsWith('-100')
-      ? `https://t.me/c/${TG_BACKUP_CHAT.slice(4)}/${messageId}`
+    const url = chat.startsWith('-100')
+      ? `https://t.me/c/${chat.slice(4)}/${messageId}`
       : null
     log('TG backup uploaded, file_id:', fileId)
     return { fileId, messageUrl: url }
@@ -225,6 +247,14 @@ async function uploadToTelegram(filePath, caption) {
 /* ── Backup creation ──────────────────────────────────────── */
 
 async function createFullBackup({ reason, eventId, createdBy }) {
+  const settings = await loadBackupSettings().catch(() => ({
+    tgToken: '', tgChat: '',
+    retention: BACKUP_RETENTION_DEFAULT,
+  }))
+  const retention = Number.isFinite(settings.retention) && settings.retention > 0
+    ? settings.retention
+    : BACKUP_RETENTION_DEFAULT
+
   const sha = gitCurrentSha() || 'unknown'
   const tag = gitCurrentTag() || null
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -243,20 +273,25 @@ async function createFullBackup({ reason, eventId, createdBy }) {
 
   // Upload to Telegram (small files only; else upload db-only)
   let tgResult = null
-  if (stats.size <= TG_MAX_BYTES) {
-    await emit(eventId, 'backup', 'Загружаю в Telegram…')
-    tgResult = await uploadToTelegram(fullPath,
-      `🗄 HIDEYOU backup\nreason: ${reason}\ngit: ${tag || sha.slice(0, 7)}\nsize: ${(stats.size / 1024 / 1024).toFixed(1)} MB`)
+  if (settings.tgToken && settings.tgChat) {
+    if (stats.size <= TG_MAX_BYTES) {
+      await emit(eventId, 'backup', 'Загружаю в Telegram…')
+      tgResult = await uploadToTelegram(fullPath,
+        `🗄 HIDEYOU backup\nreason: ${reason}\ngit: ${tag || sha.slice(0, 7)}\nsize: ${(stats.size / 1024 / 1024).toFixed(1)} MB`,
+        settings)
+    } else {
+      await emit(eventId, 'backup', `Бэкап слишком большой для Telegram (${(stats.size / 1024 / 1024).toFixed(1)} MB), сохранён только локально`)
+    }
   } else {
-    await emit(eventId, 'backup', `Бэкап слишком большой для Telegram (${(stats.size / 1024 / 1024).toFixed(1)} MB), сохранён только локально`)
+    await emit(eventId, 'backup', 'Telegram не настроен — сохранён только локально')
   }
 
-  // Rotate: keep BACKUP_RETENTION most recent
+  // Rotate: keep `retention` most recent
   const files = fs.readdirSync(BACKUPS_DIR)
     .filter(f => f.startsWith('backup__') && f.endsWith('.tar.gz'))
     .map(f => ({ name: f, path: path.join(BACKUPS_DIR, f), mtime: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime)
-  for (const old of files.slice(BACKUP_RETENTION)) {
+  for (const old of files.slice(retention)) {
     fs.unlinkSync(old.path)
     await emit(eventId, 'backup', `Удалён старый бэкап: ${old.name}`)
   }
@@ -538,10 +573,11 @@ async function processJob(job) {
  */
 async function maybeRunDailyBackup() {
   try {
+    const settings = await loadBackupSettings().catch(() => null)
+    if (!settings || !settings.dailyEnabled) return
     const now = new Date()
-    // Run check only at top of the configured hour (allow 59 min window).
-    if (now.getHours() !== DAILY_CHECK_HOUR) return
-    // Already something queued or recently created?
+    if (now.getHours() !== settings.dailyHour) return
+
     const c = new PgClient({ connectionString: DATABASE_URL })
     await c.connect()
     let last

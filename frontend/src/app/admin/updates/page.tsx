@@ -6,6 +6,7 @@ import {
   Download, Package, History, HardDrive, Loader2, GitBranch,
   RefreshCw, PlayCircle, Undo2, AlertTriangle, CheckCircle2,
   XCircle, Clock, Trash2, Plus, Power, ExternalLink, Upload,
+  Settings, Send, Save,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 
@@ -21,7 +22,7 @@ function fmtTime(iso: string) {
   return d.toLocaleString('ru', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-type Tab = 'overview' | 'history' | 'backups'
+type Tab = 'overview' | 'history' | 'backups' | 'settings'
 
 export default function UpdatesPage() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -48,11 +49,15 @@ export default function UpdatesPage() {
         <TabBtn active={tab === 'backups'} onClick={() => setTab('backups')}>
           <HardDrive className="w-4 h-4" /> Бэкапы
         </TabBtn>
+        <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>
+          <Settings className="w-4 h-4" /> Настройки
+        </TabBtn>
       </div>
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'history' && <HistoryTab />}
       {tab === 'backups' && <BackupsTab />}
+      {tab === 'settings' && <BackupSettingsTab />}
     </div>
   )
 }
@@ -681,6 +686,224 @@ function BackupsTab() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Backup settings tab — where/when/how backups go
+   ═══════════════════════════════════════════════════════════ */
+
+function BackupSettingsTab() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [tgToken, setTgToken] = useState('')
+  const [tgChat, setTgChat] = useState('')
+  const [dailyEnabled, setDailyEnabled] = useState(true)
+  const [dailyHour, setDailyHour] = useState(4)
+  const [retention, setRetention] = useState(20)
+  const [showToken, setShowToken] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await adminApi.backupSettingsGet()
+        setTgToken(d.tgToken)
+        setTgChat(d.tgChat)
+        setDailyEnabled(d.dailyEnabled)
+        setDailyHour(d.dailyHour)
+        setRetention(d.retention)
+      } catch (e: any) { toast.error(e.message || 'Ошибка') }
+      finally { setLoading(false) }
+    })()
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await adminApi.backupSettingsSave({ tgToken, tgChat, dailyEnabled, dailyHour, retention })
+      toast.success('Сохранено')
+    } catch (e: any) { toast.error(e.message || 'Ошибка') }
+    finally { setSaving(false) }
+  }
+
+  const testTg = async () => {
+    setTesting(true)
+    try {
+      await adminApi.backupSettingsTestTg({ tgToken, tgChat })
+      toast.success('Тестовое сообщение отправлено — проверь Telegram')
+    } catch (e: any) { toast.error(e.message || 'Не доставлено') }
+    finally { setTesting(false) }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-1)' }} /></div>
+  }
+
+  const cardStyle = { background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }
+  const inputStyle = {
+    background: 'var(--surface-1)',
+    color: 'var(--text-primary)',
+    border: '1px solid var(--glass-border)',
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      {/* Telegram */}
+      <div className="rounded-2xl p-5 space-y-3" style={cardStyle}>
+        <div className="flex items-start gap-2">
+          <Send className="w-5 h-5 mt-0.5" style={{ color: '#29b6f6' }} />
+          <div className="flex-1">
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Отправка в Telegram
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              Бэкапы ≤ 50 МБ после создания отправляются документом в канал/чат.
+              Создай бота у <span className="font-mono">@BotFather</span>, добавь его
+              администратором в приватный канал, возьми chat_id через <span className="font-mono">@getidsbot</span>.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Токен бота
+          </label>
+          <div className="flex gap-2">
+            <input
+              type={showToken ? 'text' : 'password'}
+              value={tgToken}
+              onChange={e => setTgToken(e.target.value)}
+              placeholder="123456789:AAH..."
+              className="flex-1 px-3 py-2 rounded-lg text-sm font-mono"
+              style={inputStyle}
+            />
+            <button onClick={() => setShowToken(v => !v)}
+                    className="px-3 py-2 rounded-lg text-xs"
+                    style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}>
+              {showToken ? 'Скрыть' : 'Показать'}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Chat ID (канала или личного чата)
+          </label>
+          <input
+            type="text"
+            value={tgChat}
+            onChange={e => setTgChat(e.target.value)}
+            placeholder="-1001234567890 или 123456789"
+            className="w-full px-3 py-2 rounded-lg text-sm font-mono"
+            style={inputStyle}
+          />
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+            Каналы начинаются с <span className="font-mono">-100…</span>
+          </p>
+        </div>
+
+        <div className="flex justify-end">
+          <button onClick={testTg} disabled={testing || !tgToken || !tgChat}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                  style={{ background: 'rgba(41,182,246,0.1)', color: '#29b6f6', border: '1px solid rgba(41,182,246,0.3)' }}>
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Отправить тестовое
+          </button>
+        </div>
+      </div>
+
+      {/* Schedule */}
+      <div className="rounded-2xl p-5 space-y-3" style={cardStyle}>
+        <div className="flex items-start gap-2">
+          <Clock className="w-5 h-5 mt-0.5" style={{ color: '#a78bfa' }} />
+          <div className="flex-1">
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Ежедневный автобэкап
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              Пропускается если свежий бэкап моложе 20 часов.
+              Время — по часовому поясу сервера.
+            </p>
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={dailyEnabled}
+            onChange={e => setDailyEnabled(e.target.checked)}
+            className="w-4 h-4"
+          />
+          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+            Включить ежедневный бэкап
+          </span>
+        </label>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Час запуска (0–23)
+          </label>
+          <select
+            value={dailyHour}
+            onChange={e => setDailyHour(parseInt(e.target.value, 10))}
+            disabled={!dailyEnabled}
+            className="w-32 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+            style={inputStyle}
+          >
+            {Array.from({ length: 24 }, (_, i) => (
+              <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Retention */}
+      <div className="rounded-2xl p-5 space-y-3" style={cardStyle}>
+        <div className="flex items-start gap-2">
+          <HardDrive className="w-5 h-5 mt-0.5" style={{ color: '#22c55e' }} />
+          <div className="flex-1">
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Ретеншен локальных копий
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              Сколько последних бэкапов держать в <span className="font-mono">./data/backups/</span>.
+              Более старые удаляются автоматически.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={3}
+            max={100}
+            value={retention}
+            onChange={e => setRetention(parseInt(e.target.value, 10))}
+            className="flex-1"
+          />
+          <input
+            type="number"
+            min={3}
+            max={100}
+            value={retention}
+            onChange={e => setRetention(Math.max(3, Math.min(100, parseInt(e.target.value, 10) || 20)))}
+            className="w-20 px-3 py-2 rounded-lg text-sm text-center"
+            style={inputStyle}
+          />
+        </div>
+      </div>
+
+      {/* Save */}
+      <div className="flex justify-end">
+        <button onClick={save} disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--accent-1)', color: 'white' }}>
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Сохранить
+        </button>
+      </div>
     </div>
   )
 }
