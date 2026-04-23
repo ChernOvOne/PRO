@@ -4,8 +4,19 @@ WORKDIR /app
 
 RUN apk add --no-cache openssl python3 make g++
 
+# Resilience against flaky network (binaries.prisma.sh ECONNRESET is the
+# usual culprit — npm retries plus an outer bash retry loop.
+ENV npm_config_fetch_retries=10 \
+    npm_config_fetch_retry_factor=2 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000 \
+    npm_config_fetch_timeout=600000
+
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN for i in 1 2 3 4 5; do \
+      npm install --legacy-peer-deps && break || \
+      (echo "npm install attempt $i failed, retrying in 15s..." && sleep 15); \
+    done
 
 COPY prisma ./prisma/
 RUN npx prisma generate
@@ -24,8 +35,17 @@ RUN apk add --no-cache openssl curl
 
 RUN addgroup -g 1001 -S nodejs && adduser -S hideyou -u 1001
 
+ENV npm_config_fetch_retries=10 \
+    npm_config_fetch_retry_factor=2 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000 \
+    npm_config_fetch_timeout=600000
+
 COPY package*.json ./
-RUN npm install --omit=dev --legacy-peer-deps
+RUN for i in 1 2 3 4 5; do \
+      npm install --omit=dev --legacy-peer-deps && break || \
+      (echo "npm install attempt $i failed, retrying in 15s..." && sleep 15); \
+    done
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma

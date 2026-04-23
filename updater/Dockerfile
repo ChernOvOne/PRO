@@ -10,8 +10,17 @@ RUN apk add --no-cache git docker-cli docker-cli-compose postgresql16-client \
 
 WORKDIR /app
 
+ENV npm_config_fetch_retries=10 \
+    npm_config_fetch_retry_factor=2 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000 \
+    npm_config_fetch_timeout=600000
+
 COPY package.json ./
-RUN npm install --omit=dev --legacy-peer-deps
+RUN for i in 1 2 3 4 5; do \
+      npm install --omit=dev --legacy-peer-deps && break || \
+      (echo "npm install attempt $i failed, retrying in 15s..." && sleep 15); \
+    done
 
 COPY worker.js ./
 COPY backup.sh restore.sh ./
