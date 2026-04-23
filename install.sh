@@ -1,10 +1,15 @@
 #!/bin/bash
 # ============================================================
 #  HIDEYOU — Скрипт установки и управления
-#  https://github.com/ChernOvOne/LKHY
+#  https://github.com/ChernOvOne/PRO
 # ============================================================
 
 set -euo pipefail
+
+# Canonical upstream. Servers that were initially installed from the old
+# "LKHY" repo name get auto-migrated to "PRO" on first update — otherwise
+# `git fetch --tags` won't show the newer v5.x tags.
+HIDEYOU_REPO_URL="https://github.com/ChernOvOne/PRO.git"
 
 RED='\033[0;31m';  GREEN='\033[0;32m';  YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m';  BOLD='\033[1m'
@@ -762,8 +767,16 @@ restart_svc() {
 do_update() {
   step "Обновление HIDEYOU"
 
+  # Migrate old servers from the deprecated "LKHY" remote to the canonical "PRO"
+  local current_origin
+  current_origin=$(git remote get-url origin 2>/dev/null || echo "")
+  if [[ "$current_origin" == *"/LKHY"* ]] || [[ "$current_origin" == *"/LKHY.git" ]]; then
+    info "Обновляю remote: $current_origin → $HIDEYOU_REPO_URL"
+    git remote set-url origin "$HIDEYOU_REPO_URL" 2>&1 | tee -a "$LOG_FILE" || true
+  fi
+
   info "Получаю информацию из git..."
-  git fetch --all --tags 2>&1 | tee -a "$LOG_FILE"
+  git fetch --all --tags --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
 
   local current_branch
   current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")

@@ -24,7 +24,7 @@
 ## Быстрая установка
 
 ```bash
-git clone https://github.com/ChernOvOne/LKHY hideyou
+git clone https://github.com/ChernOvOne/PRO hideyou
 cd hideyou
 chmod +x install.sh
 sudo bash install.sh
