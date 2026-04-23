@@ -37,7 +37,24 @@ const BACKUPS_DIR       = '/backups'
 const DATABASE_URL      = process.env.DATABASE_URL
 const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD
 const NGINX_CONTAINER   = process.env.NGINX_CONTAINER || 'hideyou_nginx'
-const COMPOSE_PROJECT   = process.env.COMPOSE_PROJECT || 'lkhy'
+
+// Compose project name. install.sh runs `docker compose up` without -p, so the
+// default project = basename of REPO_DIR (e.g. "hideyou" for /root/hideyou,
+// "LKHY" for /opt/pro/LKHY). The updater MUST use the same name or it will
+// create duplicate containers that collide with the existing ones. We:
+//   1. prefer the env override if explicitly set
+//   2. otherwise read the label from hideyou_postgres (always present, since
+//      postgres is never recreated by the updater)
+//   3. fall back to REPO_DIR basename
+function detectComposeProject() {
+  if (process.env.COMPOSE_PROJECT) return process.env.COMPOSE_PROJECT
+  try {
+    const label = sh(`docker inspect hideyou_postgres --format '{{ index .Config.Labels "com.docker.compose.project" }}'`)
+    if (label && label !== '<no value>') return label
+  } catch {}
+  return path.basename(REPO_DIR)
+}
+let COMPOSE_PROJECT = 'hideyou' // resolved in main() before any docker compose call
 
 // Telegram backup credentials — env is a fallback; runtime config lives in
 // the `settings` table (keys backup_tg_token / backup_tg_chat) so the admin
@@ -396,6 +413,8 @@ async function runInstall(job) {
     // 5. Deploy
     await emit(eventId, 'deploy', 'Перезапуск сервисов…')
     await updateEventRow(eventId, { phase: 'deploy' })
+    // Defeat any name collisions from historical project-label drift.
+    purgeConflictingContainers(['backend', 'frontend', 'bot', 'nginx'])
     // --no-deps: don't touch postgres/redis even if their config is drifted;
     // --force-recreate: we want fresh containers for the services we rebuilt.
     await shStream('docker', [
@@ -487,6 +506,7 @@ async function restoreFromBackupId(backupId, eventId) {
   ], line => emit(eventId, 'restore-build', line).catch(() => {}))
 
   await emit(eventId, 'restore-up', 'Запуск сервисов…')
+  purgeConflictingContainers(['backend', 'frontend', 'bot', 'nginx'])
   await shStream('docker', [
     'compose', '-p', COMPOSE_PROJECT, '-f', `${REPO_DIR}/docker-compose.yml`,
     'up', '-d', '--no-deps', '--force-recreate',
@@ -636,9 +656,37 @@ function verifyBackup(fullPath) {
   if (!names.some(n => n.endsWith('db.sql'))) throw new Error('Backup missing db.sql')
 }
 
+/**
+ * Force-remove our own containers by name BEFORE `compose up --force-recreate`
+ * to defeat "name already in use" errors when compose project labels got out
+ * of sync (e.g. containers were originally created under project "hideyou"
+ * but updater now runs with project "lkhy" or vice versa).
+ *
+ * Safe to run: only touches containers we own (prefixed hideyou_), and
+ * running compose up --force-recreate right after will recreate them.
+ */
+function purgeConflictingContainers(services) {
+  const nameByService = {
+    backend:  'hideyou_backend',
+    frontend: 'hideyou_frontend',
+    bot:      'hideyou_bot',
+    nginx:    'hideyou_nginx',
+    certbot:  'hideyou_certbot',
+  }
+  for (const svc of services) {
+    const name = nameByService[svc]
+    if (!name) continue
+    try { sh(`docker rm -f ${name} 2>/dev/null || true`) } catch {}
+  }
+}
+
 async function main() {
   log('Updater worker starting')
   log(`REPO_DIR=${REPO_DIR}, GITHUB_REPO=${GITHUB_REPO}`)
+
+  // Auto-detect compose project so we don't clash with the one install.sh uses.
+  COMPOSE_PROJECT = detectComposeProject()
+  log(`COMPOSE_PROJECT=${COMPOSE_PROJECT}`)
 
   ensureDir(BACKUPS_DIR)
 
