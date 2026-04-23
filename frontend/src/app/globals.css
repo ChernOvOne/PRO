@@ -2,9 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are loaded locally via @fontsource (see layout.tsx) — do NOT
+   @import from Google Fonts here, it blocks on servers with restricted
+   outbound DNS (common in RU) and hard-fails next build. */
 
 @layer base {
+  html, body {
+    font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  code, pre, kbd, samp {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
   * { box-sizing: border-box; }
 
   /* ── Base: Dark Theme ── */

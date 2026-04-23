@@ -1,13 +1,13 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import { TMAProvider } from '@/providers/TMAProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { BrandTheme } from '@/components/BrandTheme'
 import { MaintenanceBanner } from '@/components/MaintenanceBanner'
+// Load Inter locally (via @fontsource-variable/inter) — no Google Fonts fetch
+// at build time, works on servers with restricted outbound DNS (common in RU).
+import '@fontsource-variable/inter'
 import './globals.css'
-
-const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['300', '400', '500', '600', '700', '800'] })
 
 export const metadata: Metadata = {
   title: {
@@ -61,7 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           })();
         `}} />
       </head>
-      <body className={`${inter.className} antialiased`}
+      <body className={`antialiased`}
             style={{ background: 'var(--surface-0)', color: 'var(--text-primary)' }}>
         <ThemeProvider>
           <BrandTheme />

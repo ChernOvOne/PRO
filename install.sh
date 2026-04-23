@@ -169,6 +169,16 @@ FEATURE_BOT=true
 GIFT_CODE_EXPIRY_DAYS=30
 VERIFICATION_CODE_TTL=600
 
+# ── Карты (опционально, можно оставить пустыми) ───────────────
+# MapTiler: https://cloud.maptiler.com/  | Яндекс.Карты: https://developer.tech.yandex.ru/
+MAPTILER_KEY=
+YANDEX_MAPS_KEY=
+
+# ── Telegram backup bot (опционально) ─────────────────────────
+# Бот в который updater-сервис присылает бэкапы БД
+TG_BACKUP_TOKEN=
+TG_BACKUP_CHAT=
+
 LOG_LEVEL=info
 ENVEOF
 }
