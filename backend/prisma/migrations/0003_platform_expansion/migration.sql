@@ -26,6 +26,35 @@ ALTER TABLE "referral_bonuses" ADD COLUMN IF NOT EXISTS "bonus_amount" DECIMAL(1
 ALTER TABLE "referral_bonuses" ADD COLUMN IF NOT EXISTS "bonus_currency" TEXT DEFAULT 'RUB';
 ALTER TABLE "referral_bonuses" ALTER COLUMN "bonus_days" SET DEFAULT 0;
 
+-- Ensure news and notifications tables exist for fresh installs
+-- (on existing DBs these were created via `prisma db push` before 0003 was
+-- written; this guard makes cold deploys work the same way).
+CREATE TABLE IF NOT EXISTS "news" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "image_url" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "is_pinned" BOOLEAN NOT NULL DEFAULT false,
+    "published_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "news_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "notifications" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT,
+    "type" "NotificationType" NOT NULL DEFAULT 'INFO',
+    "title" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "is_read" BOOLEAN NOT NULL DEFAULT false,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "notifications_pkey" PRIMARY KEY ("id")
+);
+
+DO $$ BEGIN ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- AlterTable: news - add missing columns
 ALTER TABLE "news" ADD COLUMN IF NOT EXISTS "type" "NewsType" NOT NULL DEFAULT 'NEWS';
 ALTER TABLE "news" ADD COLUMN IF NOT EXISTS "buttons" JSONB;
