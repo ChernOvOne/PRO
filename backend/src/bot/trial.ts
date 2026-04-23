@@ -53,20 +53,54 @@ export async function createTrialForUser(
     ? `tg_${user.telegramId}`
     : `trial_${user.id.slice(0, 8)}`
 
-  // 4. Create REMNAWAVE user
-  const rmUser = await remnawave.createUser({
-    username,
-    status: 'ACTIVE',
-    expireAt: expireAt.toISOString(),
-    trafficLimitBytes,
-    trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
-    hwidDeviceLimit: tariff.deviceLimit || 3,
-    telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
-    email: user.email ?? null,
-    description: `Trial (${trialDays}d) — tariff: ${tariff.name}`,
-    activeInternalSquads: tariff.remnawaveSquads ?? [],
-    tag: tariff.remnawaveTag ?? null,
-  })
+  // 4. Check if this user ALREADY exists on the REMNAWAVE panel (shared panel
+  // across installs or a re-installed server). If yes — link to it instead of
+  // creating a duplicate (panel throws 400 "username already exists" otherwise).
+  let rmUser: any = null
+  if (user.telegramId) {
+    rmUser = await remnawave.getUserByTelegramId(user.telegramId).catch(() => null)
+  }
+  if (!rmUser && user.email) {
+    rmUser = await remnawave.getUserByEmail(user.email).catch(() => null)
+  }
+  if (!rmUser) {
+    rmUser = await remnawave.getUserByUsername(username).catch(() => null)
+  }
+
+  if (rmUser) {
+    // Existing account — extend to trial period if expired, otherwise keep as-is.
+    const rmExpire = rmUser.expireAt ? new Date(rmUser.expireAt) : null
+    const expired  = !rmExpire || rmExpire < new Date()
+    if (expired) {
+      try {
+        await remnawave.updateUser({
+          uuid:     rmUser.uuid,
+          expireAt: expireAt.toISOString(),
+          status:   'ACTIVE',
+          activeInternalSquads: tariff.remnawaveSquads ?? [],
+        } as any)
+        rmUser.expireAt = expireAt.toISOString()
+      } catch (e: any) {
+        logger.warn(`Failed to extend existing RM user ${rmUser.uuid}: ${e.message}`)
+      }
+    }
+    logger.info(`Trial link: user ${userId} matched existing RM ${rmUser.uuid} (expired=${expired})`)
+  } else {
+    // 4b. No existing account — create new
+    rmUser = await remnawave.createUser({
+      username,
+      status: 'ACTIVE',
+      expireAt: expireAt.toISOString(),
+      trafficLimitBytes,
+      trafficLimitStrategy: tariff.trafficStrategy || 'MONTH',
+      hwidDeviceLimit: tariff.deviceLimit || 3,
+      telegramId: user.telegramId ? parseInt(user.telegramId, 10) : null,
+      email: user.email ?? null,
+      description: `Trial (${trialDays}d) — tariff: ${tariff.name}`,
+      activeInternalSquads: tariff.remnawaveSquads ?? [],
+      tag: tariff.remnawaveTag ?? null,
+    })
+  }
 
   // 5. Update local user record
   const subLink = remnawave.getSubscriptionUrl(rmUser.uuid, rmUser.subscriptionUrl)
