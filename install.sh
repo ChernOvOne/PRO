@@ -765,6 +765,40 @@ reseed_bot_templates() {
     UNION ALL SELECT 'funnel_nodes', COUNT(*) FROM funnel_nodes;" 2>&1 | tee -a "$LOG_FILE"
 }
 
+# Toggle the maintenance banner on/off. Handy when an update got stuck
+# halfway through and left the platform flagged as "обновляется" forever.
+toggle_maintenance() {
+  step "Режим обслуживания (баннер «Платформа обновляется»)"
+  if ! docker compose ps postgres 2>/dev/null | grep -q "Up\|running"; then
+    err "PostgreSQL не запущен — ничего не меняю"; return 1
+  fi
+  local current
+  current=$(docker compose exec -T postgres psql -U hideyou -d hideyou -tA \
+    -c "SELECT COALESCE(value, '0') FROM settings WHERE key = 'maintenance_mode';" 2>/dev/null | tr -d '[:space:]')
+  current="${current:-0}"
+  if [[ "$current" == "1" ]]; then
+    info "Сейчас: ${YELLOW}ВКЛЮЧЁН${RESET} (виден баннер на всех страницах)"
+    ask "Выключить? [Д/н]"; read -r ans
+    if [[ ! "$ans" =~ ^[нНnN]$ ]]; then
+      docker compose exec -T postgres psql -U hideyou -d hideyou \
+        -c "INSERT INTO settings (key, value, created_at, updated_at)
+            VALUES ('maintenance_mode', '0', NOW(), NOW())
+            ON CONFLICT (key) DO UPDATE SET value = '0', updated_at = NOW();" >/dev/null
+      ok "Режим обслуживания ВЫКЛЮЧЕН — баннер пропадёт в течение минуты"
+    fi
+  else
+    info "Сейчас: ${GREEN}ВЫКЛЮЧЕН${RESET}"
+    ask "Включить? [д/Н]"; read -r ans
+    if [[ "$ans" =~ ^[дДyY]$ ]]; then
+      docker compose exec -T postgres psql -U hideyou -d hideyou \
+        -c "INSERT INTO settings (key, value, created_at, updated_at)
+            VALUES ('maintenance_mode', '1', NOW(), NOW())
+            ON CONFLICT (key) DO UPDATE SET value = '1', updated_at = NOW();" >/dev/null
+      ok "Режим обслуживания ВКЛЮЧЁН — баннер появится в течение минуты"
+    fi
+  fi
+}
+
 # Stamp the current git version into the settings table so /admin/updates
 # and the `hy` CLI show the right thing after a CLI-driven update. Mirrors
 # what the updater sidecar does after UI-driven updates.
@@ -1288,6 +1322,7 @@ main_menu() {
     echo -e "  ${CYAN}${BOLD}── Токены / Интеграции ───────────────${RESET}"
     echo -e "  ${BOLD}[18]${RESET} ${GREEN}Настроить токены${RESET} ${DIM}(REMNAWAVE, Telegram, ЮKassa, CryptoPay, SMTP...)${RESET}"
     echo -e "  ${BOLD}[19]${RESET} Включить/выключить Telegram-бот"
+    echo -e "  ${BOLD}[21]${RESET} Режим обслуживания ${DIM}(снять зависший баннер)${RESET}"
     echo ""
     echo -e "  ${CYAN}${BOLD}── Обслуживание ──────────────────────${RESET}"
     echo -e "  ${BOLD}[14]${RESET} Обновить HIDEYOU"
@@ -1319,6 +1354,7 @@ main_menu() {
       18) configure_tokens ;;
       19) toggle_bot ;;
       20) reseed_bot_templates ;;
+      21) toggle_maintenance ;;
       0)  echo ""; info "До свидания!"; echo ""; exit 0 ;;
       *)  warn "Неизвестный пункт: $choice" ;;
     esac
