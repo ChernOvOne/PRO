@@ -377,20 +377,12 @@ function LoginContent() {
                 Войди через Telegram — подписка из бота привяжется автоматически
               </p>
 
-              {!botName ? (
-                <div className="text-center py-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
-                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                    Telegram-авторизация временно недоступна.
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    Используйте вход по Email или зарегистрируйтесь.
-                  </p>
-                </div>
-              ) : (
-                <div ref={tgRef} className="flex justify-center min-h-[52px] items-center">
-                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-tertiary)' }} />
-                </div>
-              )}
+              {/* The useEffect above renders either the OIDC button, the
+                  legacy HMAC widget, or a config-help card into tgRef,
+                  depending on tgMode. We show a spinner until it populates. */}
+              <div ref={tgRef} className="flex justify-center min-h-[52px] items-center flex-col gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-tertiary)' }} />
+              </div>
 
               {loading && (
                 <div className="flex items-center justify-center gap-2 text-sm"
