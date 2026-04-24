@@ -495,13 +495,13 @@ export default function DashboardPage() {
       </div>
 
       {/* ═══════ 2. ACTION BENTO ═══════
-          Desktop/tablet: 3-col grid where primary spans 2 cols × 2 rows,
-          two secondaries stack on the right. Mobile: everything stacks. */}
-      <div className="animate-slide-up grid grid-cols-1 sm:grid-cols-3 gap-3"
-           style={{ animationDelay: '50ms' }}>
-        {/* ── PRIMARY: Выбрать тариф (big hero card) ── */}
+          Hero card full-width on top. Three secondary cards stack below
+          vertically on mobile, lay out horizontally as a single row on
+          sm+ screens. Same shape for all three, colour swapped via props. */}
+      <div className="animate-slide-up space-y-3" style={{ animationDelay: '50ms' }}>
+        {/* ── PRIMARY: Выбрать тариф (big hero card, full width) ── */}
         <button onClick={() => setShowTariffs(true)}
-                className="dash-bento dash-bento-primary group relative overflow-hidden rounded-2xl p-6 text-left sm:col-span-2 sm:row-span-2 min-h-[180px] flex flex-col justify-between"
+                className="dash-bento dash-bento-primary group relative overflow-hidden rounded-2xl p-6 text-left w-full min-h-[180px] flex flex-col justify-between"
                 style={{
                   background: 'linear-gradient(135deg, var(--accent-1) 0%, #8b5cf6 50%, #ec4899 100%)',
                   color: '#fff',
@@ -614,68 +614,30 @@ export default function DashboardPage() {
           </div>
         </button>
 
-        {/* ── SECONDARY 1: Подключить VPN ── */}
-        <Link href="/dashboard/instructions"
-              className="dash-bento group relative overflow-hidden rounded-2xl p-4 min-h-[86px] flex items-center gap-3"
-              style={{
-                background: 'linear-gradient(135deg, rgba(139,92,246,0.14) 0%, rgba(236,72,153,0.08) 100%)',
-                border: '1px solid rgba(139,92,246,0.25)',
-                color: '#a78bfa',
-              }}>
-          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-20 transition-transform duration-500 group-hover:scale-125"
-                style={{ background: 'radial-gradient(circle, #a78bfa 0%, transparent 70%)', filter: 'blur(14px)' }} />
-          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
-                style={{ background: 'rgba(139,92,246,0.25)', border: '1px solid rgba(139,92,246,0.3)' }}>
-            <Smartphone className="w-5 h-5" />
-          </span>
-          <div className="relative z-10 flex-1 min-w-0">
-            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Подключить VPN</div>
-            <div className="text-[11px] mt-0.5 opacity-80">Инструкции для устройств</div>
-          </div>
-          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
-        </Link>
-
-        {/* ── SECONDARY 2: Поделиться ── */}
-        <button onClick={() => setShowShare(true)}
-                className="dash-bento group relative overflow-hidden rounded-2xl p-4 text-left min-h-[86px] flex items-center gap-3"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(6,182,212,0.14) 0%, rgba(14,165,233,0.08) 100%)',
-                  border: '1px solid rgba(6,182,212,0.25)',
-                  color: 'var(--accent-1)',
-                }}>
-          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
-                style={{ background: 'radial-gradient(circle, var(--accent-1) 0%, transparent 70%)', filter: 'blur(14px)' }} />
-          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
-                style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.3)' }}>
-            <Share2 className="w-5 h-5" />
-          </span>
-          <div className="relative z-10 flex-1 min-w-0">
-            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Поделиться</div>
-            <div className="text-[11px] mt-0.5 opacity-80">QR-код и ссылка подписки</div>
-          </div>
-          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
-        </button>
-
-        {/* ── SECONDARY 3: Мои подарки ── */}
-        <Link href="/dashboard/gift"
-              className="dash-bento group relative overflow-hidden rounded-2xl p-4 min-h-[86px] flex items-center gap-3"
-              style={{
-                background: 'linear-gradient(135deg, rgba(244,63,94,0.14) 0%, rgba(236,72,153,0.08) 100%)',
-                border: '1px solid rgba(244,63,94,0.25)',
-                color: '#fb7185',
-              }}>
-          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
-                style={{ background: 'radial-gradient(circle, #f43f5e 0%, transparent 70%)', filter: 'blur(14px)' }} />
-          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
-                style={{ background: 'rgba(244,63,94,0.25)', border: '1px solid rgba(244,63,94,0.3)' }}>
-            <Gift className="w-5 h-5" />
-          </span>
-          <div className="relative z-10 flex-1 min-w-0">
-            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Мои подарки</div>
-            <div className="text-[11px] mt-0.5 opacity-80">Подаренные и полученные</div>
-          </div>
-          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
-        </Link>
+        {/* ── Secondary cards row — 1-column on mobile, 3-column on sm+ ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <SecondaryBento
+            as="link" href="/dashboard/instructions"
+            icon={<Smartphone className="w-5 h-5" />}
+            title="Подключить VPN"
+            subtitle="Инструкции для устройств"
+            rgb="139,92,246"
+          />
+          <SecondaryBento
+            as="button" onClick={() => setShowShare(true)}
+            icon={<Share2 className="w-5 h-5" />}
+            title="Поделиться"
+            subtitle="QR-код и ссылка подписки"
+            rgb="6,182,212"
+          />
+          <SecondaryBento
+            as="link" href="/dashboard/gift"
+            icon={<Gift className="w-5 h-5" />}
+            title="Мои подарки"
+            subtitle="Подаренные и полученные"
+            rgb="244,63,94"
+          />
+        </div>
       </div>
 
       {/* ═══════ 3. REFERRALS + BALANCE — single column ═══════ */}
@@ -2296,4 +2258,50 @@ function AutoRenewToggle() {
       </div>
     </div>
   )
+}
+
+// ── Secondary bento card — single source of shape for three dash actions ──
+// (VPN / Share / Gifts). Pass `rgb` as three comma-separated base values
+// like "139,92,246"; the helper builds all rgba() shades from there so every
+// card has identical geometry and only colour differs.
+type SecondaryBentoProps = {
+  icon:     React.ReactNode
+  title:    string
+  subtitle: string
+  rgb:      string
+} & (
+  | { as: 'link';   href: string;                 onClick?: never }
+  | { as: 'button'; href?: never; onClick: () => void }
+)
+
+function SecondaryBento(props: SecondaryBentoProps) {
+  const { icon, title, subtitle, rgb } = props
+  const inner = (
+    <>
+      <span aria-hidden
+            className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
+            style={{ background: `radial-gradient(circle, rgb(${rgb}) 0%, transparent 70%)`, filter: 'blur(14px)' }} />
+      <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+            style={{ background: `rgba(${rgb},0.25)`, border: `1px solid rgba(${rgb},0.3)` }}>
+        {icon}
+      </span>
+      <div className="relative z-10 flex-1 min-w-0">
+        <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>{title}</div>
+        <div className="text-[11px] mt-0.5 opacity-80">{subtitle}</div>
+      </div>
+      <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
+    </>
+  )
+
+  const cls = 'dash-bento group relative overflow-hidden rounded-2xl p-4 min-h-[86px] flex items-center gap-3 text-left h-full'
+  const style: React.CSSProperties = {
+    background: `linear-gradient(135deg, rgba(${rgb},0.14) 0%, rgba(${rgb},0.06) 100%)`,
+    border:     `1px solid rgba(${rgb},0.25)`,
+    color:      `rgb(${rgb})`,
+  }
+
+  if (props.as === 'link') {
+    return <Link href={props.href} className={cls} style={style}>{inner}</Link>
+  }
+  return <button onClick={props.onClick} className={cls} style={style}>{inner}</button>
 }
