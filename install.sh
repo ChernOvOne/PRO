@@ -968,20 +968,29 @@ do_update() {
 
   info "Получаю информацию из git..."
   # Pick up GitHub token (private repo support) from settings or .env.
+  # `|| true` absorbs psql failures so set -euo pipefail doesn't abort
+  # the whole update script just because postgres briefly isn't ready.
   local gh_token=""
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hideyou_postgres$'; then
-    gh_token=$(docker exec -i hideyou_postgres psql -U hideyou -d hideyou -tAc \
-      "SELECT value FROM settings WHERE key='github_token' LIMIT 1" 2>/dev/null | tr -d '[:space:]')
+    gh_token=$(docker exec hideyou_postgres psql -U hideyou -d hideyou -tAc \
+      "SELECT value FROM settings WHERE key='github_token' LIMIT 1" 2>/dev/null | tr -d '[:space:]' || true)
   fi
-  [[ -z "$gh_token" ]] && gh_token=$(grep '^GITHUB_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+  [[ -z "$gh_token" ]] && gh_token=$(grep '^GITHUB_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+
   # --force: после security-чистки истории (filter-repo) SHA тегов изменились
-  # и без --force fetch падает с "would clobber existing tag". Безопасно — мы
-  # принимаем remote как источник истины.
+  # и без --force fetch падает с "would clobber existing tag".
+  # `|| true` — fetch не должен валить весь интерактивный скрипт; всё что нужно
+  # уже выводится в stderr пользователю, exit code обрабатываем явно ниже.
+  local fetch_rc=0
   if [[ -n "$gh_token" ]]; then
+    info "(использую github_token для приватного репо)"
     git -c "http.extraheader=Authorization: bearer ${gh_token}" \
-      fetch --all --tags --force --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
+      fetch origin --tags --force --prune 2>&1 | tee -a "$LOG_FILE" || fetch_rc=$?
   else
-    git fetch --all --tags --force --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
+    git fetch origin --tags --force --prune 2>&1 | tee -a "$LOG_FILE" || fetch_rc=$?
+  fi
+  if [[ "$fetch_rc" -ne 0 ]]; then
+    warn "git fetch завершился с кодом $fetch_rc — но продолжаю (показываю что есть локально)"
   fi
 
   local current_branch

@@ -445,19 +445,34 @@ async function runInstall(job) {
     ], line => emit(eventId, 'build', line).catch(() => {}))
 
     // 4. Apply DB migrations.
-    // We're tolerant here: if the backend image was bumped, migrate deploy
-    // might see pre-existing rows for migrations that were applied manually
-    // during development (common on long-lived DBs). We log warnings but
-    // continue — if a real schema mismatch happens, backend healthcheck will
-    // catch it and trigger rollback.
+    // Strategy:
+    //   1. Try `prisma migrate deploy` — the right way for clean histories.
+    //   2. If it fails with P3005 ("schema is not empty, no baseline"), fall
+    //      back to `prisma db push --accept-data-loss` which syncs schema
+    //      against the current Prisma model without touching the
+    //      `_prisma_migrations` table. This is what install.sh has always
+    //      used for the very first install, so it's safe here too.
+    //   3. Any other migrate-deploy failure is logged and we continue —
+    //      the healthcheck will catch a real schema mismatch and rollback.
     await emit(eventId, 'migrate', 'Применяю миграции БД…')
     await updateEventRow(eventId, { phase: 'migrate' })
     try {
       sh(`docker exec hideyou_backend npx prisma migrate deploy`)
       await emit(eventId, 'migrate', 'Миграции применены')
     } catch (e) {
-      const msg = String(e.message || e).slice(0, 400)
-      await emit(eventId, 'migrate', `WARN: ${msg} — продолжаю (healthcheck поймает проблему)`)
+      const msg = String(e.message || e)
+      if (/P3005/.test(msg)) {
+        await emit(eventId, 'migrate', 'P3005 — БД без baseline. Синхронизирую через prisma db push…')
+        try {
+          sh(`docker exec hideyou_backend npx prisma db push --skip-generate --accept-data-loss`)
+          await emit(eventId, 'migrate', '✓ Схема синхронизирована (db push)')
+        } catch (e2) {
+          const m2 = String(e2.message || e2).slice(0, 400)
+          await emit(eventId, 'migrate', `WARN: db push тоже упал: ${m2} — продолжаю, healthcheck поймает`)
+        }
+      } else {
+        await emit(eventId, 'migrate', `WARN: ${msg.slice(0, 400)} — продолжаю (healthcheck поймает проблему)`)
+      }
     }
 
     // 5. Deploy
