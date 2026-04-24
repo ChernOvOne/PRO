@@ -15,6 +15,9 @@ export async function giftRoutes(app: FastifyInstance) {
       paymentMethod:  z.number().int().optional(),
       recipientEmail: z.string().email().optional(),
       message:        z.string().max(500).optional(),
+      // v2: pass true to make the gift lifetime-valid (no expires_at).
+      // Default false → legacy 30-day window.
+      noExpiry:       z.boolean().optional(),
     })
     const data = schema.parse(req.body)
 
@@ -57,9 +60,17 @@ export async function giftRoutes(app: FastifyInstance) {
         paymentId:      payment.id,
         recipientEmail: data.recipientEmail,
         message:        data.message,
+        expiresAt:      data.noExpiry ? null : undefined,
       })
 
-      return { ok: true, giftCode: gift.giftCode, giftUrl: `${process.env.APP_URL || ''}/present/${gift.giftCode}` }
+      return {
+        ok: true,
+        giftId:    gift.id,
+        giftCode:  gift.giftCode,
+        shortCode: gift.shortCode,
+        giftUrl:   `${process.env.APP_URL || ''}/present/${gift.giftCode}`,
+        expiresAt: gift.expiresAt,
+      }
     }
 
     // For YUKASSA/CRYPTOPAY, create payment with purpose=GIFT
@@ -90,6 +101,7 @@ export async function giftRoutes(app: FastifyInstance) {
           _giftMeta: true,
           recipientEmail: data.recipientEmail || null,
           message: data.message || null,
+          noExpiry: !!data.noExpiry,
         }),
       },
     })
@@ -130,6 +142,20 @@ export async function giftRoutes(app: FastifyInstance) {
     try {
       const result = await giftService.claimGift(code, userId)
       return { ok: true, ...result }
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message })
+    }
+  })
+
+  // Cancel a PENDING gift (sender-only). Balance-paid gifts are auto-refunded;
+  // Yukassa/Crypto purchases are marked CANCELLED but not auto-refunded — admin
+  // handles those via the provider to avoid chargeback loops.
+  app.post<{ Params: { id: string } }>('/:id/cancel', auth, async (req, reply) => {
+    const userId = (req.user as any).sub
+    const { id } = req.params
+    try {
+      const result = await giftService.cancelGift(id, userId)
+      return result
     } catch (err: any) {
       return reply.status(400).send({ error: err.message })
     }

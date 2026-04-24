@@ -164,12 +164,33 @@ export async function userPromoRoutes(app: FastifyInstance) {
     }
   })
 
+  // Detect gift codes (long "present_*" and short "G-*"). Typed into the
+  // same promo field so the user has one place to redeem everything.
+  const isGiftCode = (c: string) => c.startsWith('present_') || c.toUpperCase().startsWith('G-')
+
   // Check promo code validity
   app.post('/check', auth, async (req, reply) => {
     const { code } = z.object({ code: z.string().min(1) }).parse(req.body)
     const userId = (req.user as any).sub
+    const trimmed = code.trim()
 
-    const promo = await prisma.promoCode.findUnique({ where: { code: code.toUpperCase() } })
+    // Gift-code branch: one-shot subscription grant, not a multi-use promo.
+    if (isGiftCode(trimmed)) {
+      const { giftService } = await import('../services/gift')
+      const gift = await giftService.getGiftStatus(trimmed)
+      if (!gift) return reply.status(404).send({ error: 'Подарок не найден' })
+      if (gift.status === 'CLAIMED')   return reply.status(400).send({ error: 'Подарок уже активирован' })
+      if (gift.status === 'EXPIRED')   return reply.status(400).send({ error: 'Срок действия подарка истёк' })
+      if (gift.status === 'CANCELLED') return reply.status(400).send({ error: 'Подарок отменён отправителем' })
+      if (gift.fromUserId === userId)  return reply.status(400).send({ error: 'Нельзя активировать собственный подарок' })
+      return {
+        valid: true,
+        type: 'gift',
+        description: `🎁 Подарок: ${gift.tariff.name} (${gift.tariff.durationDays} дн.)`,
+      }
+    }
+
+    const promo = await prisma.promoCode.findUnique({ where: { code: trimmed.toUpperCase() } })
     if (!promo || !promo.isActive) return reply.status(404).send({ error: 'Промокод не найден' })
     if (promo.expiresAt && promo.expiresAt < new Date()) return reply.status(400).send({ error: 'Промокод истёк' })
     if (promo.maxUses && promo.usedCount >= promo.maxUses) return reply.status(400).send({ error: 'Промокод исчерпан' })
@@ -194,8 +215,25 @@ export async function userPromoRoutes(app: FastifyInstance) {
   app.post('/activate', auth, async (req, reply) => {
     const { code } = z.object({ code: z.string().min(1) }).parse(req.body)
     const userId = (req.user as any).sub
+    const trimmed = code.trim()
 
-    const promo = await prisma.promoCode.findUnique({ where: { code: code.toUpperCase() } })
+    // Gift code — delegate to giftService which handles expiry, self-claim
+    // blocking, REMNAWAVE activation, status flip, and sender notification.
+    if (isGiftCode(trimmed)) {
+      const { giftService } = await import('../services/gift')
+      try {
+        const result = await giftService.claimGift(trimmed, userId)
+        return {
+          ok:      true,
+          type:    'gift',
+          message: `🎁 Подарок активирован: ${result.tariffName} (+${result.durationDays} дн.)`,
+        }
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message })
+      }
+    }
+
+    const promo = await prisma.promoCode.findUnique({ where: { code: trimmed.toUpperCase() } })
     if (!promo || !promo.isActive) return reply.status(404).send({ error: 'Промокод не найден' })
     if (promo.expiresAt && promo.expiresAt < new Date()) return reply.status(400).send({ error: 'Промокод истёк' })
     if (promo.maxUses && promo.usedCount >= promo.maxUses) return reply.status(400).send({ error: 'Промокод исчерпан' })

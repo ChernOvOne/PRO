@@ -781,11 +781,12 @@ export default function DashboardPage() {
           {promoResult && (
             <div className="mt-3 p-3 rounded-xl" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
               <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
+                {promoResult.type === 'gift' && (promoResult.description || '🎁 Подарок')}
                 {promoResult.type === 'bonus_days' && `+${promoResult.bonusDays} бонусных дней`}
                 {promoResult.type === 'discount' && `Скидка ${promoResult.discountPct}% на оплату`}
                 {promoResult.type === 'balance' && `+${promoResult.balanceAmount} руб. на баланс`}
                 {promoResult.type === 'trial' && 'Пробный период'}
-                {promoResult.description && ` — ${promoResult.description}`}
+                {promoResult.type !== 'gift' && promoResult.description && ` — ${promoResult.description}`}
               </p>
               <button onClick={activatePromo} disabled={promoActivating}
                       className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all"
@@ -854,7 +855,9 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between">
                       <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                         {g.status === 'PENDING'
-                          ? `Ссылка действует до: ${new Date(g.expiresAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' })}${daysUntilExpiry !== null ? ` (${daysUntilExpiry} дн.)` : ''}`
+                          ? (g.expiresAt
+                              ? `Ссылка действует до: ${new Date(g.expiresAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' })}${daysUntilExpiry !== null ? ` (${daysUntilExpiry} дн.)` : ''}`
+                              : `Бессрочная ссылка${g.shortCode ? ` · код ${g.shortCode}` : ''}`)
                           : `Получил: ${g.recipientUser?.telegramName || g.recipientUser?.email || '—'}${g.claimedAt ? ' · ' + new Date(g.claimedAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}`}
                       </p>
                       {g.status === 'PENDING' && (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Gift, Send, Copy, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
+import { Gift, Send, Copy, CheckCircle2, Clock, ExternalLink, X, Infinity as InfinityIcon, Ticket } from 'lucide-react'
 import type { GiftSubscription, Tariff } from '@/types'
 
 export default function GiftPage() {
@@ -11,12 +11,14 @@ export default function GiftPage() {
   const [creating, setCreating] = useState(false)
   const [copied, setCopied]     = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [cancelling, setCancelling] = useState<string | null>(null)
 
   // Form state
   const [selectedTariff, setSelectedTariff] = useState('')
   const [provider, setProvider]             = useState<'YUKASSA' | 'BALANCE'>('YUKASSA')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [message, setMessage]               = useState('')
+  const [noExpiry, setNoExpiry]             = useState(true)
 
   useEffect(() => {
     Promise.all([
@@ -47,6 +49,7 @@ export default function GiftPage() {
           provider,
           recipientEmail: recipientEmail || undefined,
           message: message || undefined,
+          noExpiry,
         }),
       })
       const data = await res.json()
@@ -61,11 +64,35 @@ export default function GiftPage() {
         setSelectedTariff('')
         setRecipientEmail('')
         setMessage('')
+      } else if (data.error) {
+        alert(data.error)
       }
     } catch (err) {
       alert('Ошибка при создании подарка')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const cancelGift = async (id: string) => {
+    if (!confirm('Отменить этот подарок? Если оплачен с баланса — сумма вернётся.')) return
+    setCancelling(id)
+    try {
+      const res = await fetch(`/api/gifts/${id}/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (data.ok) {
+        const g = await fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json())
+        setGifts(g)
+      } else {
+        alert(data.error || 'Не удалось отменить подарок')
+      }
+    } catch {
+      alert('Ошибка при отмене подарка')
+    } finally {
+      setCancelling(null)
     }
   }
 
@@ -178,6 +205,25 @@ export default function GiftPage() {
                         maxLength={500} />
             </div>
 
+            {/* Lifetime toggle */}
+            <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl"
+                   style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+              <input type="checkbox" checked={noExpiry}
+                     onChange={e => setNoExpiry(e.target.checked)}
+                     className="mt-0.5 w-4 h-4 accent-cyan-400" />
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <InfinityIcon className="w-4 h-4" style={{ color: '#a78bfa' }} />
+                  Бессрочная ссылка
+                </div>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  {noExpiry
+                    ? 'Ссылка действует пока получатель её не активирует или вы не отмените подарок'
+                    : 'Ссылка будет действовать 30 дней — потом истечёт автоматически'}
+                </p>
+              </div>
+            </label>
+
             <button onClick={createGift}
                     disabled={!selectedTariff || creating}
                     className="btn-primary w-full justify-center">
@@ -219,17 +265,65 @@ export default function GiftPage() {
                 </div>
 
                 {gift.status === 'PENDING' && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl mt-2"
-                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                    <p className="flex-1 text-xs font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>
-                      {giftUrl(gift.giftCode)}
-                    </p>
-                    <button onClick={() => copyLink(giftUrl(gift.giftCode), gift.id)}
-                            className="p-2 rounded-lg hover:bg-white/5 transition-all">
-                      {copied === gift.id
-                        ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        : <Copy className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
-                    </button>
+                  <div className="space-y-2 mt-2">
+                    {/* Long URL */}
+                    <div className="flex items-center gap-2 p-3 rounded-xl"
+                         style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                      <div className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.13)', color: '#06b6d4' }}>
+                        ССЫЛКА
+                      </div>
+                      <p className="flex-1 text-xs font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>
+                        {giftUrl(gift.giftCode)}
+                      </p>
+                      <button onClick={() => copyLink(giftUrl(gift.giftCode), `url-${gift.id}`)}
+                              title="Копировать ссылку"
+                              className="p-1.5 rounded-lg hover:bg-white/5 transition-all">
+                        {copied === `url-${gift.id}`
+                          ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          : <Copy className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
+                      </button>
+                    </div>
+
+                    {/* Short code for promo-field entry */}
+                    {gift.shortCode && (
+                      <div className="flex items-center gap-2 p-3 rounded-xl"
+                           style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>
+                        <div className="text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background: 'rgba(139,92,246,0.18)', color: '#a78bfa' }}>
+                          <Ticket className="w-3 h-3" /> КОД
+                        </div>
+                        <p className="flex-1 text-sm font-mono font-bold tracking-wider" style={{ color: '#a78bfa' }}>
+                          {gift.shortCode}
+                        </p>
+                        <span className="text-[10px] hidden sm:inline" style={{ color: 'var(--text-tertiary)' }}>
+                          вводится в поле «Промокод»
+                        </span>
+                        <button onClick={() => copyLink(gift.shortCode!, `code-${gift.id}`)}
+                                title="Копировать код"
+                                className="p-1.5 rounded-lg hover:bg-white/5 transition-all">
+                          {copied === `code-${gift.id}`
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            : <Copy className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Meta row: expiry, recipient email, cancel */}
+                    <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                      <div className="flex items-center gap-1.5">
+                        {gift.expiresAt ? (
+                          <><Clock className="w-3 h-3" /> Действует до {new Date(gift.expiresAt).toLocaleDateString('ru-RU')}</>
+                        ) : (
+                          <><InfinityIcon className="w-3 h-3" /> Бессрочная ссылка</>
+                        )}
+                        {gift.recipientEmail && <span className="ml-2">• отправлено на {gift.recipientEmail}</span>}
+                      </div>
+                      <button onClick={() => cancelGift(gift.id)}
+                              disabled={cancelling === gift.id}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-500/10 disabled:opacity-50"
+                              style={{ color: '#f87171' }}>
+                        <X className="w-3 h-3" /> {cancelling === gift.id ? 'Отмена…' : 'Отменить'}
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -211,17 +211,43 @@ class EmailService {
     return this.send({ to: email, subject: subject || `Код подтверждения — ${appName}`, html: this.wrap(content, undefined, appName) })
   }
 
-  async sendGiftNotification(email: string, giftCode: string, tariffName: string, senderName: string) {
+  async sendGiftNotification(
+    email: string,
+    giftCode: string,
+    tariffName: string,
+    senderName: string,
+    opts: { shortCode?: string | null; message?: string | null; expiresAt?: Date | null } = {},
+  ) {
     const { getBrandName } = await import('./brand')
     const appName = await getBrandName()
+    const messageBlock = opts.message
+      ? `<div style="margin:16px 0;padding:12px 14px;background:#f8fafc;border-left:3px solid #a78bfa;border-radius:4px;font-style:italic;">${opts.message.replace(/</g, '&lt;')}</div>`
+      : ''
+    const shortCodeBlock = opts.shortCode
+      ? `<p style="margin-top: 20px; padding: 12px; background: #f8fafc; border-radius: 6px; font-size: 14px;">
+           Или введите короткий код в поле <strong>«Промокод»</strong> на сайте:
+           <span style="display:inline-block;margin-top:6px;padding:4px 10px;background:#fff;border:1px dashed #a78bfa;border-radius:4px;font-family:monospace;font-size:16px;letter-spacing:2px;color:#7c3aed;"><strong>${opts.shortCode}</strong></span>
+         </p>`
+      : ''
+    const expiryBlock = opts.expiresAt
+      ? `<p style="margin-top: 12px; font-size: 12px; color: #94a3b8;">Ссылка действует до ${opts.expiresAt.toLocaleDateString('ru-RU')}.</p>`
+      : `<p style="margin-top: 12px; font-size: 12px; color: #94a3b8;">Ссылка бессрочная — можно активировать в любой момент.</p>`
     const defaultHtml = `
-      <h2>Вам подарок!</h2>
+      <h2>🎁 Вам подарок!</h2>
       <p><strong>${senderName}</strong> подарил вам подписку <strong>${tariffName}</strong>.</p>
-      <p>Перейдите по ссылке чтобы активировать подарок:</p>
+      ${messageBlock}
+      <p>Нажмите кнопку чтобы активировать:</p>
       <a href="${config.appUrl}/present/${giftCode}" class="btn">Активировать подарок</a>
-      <p style="margin-top: 16px; font-size: 13px; color: #64748b;">Код подарка: <strong>${giftCode}</strong></p>
+      ${shortCodeBlock}
+      ${expiryBlock}
     `
-    const content = await this.getTemplate('gift', { senderName, tariffName, giftCode, appUrl: config.appUrl, appName }, defaultHtml)
+    const content = await this.getTemplate('gift', {
+      senderName, tariffName, giftCode,
+      shortCode:  opts.shortCode || '',
+      message:    opts.message   || '',
+      appUrl:     config.appUrl,
+      appName,
+    }, defaultHtml)
     return this.send({ to: email, subject: `🎁 Вам подарили подписку — ${appName}`, html: this.wrap(content, undefined, appName) })
   }
 

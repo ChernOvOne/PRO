@@ -131,10 +131,11 @@ export interface TelegramProxy {
 export interface GiftSubscription {
   id:              string
   giftCode:        string
+  shortCode?:      string | null
   status:          'PENDING' | 'CLAIMED' | 'EXPIRED' | 'CANCELLED'
   message?:        string
   recipientEmail?: string
-  expiresAt:       string
+  expiresAt?:      string | null
   claimedAt?:      string
   createdAt:       string
   tariff:          Pick<Tariff, 'name' | 'durationDays'>

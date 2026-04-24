@@ -343,6 +343,10 @@ model AdminNote {
 model GiftSubscription {
   id              String     @id @default(uuid())
   giftCode        String     @unique @map("gift_code")
+  // Short human-typeable code (e.g. G-7K9P4M). Same gift can be redeemed by
+  // either giftCode (long URL) or shortCode (promo-input field). Optional so
+  // that legacy gifts created before v5.12 keep working.
+  shortCode       String?    @unique @map("short_code")
   fromUserId      String     @map("from_user_id")
   fromUser        User       @relation("GiftsSent", fields: [fromUserId], references: [id])
   tariffId        String     @map("tariff_id")
@@ -357,12 +361,14 @@ model GiftSubscription {
 
   status          GiftStatus @default(PENDING)
   claimedAt       DateTime?  @map("claimed_at")
-  expiresAt       DateTime   @map("expires_at")
+  // Nullable: if not set → gift never expires (lives until claimed / cancelled)
+  expiresAt       DateTime?  @map("expires_at")
 
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at")
 
   @@index([giftCode])
+  @@index([shortCode])
   @@index([fromUserId])
   @@index([recipientUserId])
   @@index([status])

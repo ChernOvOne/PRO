@@ -927,11 +927,13 @@ export class PaymentService {
         // Parse gift metadata from yukassaStatus field (temp storage)
         let recipientEmail: string | undefined
         let message: string | undefined
+        let noExpiry = false
         try {
           const meta = JSON.parse(payment.yukassaStatus || '{}')
           if (meta._giftMeta) {
             recipientEmail = meta.recipientEmail || undefined
-            message = meta.message || undefined
+            message        = meta.message        || undefined
+            noExpiry       = !!meta.noExpiry
           }
         } catch {}
 
@@ -945,6 +947,7 @@ export class PaymentService {
           paymentId:      payment.id,
           recipientEmail,
           message,
+          expiresAt:      noExpiry ? null : undefined,
         })
         logger.info(`Gift created from payment: ${orderId}`)
       } catch (err) {
