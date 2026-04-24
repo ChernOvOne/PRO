@@ -2300,11 +2300,11 @@ function AutoRenewToggle() {
       <div className="flex-1">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold">Автопродление с баланса</p>
-          <button onClick={toggle} disabled={saving}
-                  className="relative w-10 h-5 rounded-full transition-colors"
-                  style={{ background: enabled ? 'var(--accent-1)' : 'var(--glass-border)' }}>
-            <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
-                  style={{ transform: enabled ? 'translateX(22px)' : 'translateX(2px)' }} />
+          <button onClick={toggle} disabled={saving} type="button"
+                  className="relative w-11 h-6 rounded-full transition-all duration-300 flex-shrink-0"
+                  style={{ background: enabled ? 'var(--accent-1)' : 'rgba(255,255,255,0.08)' }}>
+            <span className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-300"
+                  style={{ transform: enabled ? 'translateX(20px)' : 'translateX(0)' }} />
           </button>
         </div>
         <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
