@@ -247,7 +247,7 @@ class GiftService {
   }
 
   /**
-   * Get gifts sent by user
+   * Get gifts sent by user (legacy — kept for existing callers).
    */
   async getUserGifts(userId: string) {
     return prisma.giftSubscription.findMany({
@@ -258,6 +258,47 @@ class GiftService {
       },
       orderBy: { createdAt: 'desc' },
     })
+  }
+
+  /**
+   * Unified gift view for the user: gifts they sent + gifts they received,
+   * plus high-level counters for the /dashboard/gift stats block.
+   *
+   * "Received" means any gift where recipientUserId === userId (set at claim
+   * time), so it naturally includes their CLAIMED history. Gifts not yet
+   * claimed by anyone aren't listed in `received` even if they were emailed
+   * to the user — they surface only after the claim completes.
+   */
+  async listUserGifts(userId: string) {
+    const [sent, received] = await Promise.all([
+      prisma.giftSubscription.findMany({
+        where:   { fromUserId: userId },
+        include: {
+          tariff:        { select: { name: true, durationDays: true } },
+          recipientUser: { select: { email: true, telegramName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.giftSubscription.findMany({
+        where:   { recipientUserId: userId },
+        include: {
+          tariff:   { select: { name: true, durationDays: true } },
+          fromUser: { select: { email: true, telegramName: true } },
+        },
+        orderBy: { claimedAt: 'desc' },
+      }),
+    ])
+
+    const stats = {
+      sentTotal:       sent.length,
+      sentPending:     sent.filter(g => g.status === 'PENDING').length,
+      sentClaimed:     sent.filter(g => g.status === 'CLAIMED').length,
+      sentCancelled:   sent.filter(g => g.status === 'CANCELLED').length,
+      receivedTotal:   received.length,
+      receivedDays:    received.reduce((acc, g) => acc + (g.tariff?.durationDays ?? 0), 0),
+    }
+
+    return { sent, received, stats }
   }
 
   /**

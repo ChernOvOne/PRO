@@ -53,7 +53,6 @@ export default function DashboardPage() {
   const [balance, setBal]     = useState<any>(null)
   const [news, setNews]       = useState<any[]>([])
   const [proxies, setProxies] = useState<any[]>([])
-  const [myGifts, setMyGifts] = useState<any[]>([])
   const [activeDiscount, setActiveDiscount] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied]   = useState<string | null>(null)
@@ -66,8 +65,11 @@ export default function DashboardPage() {
   const [payTariff, setPayTariff]       = useState<any>(null)
   const [provider, setProvider]         = useState<'YUKASSA' | 'CRYPTOPAY' | 'PLATEGA' | 'BALANCE'>('YUKASSA')
   // Payment providers fetched once from backend (/api/public/payment-methods).
-  // Empty array means we'll fall back to legacy YUKASSA+CRYPTOPAY hardcoded list.
+  // If admin disabled every provider the list is empty and the user sees a
+  // "no payment methods available" notice — no hardcoded fallback, so the
+  // admin toggles are the single source of truth.
   const [enabledProviders, setEnabledProviders] = useState<Array<{ id: string; label: string; icon: string; meta?: any }>>([])
+  const [balanceEnabled, setBalanceEnabled]     = useState<boolean>(false)
   const [paying, setPaying]             = useState(false)
   const [revoking, setRevoking]         = useState(false)
   const [devices, setDevices]           = useState<any[]>([])
@@ -125,13 +127,13 @@ export default function DashboardPage() {
       fetch('/api/news?limit=6', { credentials: 'include' }).then(r => r.json()).then(d => d.news || d || []).catch(() => []),
       fetch('/api/proxies', { credentials: 'include' }).then(r => r.json()).catch(() => []),
       fetch('/api/user/devices', { credentials: 'include' }).then(r => r.json()).then(d => d.devices || []).catch(() => []),
-      fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json()).catch(() => []),
       fetch('/api/public/config').then(r => r.json()).catch(() => ({})),
       fetch('/api/user/promo/active-discount', { credentials: 'include' }).then(r => r.json()).catch(() => null),
       fetch('/api/public/payment-methods').then(r => r.json()).catch(() => ({ providers: [] })),
-    ]).then(([d, s, t, r, b, n, p, dev, gifts, cfg, disc, pm]) => {
-      setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setMyGifts(Array.isArray(gifts) ? gifts : []); setConfig(cfg || {}); if (disc?.active) setActiveDiscount(disc)
+    ]).then(([d, s, t, r, b, n, p, dev, cfg, disc, pm]) => {
+      setData(d); setSub(s); setTariffs(t); setRef(r); setBal(b); setNews(n); setProxies(p); setDevices(dev); setConfig(cfg || {}); if (disc?.active) setActiveDiscount(disc)
       setEnabledProviders(pm?.providers || [])
+      setBalanceEnabled(!!pm?.balanceEnabled)
     }).finally(() => setLoading(false))
 
     // Load activity history separately
@@ -653,6 +655,27 @@ export default function DashboardPage() {
           </div>
           <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
         </button>
+
+        {/* ── SECONDARY 3: Мои подарки ── */}
+        <Link href="/dashboard/gift"
+              className="dash-bento group relative overflow-hidden rounded-2xl p-4 min-h-[86px] flex items-center gap-3"
+              style={{
+                background: 'linear-gradient(135deg, rgba(244,63,94,0.14) 0%, rgba(236,72,153,0.08) 100%)',
+                border: '1px solid rgba(244,63,94,0.25)',
+                color: '#fb7185',
+              }}>
+          <span aria-hidden className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-25 transition-transform duration-500 group-hover:scale-125"
+                style={{ background: 'radial-gradient(circle, #f43f5e 0%, transparent 70%)', filter: 'blur(14px)' }} />
+          <span className="relative z-10 w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
+                style={{ background: 'rgba(244,63,94,0.25)', border: '1px solid rgba(244,63,94,0.3)' }}>
+            <Gift className="w-5 h-5" />
+          </span>
+          <div className="relative z-10 flex-1 min-w-0">
+            <div className="text-[15px] font-bold truncate" style={{ color: 'var(--text-primary)' }}>Мои подарки</div>
+            <div className="text-[11px] mt-0.5 opacity-80">Подаренные и полученные</div>
+          </div>
+          <ChevronRight className="relative z-10 w-5 h-5 flex-shrink-0 opacity-50 transition-all group-hover:opacity-100 group-hover:translate-x-1" />
+        </Link>
       </div>
 
       {/* ═══════ 3. REFERRALS + BALANCE — single column ═══════ */}
@@ -832,55 +855,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ═══════ 3.5. MY GIFTS ═══════ */}
-      {myGifts.filter((g: any) => g.status === 'PENDING' || g.status === 'CLAIMED').length > 0 && (
-        <div className="glass-card !p-4 animate-slide-up">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Gift className="w-4 h-4" style={{ color: 'var(--accent-1)' }} /> Мои подарки
-          </h3>
-          <div className="space-y-2">
-            {myGifts
-              .filter((g: any) => g.status === 'PENDING' || g.status === 'CLAIMED')
-              .map((g: any) => {
-                const daysUntilExpiry = g.expiresAt ? Math.max(0, Math.ceil((new Date(g.expiresAt).getTime() - Date.now()) / 86400000)) : null
-                return (
-                  <div key={g.id} className="p-3 rounded-xl"
-                       style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-sm font-medium">{g.tariff?.name || 'Подписка'}</p>
-                      <span className={g.status === 'PENDING' ? 'badge-yellow' : 'badge-green'}>
-                        {g.status === 'PENDING' ? 'Ожидает' : 'Активирован'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                        {g.status === 'PENDING'
-                          ? (g.expiresAt
-                              ? `Ссылка действует до: ${new Date(g.expiresAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' })}${daysUntilExpiry !== null ? ` (${daysUntilExpiry} дн.)` : ''}`
-                              : `Бессрочная ссылка${g.shortCode ? ` · код ${g.shortCode}` : ''}`)
-                          : `Получил: ${g.recipientUser?.telegramName || g.recipientUser?.email || '—'}${g.claimedAt ? ' · ' + new Date(g.claimedAt).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}`}
-                      </p>
-                      {g.status === 'PENDING' && (
-                        <button onClick={() => {
-                          const link = `${window.location.origin}/present/${g.giftCode}`
-                          if (navigator.share) {
-                            navigator.share({ title: 'Подарок HIDEYOU VPN', url: link }).catch(() => {})
-                          } else {
-                            navigator.clipboard.writeText(link)
-                            toast.success('Ссылка скопирована')
-                          }
-                        }} className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg transition-all hover:bg-white/5"
-                           style={{ color: 'var(--accent-1)' }}>
-                          <Share2 className="w-3 h-3" /> Отправить
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-          </div>
-        </div>
-      )}
+      {/* 3.5 Мои подарки — переехало на /dashboard/gift, bento-кнопка выше открывает страницу */}
 
       {/* ═══════ 3.6. ACTIVITY HISTORY ═══════ */}
       {activity.length > 0 && (
@@ -1854,28 +1829,30 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(() => {
                     const list: Array<{ key: string; top: string; bottom: string; meta?: any; icon: React.ReactNode }> =
-                      enabledProviders.length > 0
-                        ? enabledProviders.map(p => ({
-                            key: p.id,
-                            top: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
-                            bottom: p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
-                            meta: p.meta,
-                            icon: p.icon === 'bitcoin'
-                              ? <Wallet className="w-4 h-4" />
-                              : <CreditCard className="w-4 h-4" />,
-                          }))
-                        : [
-                            { key: 'YUKASSA', top: 'ЮKassa', bottom: 'Карта · СБП', icon: <CreditCard className="w-4 h-4" /> },
-                            { key: 'CRYPTOPAY', top: 'CryptoPay', bottom: 'TON · USDT', icon: <Wallet className="w-4 h-4" /> },
-                          ]
-                    // BALANCE — only if the admin has enabled it
-                    if (config.features?.balance !== false) {
+                      enabledProviders.map(p => ({
+                        key: p.id,
+                        top: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
+                        bottom: p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
+                        meta: p.meta,
+                        icon: p.icon === 'bitcoin'
+                          ? <Wallet className="w-4 h-4" />
+                          : <CreditCard className="w-4 h-4" />,
+                      }))
+                    if (balanceEnabled) {
                       list.push({
                         key: 'BALANCE',
                         top: 'Баланс',
                         bottom: `${(balance?.balance ?? 0).toFixed(0)} ₽`,
                         icon: <Wallet className="w-4 h-4" />,
                       })
+                    }
+                    if (list.length === 0) {
+                      return (
+                        <div className="col-span-full p-4 rounded-xl text-sm text-center"
+                             style={{ background: 'rgba(239,68,68,0.08)', border: '1px dashed rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+                          Нет доступных способов оплаты — обратитесь в поддержку
+                        </div>
+                      )
                     }
                     return list.map(p => {
                       const active = provider === p.key
@@ -1986,15 +1963,18 @@ export default function DashboardPage() {
             <div>
               <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Способ оплаты</p>
               <div className="flex flex-wrap gap-2">
-                {(enabledProviders.length > 0 ? enabledProviders.map(p => ({
+                {enabledProviders.length === 0 && (
+                  <div className="w-full p-3 rounded-xl text-xs text-center"
+                       style={{ background: 'rgba(239,68,68,0.08)', border: '1px dashed rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+                    Пополнение временно недоступно — обратитесь в поддержку
+                  </div>
+                )}
+                {enabledProviders.map(p => ({
                     key: p.id,
                     label: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
                     sub:   p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label.replace(/^Карта \/ /, '').replace(/^Крипта /, ''),
                     icon: p.icon === 'bitcoin' ? <Wallet className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />,
-                  })) : [
-                    { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта / СБП', icon: <CreditCard className="w-4 h-4" /> },
-                    { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'USDT / BTC', icon: <Wallet className="w-4 h-4" /> },
-                  ]).map(p => (
+                  })).map(p => (
                   <button key={p.key} onClick={() => setTopupProvider(p.key as any)}
                           className="flex-1 min-w-[120px] p-3 rounded-xl text-left transition-all duration-200"
                           style={{
@@ -2143,18 +2123,21 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {(() => {
                     const list: Array<{ key: string; label: string; sub: string }> =
-                      enabledProviders.length > 0
-                        ? enabledProviders.map(p => ({
-                            key: p.id,
-                            label: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
-                            sub:   p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label,
-                          }))
-                        : [
-                            { key: 'YUKASSA', label: 'ЮKassa', sub: 'Карта · СБП' },
-                            { key: 'CRYPTOPAY', label: 'CryptoPay', sub: 'TON · USDT' },
-                          ]
-                    if (config.features?.balance !== false) {
+                      enabledProviders.map(p => ({
+                        key: p.id,
+                        label: p.id === 'PLATEGA' ? 'Platega' : p.id === 'CRYPTOPAY' ? 'CryptoPay' : p.id === 'YUKASSA' ? 'ЮKassa' : p.label,
+                        sub:   p.id === 'PLATEGA' ? p.label.replace('Platega · ', '') : p.label,
+                      }))
+                    if (balanceEnabled) {
                       list.push({ key: 'BALANCE', label: 'Баланс', sub: `${(balance?.balance ?? 0).toFixed(0)}₽` })
+                    }
+                    if (list.length === 0) {
+                      return (
+                        <div className="flex-1 p-3 rounded-xl text-xs text-center"
+                             style={{ background: 'rgba(239,68,68,0.08)', border: '1px dashed rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+                          Нет доступных способов оплаты
+                        </div>
+                      )
                     }
                     return list.map(p => {
                     const active = giftProvider === p.key

@@ -1,32 +1,85 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Gift, Send, Copy, CheckCircle2, Clock, ExternalLink, X, Infinity as InfinityIcon, Ticket } from 'lucide-react'
+import { Gift, Copy, CheckCircle2, Clock, X, Infinity as InfinityIcon, Ticket, Inbox, Send, BarChart3 } from 'lucide-react'
 import type { GiftSubscription, Tariff } from '@/types'
 
+interface GiftStats {
+  sentTotal:     number
+  sentPending:   number
+  sentClaimed:   number
+  sentCancelled: number
+  receivedTotal: number
+  receivedDays:  number
+}
+
+interface ReceivedGift extends GiftSubscription {
+  fromUser?: { email: string | null; telegramName: string | null } | null
+}
+
+interface Provider {
+  id:     string
+  label:  string
+  icon:   string
+  meta?:  any
+}
+
+type Tab = 'sent' | 'received'
+
 export default function GiftPage() {
-  const [tariffs, setTariffs]   = useState<Tariff[]>([])
-  const [gifts, setGifts]       = useState<GiftSubscription[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [creating, setCreating] = useState(false)
-  const [copied, setCopied]     = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  const [tariffs, setTariffs]       = useState<Tariff[]>([])
+  const [sent, setSent]             = useState<GiftSubscription[]>([])
+  const [received, setReceived]     = useState<ReceivedGift[]>([])
+  const [stats, setStats]           = useState<GiftStats | null>(null)
+  const [providers, setProviders]   = useState<Provider[]>([])
+  const [balanceEnabled, setBE]     = useState(false)
+  const [balance, setBalance]       = useState(0)
+  const [loading, setLoading]       = useState(true)
+  const [creating, setCreating]     = useState(false)
+  const [copied, setCopied]         = useState<string | null>(null)
+  const [showForm, setShowForm]     = useState(false)
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const [tab, setTab]               = useState<Tab>('sent')
 
   // Form state
   const [selectedTariff, setSelectedTariff] = useState('')
-  const [provider, setProvider]             = useState<'YUKASSA' | 'BALANCE'>('YUKASSA')
+  const [provider, setProvider]             = useState<string>('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [message, setMessage]               = useState('')
   const [noExpiry, setNoExpiry]             = useState(true)
 
+  const reload = async () => {
+    const g = await fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json()).catch(() => null)
+    if (g && 'sent' in g) {
+      setSent(g.sent)
+      setReceived(g.received)
+      setStats(g.stats)
+    }
+  }
+
   useEffect(() => {
     Promise.all([
-      fetch('/api/public/tariffs', { credentials: 'include' }).then(r => r.json()).catch(() => []),
-      fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json()).catch(() => []),
-    ]).then(([t, g]) => {
+      fetch('/api/public/tariffs',        { credentials: 'include' }).then(r => r.json()).catch(() => []),
+      fetch('/api/gifts/my',              { credentials: 'include' }).then(r => r.json()).catch(() => null),
+      fetch('/api/public/payment-methods',                              ).then(r => r.json()).catch(() => ({ providers: [], balanceEnabled: false })),
+      fetch('/api/user/balance',          { credentials: 'include' }).then(r => r.json()).catch(() => ({ balance: 0 })),
+    ]).then(([t, g, pm, bal]) => {
       setTariffs(t)
-      setGifts(g)
+      if (g && 'sent' in g) {
+        setSent(g.sent)
+        setReceived(g.received)
+        setStats(g.stats)
+      } else if (Array.isArray(g)) {
+        // legacy shape
+        setSent(g)
+      }
+      setProviders(pm?.providers || [])
+      setBE(!!pm?.balanceEnabled)
+      setBalance(Number(bal?.balance || 0))
+      // pick a default provider so the create button is clickable
+      const firstProvider = pm?.providers?.[0]?.id
+      if (firstProvider) setProvider(firstProvider)
+      else if (pm?.balanceEnabled) setProvider('BALANCE')
     }).finally(() => setLoading(false))
   }, [])
 
@@ -37,7 +90,7 @@ export default function GiftPage() {
   }
 
   const createGift = async () => {
-    if (!selectedTariff) return
+    if (!selectedTariff || !provider) return
     setCreating(true)
     try {
       const res = await fetch('/api/gifts/create', {
@@ -45,55 +98,39 @@ export default function GiftPage() {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tariffId: selectedTariff,
+          tariffId:       selectedTariff,
           provider,
           recipientEmail: recipientEmail || undefined,
-          message: message || undefined,
+          message:        message || undefined,
           noExpiry,
         }),
       })
       const data = await res.json()
-
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl
       } else if (data.giftCode) {
-        // Refresh gifts list
-        const g = await fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json())
-        setGifts(g)
+        await reload()
         setShowForm(false)
-        setSelectedTariff('')
-        setRecipientEmail('')
-        setMessage('')
+        setSelectedTariff(''); setRecipientEmail(''); setMessage('')
       } else if (data.error) {
         alert(data.error)
       }
-    } catch (err) {
+    } catch {
       alert('Ошибка при создании подарка')
-    } finally {
-      setCreating(false)
-    }
+    } finally { setCreating(false) }
   }
 
   const cancelGift = async (id: string) => {
     if (!confirm('Отменить этот подарок? Если оплачен с баланса — сумма вернётся.')) return
     setCancelling(id)
     try {
-      const res = await fetch(`/api/gifts/${id}/cancel`, {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const res  = await fetch(`/api/gifts/${id}/cancel`, { method: 'POST', credentials: 'include' })
       const data = await res.json()
-      if (data.ok) {
-        const g = await fetch('/api/gifts/my', { credentials: 'include' }).then(r => r.json())
-        setGifts(g)
-      } else {
-        alert(data.error || 'Не удалось отменить подарок')
-      }
+      if (data.ok) await reload()
+      else alert(data.error || 'Не удалось отменить подарок')
     } catch {
       alert('Ошибка при отмене подарка')
-    } finally {
-      setCancelling(null)
-    }
+    } finally { setCancelling(null) }
   }
 
   const giftUrl = (code: string) => `${window.location.origin}/present/${code}`
@@ -117,13 +154,21 @@ export default function GiftPage() {
     )
   }
 
+  const providerList: Array<{ key: string; label: string }> = [
+    ...providers.map(p => ({
+      key:   p.id,
+      label: p.id === 'YUKASSA' ? 'Карта / СБП' : p.id === 'CRYPTOPAY' ? 'Крипта' : p.label,
+    })),
+    ...(balanceEnabled ? [{ key: 'BALANCE', label: `С баланса (${balance.toFixed(0)} ₽)` }] : []),
+  ]
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Подарить подписку</h1>
+          <h1 className="text-2xl font-bold">Подарки</h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Купите VPN в подарок другу
+            Дарите VPN друзьям или активируйте полученные подарки
           </p>
         </div>
         <button onClick={() => setShowForm(!showForm)} className="btn-primary text-sm">
@@ -131,13 +176,22 @@ export default function GiftPage() {
         </button>
       </div>
 
-      {/* Create gift form */}
+      {/* ── Stats row ── */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatCard icon={<Send className="w-4 h-4" />}    label="Подарено"    value={stats.sentTotal}    hint={stats.sentPending ? `${stats.sentPending} ожидают` : undefined} />
+          <StatCard icon={<CheckCircle2 className="w-4 h-4" />} label="Активировано" value={stats.sentClaimed} accent="#22c55e" />
+          <StatCard icon={<Inbox className="w-4 h-4" />}   label="Получено"     value={stats.receivedTotal} accent="#a78bfa" />
+          <StatCard icon={<BarChart3 className="w-4 h-4" />} label="Дней в сумме" value={stats.receivedDays}  suffix="дн." accent="#f43f5e" />
+        </div>
+      )}
+
+      {/* ── Create gift form ── */}
       {showForm && (
         <div className="glass-card gradient-border animate-scale-in">
           <h2 className="font-semibold mb-4">Новый подарок</h2>
 
           <div className="space-y-4">
-            {/* Select tariff */}
             <div>
               <label className="text-sm font-medium mb-2 block" style={{ color: 'var(--text-secondary)' }}>
                 Выберите тариф
@@ -158,31 +212,33 @@ export default function GiftPage() {
               </div>
             </div>
 
-            {/* Provider */}
             <div>
               <label className="text-sm font-medium mb-2 block" style={{ color: 'var(--text-secondary)' }}>
                 Способ оплаты
               </label>
-              <div className="flex gap-2">
-                {[
-                  { key: 'YUKASSA' as const, label: 'Карта / СБП' },
-                  { key: 'BALANCE' as const, label: 'С баланса' },
-                ].map(({ key, label }) => (
-                  <button key={key}
-                          onClick={() => setProvider(key)}
-                          className="px-4 py-2.5 rounded-xl text-sm transition-all"
-                          style={{
-                            background: provider === key ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
-                            border: `1px solid ${provider === key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
-                            color: provider === key ? 'var(--accent-1)' : 'var(--text-secondary)',
-                          }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+              {providerList.length === 0 ? (
+                <div className="p-3 rounded-xl text-xs text-center"
+                     style={{ background: 'rgba(239,68,68,0.08)', border: '1px dashed rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+                  Администратор не включил ни одного способа оплаты
+                </div>
+              ) : (
+                <div className="flex gap-2 flex-wrap">
+                  {providerList.map(({ key, label }) => (
+                    <button key={key}
+                            onClick={() => setProvider(key)}
+                            className="px-4 py-2.5 rounded-xl text-sm transition-all"
+                            style={{
+                              background: provider === key ? 'rgba(6,182,212,0.1)' : 'var(--glass-bg)',
+                              border: `1px solid ${provider === key ? 'var(--accent-1)' : 'var(--glass-border)'}`,
+                              color: provider === key ? 'var(--accent-1)' : 'var(--text-secondary)',
+                            }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Recipient email */}
             <div>
               <label className="text-sm font-medium mb-2 block" style={{ color: 'var(--text-secondary)' }}>
                 Email получателя (необязательно)
@@ -193,7 +249,6 @@ export default function GiftPage() {
                      className="glass-input" />
             </div>
 
-            {/* Message */}
             <div>
               <label className="text-sm font-medium mb-2 block" style={{ color: 'var(--text-secondary)' }}>
                 Сообщение (необязательно)
@@ -205,7 +260,6 @@ export default function GiftPage() {
                         maxLength={500} />
             </div>
 
-            {/* Lifetime toggle */}
             <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl"
                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
               <input type="checkbox" checked={noExpiry}
@@ -225,7 +279,7 @@ export default function GiftPage() {
             </label>
 
             <button onClick={createGift}
-                    disabled={!selectedTariff || creating}
+                    disabled={!selectedTariff || !provider || creating}
                     className="btn-primary w-full justify-center">
               {creating ? 'Создаём...' : 'Оплатить и создать подарок'}
             </button>
@@ -233,20 +287,22 @@ export default function GiftPage() {
         </div>
       )}
 
-      {/* My gifts */}
-      <div>
-        <h2 className="font-semibold mb-4">Мои подарки</h2>
-        {gifts.length === 0 ? (
-          <div className="glass-card text-center py-12">
-            <Gift className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-tertiary)' }} />
-            <p className="font-medium">У вас пока нет подарков</p>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              Создайте подарок и поделитесь с другом
-            </p>
-          </div>
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+        <TabButton active={tab === 'sent'}     onClick={() => setTab('sent')}     count={sent.length}     label="Подаренные"   icon={<Send className="w-4 h-4" />} />
+        <TabButton active={tab === 'received'} onClick={() => setTab('received')} count={received.length} label="Полученные"   icon={<Inbox className="w-4 h-4" />} />
+      </div>
+
+      {/* ── Sent tab ── */}
+      {tab === 'sent' && (
+        sent.length === 0 ? (
+          <EmptyState
+            title="Вы пока никому не дарили"
+            hint="Создайте подарок и поделитесь с другом — ссылкой или коротким кодом"
+          />
         ) : (
           <div className="space-y-3">
-            {gifts.map(gift => (
+            {sent.map(gift => (
               <div key={gift.id} className="glass-card">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -266,7 +322,6 @@ export default function GiftPage() {
 
                 {gift.status === 'PENDING' && (
                   <div className="space-y-2 mt-2">
-                    {/* Long URL */}
                     <div className="flex items-center gap-2 p-3 rounded-xl"
                          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                       <div className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.13)', color: '#06b6d4' }}>
@@ -284,7 +339,6 @@ export default function GiftPage() {
                       </button>
                     </div>
 
-                    {/* Short code for promo-field entry */}
                     {gift.shortCode && (
                       <div className="flex items-center gap-2 p-3 rounded-xl"
                            style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}>
@@ -307,8 +361,7 @@ export default function GiftPage() {
                       </div>
                     )}
 
-                    {/* Meta row: expiry, recipient email, cancel */}
-                    <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    <div className="flex items-center justify-between text-[11px] flex-wrap gap-2" style={{ color: 'var(--text-tertiary)' }}>
                       <div className="flex items-center gap-1.5">
                         {gift.expiresAt ? (
                           <><Clock className="w-3 h-3" /> Действует до {new Date(gift.expiresAt).toLocaleDateString('ru-RU')}</>
@@ -330,13 +383,118 @@ export default function GiftPage() {
                 {gift.recipientUser && (
                   <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
                     Получатель: {gift.recipientUser.telegramName || gift.recipientUser.email}
+                    {gift.claimedAt && ` · ${new Date(gift.claimedAt).toLocaleDateString('ru')}`}
                   </p>
                 )}
               </div>
             ))}
           </div>
-        )}
+        )
+      )}
+
+      {/* ── Received tab ── */}
+      {tab === 'received' && (
+        received.length === 0 ? (
+          <EmptyState
+            title="У вас пока нет полученных подарков"
+            hint="Если вам прислали ссылку или короткий код вида G-XXXXX — активируйте его через поле «Промокод» на главной"
+          />
+        ) : (
+          <div className="space-y-3">
+            {received.map(gift => (
+              <div key={gift.id} className="glass-card">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                         style={{ background: 'rgba(244,63,94,0.1)' }}>
+                      <Gift className="w-5 h-5" style={{ color: '#fb7185' }} />
+                    </div>
+                    <div>
+                      <p className="font-medium">{gift.tariff.name}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        +{gift.tariff.durationDays} дн. · активирован {gift.claimedAt ? new Date(gift.claimedAt).toLocaleDateString('ru') : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="badge-green">
+                    <CheckCircle2 className="w-3 h-3 mr-1" /> Активирован
+                  </span>
+                </div>
+                {(gift as any).fromUser && (
+                  <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                    От: {(gift as any).fromUser.telegramName || (gift as any).fromUser.email || 'Аноним'}
+                  </p>
+                )}
+                {gift.message && (
+                  <p className="text-xs mt-2 italic p-2 rounded-lg"
+                     style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)' }}>
+                    «{gift.message}»
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+function StatCard({ icon, label, value, hint, suffix, accent }: {
+  icon:   React.ReactNode
+  label:  string
+  value:  number
+  hint?:  string
+  suffix?: string
+  accent?: string
+}) {
+  return (
+    <div className="p-3 rounded-xl"
+         style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: accent || 'var(--text-tertiary)' }}>
+        {icon}
+        {label}
       </div>
+      <p className="text-xl font-bold mt-1">
+        {value}{suffix ? <span className="text-xs font-normal ml-1" style={{ color: 'var(--text-tertiary)' }}>{suffix}</span> : null}
+      </p>
+      {hint && <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{hint}</p>}
+    </div>
+  )
+}
+
+function TabButton({ active, onClick, label, count, icon }: {
+  active:  boolean
+  onClick: () => void
+  label:   string
+  count:   number
+  icon:    React.ReactNode
+}) {
+  return (
+    <button onClick={onClick}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
+            style={{
+              background: active ? 'rgba(6,182,212,0.1)' : 'transparent',
+              color:      active ? 'var(--accent-1)'    : 'var(--text-secondary)',
+            }}>
+      {icon}
+      {label}
+      <span className="px-1.5 py-0.5 rounded-full text-[10px]"
+            style={{ background: active ? 'rgba(6,182,212,0.2)' : 'var(--glass-bg)' }}>
+        {count}
+      </span>
+    </button>
+  )
+}
+
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="glass-card text-center py-12">
+      <Gift className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-tertiary)' }} />
+      <p className="font-medium">{title}</p>
+      <p className="text-sm mt-1 max-w-xs mx-auto" style={{ color: 'var(--text-tertiary)' }}>
+        {hint}
+      </p>
     </div>
   )
 }

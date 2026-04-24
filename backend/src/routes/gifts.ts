@@ -113,10 +113,13 @@ export async function giftRoutes(app: FastifyInstance) {
     }
   })
 
-  // Get my gifts
-  app.get('/my', auth, async (req) => {
+  // Get my gifts (sent + received + stats).
+  // Legacy callers that expect a flat array can pass ?flat=1 to get just
+  // the sent gifts (old shape) — keeps /dashboard working during rollout.
+  app.get<{ Querystring: { flat?: string } }>('/my', auth, async (req) => {
     const userId = (req.user as any).sub
-    return giftService.getUserGifts(userId)
+    if (req.query?.flat === '1') return giftService.getUserGifts(userId)
+    return giftService.listUserGifts(userId)
   })
 
   // Get gift status by code (public-ish, no auth required to check)
