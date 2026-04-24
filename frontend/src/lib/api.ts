@@ -45,6 +45,11 @@ export const authApi = {
   telegram: (data: any)  => apiFetch<{ token: string; user: User }>('/auth/telegram', {
     method: 'POST', body: JSON.stringify(data),
   }),
+  // New OIDC flow — accepts id_token from telegram-login.js callback.
+  telegramOidc: (payload: { id_token: string; nonce?: string; utmSource?: string }) =>
+    apiFetch<{ token: string; user: User; flow: 'oidc' }>('/auth/telegram-oidc', {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
   login: (email: string, password: string, utmSource?: string) =>
     apiFetch<{ token: string; user: User }>('/auth/login', {
       method: 'POST', body: JSON.stringify({ email, password, ...(utmSource ? { utmSource } : {}) }),

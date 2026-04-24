@@ -114,6 +114,84 @@ export async function authRoutes(app: FastifyInstance) {
       .send({ token, user: safeUser })
   })
 
+  // ── Telegram OIDC login (new flow) ──────────────────────────
+  // Accepts the id_token produced by telegram-login.js, validates it against
+  // oauth.telegram.org JWKS, then issues our own JWT. Falls back with 503 if
+  // the server isn't configured for OIDC so the frontend can route users to
+  // the legacy HMAC widget transparently.
+  app.post('/telegram-oidc', {
+    schema: { tags: ['Auth'] },
+  }, async (req, reply) => {
+    if (!config.telegram.loginOidcEnabled) {
+      return reply.status(503).send({ error: 'Telegram OIDC login is not configured' })
+    }
+
+    const schema = z.object({
+      id_token:  z.string().min(20),
+      nonce:     z.string().optional(),
+      utmSource: z.string().optional(),
+    })
+    const body = schema.parse(req.body)
+
+    const { verifyTelegramIdToken } = await import('../services/telegram-oidc')
+    let claims
+    try {
+      claims = await verifyTelegramIdToken(body.id_token, body.nonce)
+    } catch (err: any) {
+      logger.warn(`[telegram-oidc] verification failed: ${err.message}`)
+      return reply.status(401).send({ error: 'Invalid Telegram id_token' })
+    }
+
+    // `sub` is the canonical user identifier in OIDC. Telegram also exposes
+    // `id` as a number for convenience; prefer `sub` as a string so it aligns
+    // with our existing telegramId column (which is also String).
+    const telegramId = String(claims.sub ?? claims.id ?? '')
+    if (!telegramId) {
+      return reply.status(401).send({ error: 'Missing Telegram user id in token' })
+    }
+
+    // Display name — OIDC gives us both `name` (full) and `preferred_username`
+    // (== @username, if any). Match the legacy widget which stored @username
+    // when available so the user record stays consistent across both flows.
+    const displayName = claims.preferred_username
+      || claims.name
+      || telegramId
+
+    let user = await prisma.user.findUnique({ where: { telegramId } })
+    if (!user) {
+      const rmUser = await remnawave.getUserByTelegramId(telegramId).catch(() => null)
+      user = await prisma.user.create({
+        data: {
+          telegramId,
+          telegramName:  displayName,
+          email:         claims.phone_number ? undefined : undefined, // phone ≠ email — stored separately if needed later
+          remnawaveUuid: rmUser?.uuid || null,
+          subStatus:     rmUser ? 'ACTIVE' : 'INACTIVE',
+          subExpireAt:   rmUser?.expireAt ? new Date(rmUser.expireAt) : null,
+          subLink:       rmUser ? remnawave.getSubscriptionUrl(rmUser.uuid) : null,
+        },
+      })
+      logger.info(`[telegram-oidc] New user: ${telegramId} (${displayName})`)
+    }
+
+    const _utmSrc = body.utmSource
+    const loginUpd: any = { lastLoginAt: new Date(), lastIp: getClientIp(req) }
+    if (_utmSrc && !user.customerSource) {
+      loginUpd.customerSource = _utmSrc
+      prisma.buhUtmLead.create({
+        data: { utmCode: _utmSrc, customerId: user.id, customerName: user.email || user.telegramName || user.id, converted: user.subStatus !== 'INACTIVE' },
+      }).catch(() => {})
+    }
+    await prisma.user.update({ where: { id: user.id }, data: loginUpd })
+
+    const token = app.jwt.sign({ sub: user.id, role: user.role })
+    const { passwordHash, ...safeUser } = user as any
+
+    return reply
+      .setCookie('token', token, cookieOpts())
+      .send({ token, user: safeUser, flow: 'oidc' })
+  })
+
   // ── Email login ────────────────────────────────────────────
   app.post('/login', {
     schema: { tags: ['Auth'] },

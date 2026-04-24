@@ -137,6 +137,10 @@ REMNAWAVE_TOKEN=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_NAME=HideYouBot
 TELEGRAM_LOGIN_BOT_TOKEN=
+# New OIDC login (BotFather → Bot Settings → Web Login).
+# If CLIENT_ID is empty → frontend falls back to legacy HMAC widget.
+TELEGRAM_LOGIN_CLIENT_ID=
+TELEGRAM_LOGIN_CLIENT_SECRET=
 
 # ── ЮKassa (можно задать позже: меню [18]) ────────────────────
 YUKASSA_SHOP_ID=
@@ -295,6 +299,11 @@ setup_env() {
   echo ""
   put "TELEGRAM_BOT_TOKEN" "Токен Telegram-бота: "  "" "true"
   put "TELEGRAM_BOT_NAME"  "Username бота (без @): " ""
+  echo ""
+  echo -e "  ${DIM}OIDC-вход (BotFather → Bot Settings → Web Login) — новее HMAC-виджета.${RESET}"
+  echo -e "  ${DIM}Поддерживает проверенный номер телефона. Оставьте пустым если не используете.${RESET}"
+  put "TELEGRAM_LOGIN_CLIENT_ID"     "Client ID Telegram Login (OIDC): "     ""
+  put "TELEGRAM_LOGIN_CLIENT_SECRET" "Client Secret Telegram Login (OIDC): " "" "true"
 
   echo ""
   ask "Запустить Telegram-бот для VPN? [Д/н]"

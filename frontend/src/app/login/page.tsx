@@ -45,8 +45,12 @@ function LoginContent() {
   const [regStep, setRegStep]             = useState<'email' | 'form'>('email')
   const [regCooldown, setRegCooldown]     = useState(0)
 
-  // ── telegram bot name ──
-  const botName = process.env.NEXT_PUBLIC_TG_BOT_NAME || ''
+  // ── telegram config ──
+  // New OIDC flow uses CLIENT_ID; legacy HMAC widget uses BOT_NAME. If OIDC
+  // is configured we prefer it (gets verified phone number + more user data).
+  const tgClientId = process.env.NEXT_PUBLIC_TG_CLIENT_ID || ''
+  const botName    = process.env.NEXT_PUBLIC_TG_BOT_NAME  || ''
+  const tgMode: 'oidc' | 'hmac' | 'none' = tgClientId ? 'oidc' : (botName ? 'hmac' : 'none')
 
   // persist referral code
   useEffect(() => {
@@ -126,6 +130,7 @@ function LoginContent() {
   useEffect(() => {
     if (tab !== 'telegram' || !tgRef.current) return
 
+    // Legacy HMAC widget callback
     window.onTelegramAuth = async (tgUser: any) => {
       setLoading(true)
       try {
@@ -137,32 +142,97 @@ function LoginContent() {
       }
     }
 
-    if (!botName) return
-
-    // Telegram Login Widget v22 + new attributes from late-2025 update:
-    //   data-init_auth  — auto-trigger auth if user previously authorized (single-tap UX)
-    //   data-onunauth   — callback when user revokes authorization
-    //   data-request_access=write — allow bot to message the user
-    const script = document.createElement('script')
-    script.src = 'https://telegram.org/js/telegram-widget.js?22'
-    script.setAttribute('data-telegram-login', botName)
-    script.setAttribute('data-size', 'large')
-    script.setAttribute('data-radius', '14')
-    script.setAttribute('data-init_auth',    '1')
-    script.setAttribute('data-onauth',       'onTelegramAuth(user)')
-    script.setAttribute('data-onunauth',     'onTelegramUnauth()')
-    script.setAttribute('data-request_access', 'write')
-    script.setAttribute('data-auth-url',     window.location.origin + '/login')
-    script.async = true
-    tgRef.current.innerHTML = ''
-    tgRef.current.appendChild(script)
-
-    ;(window as any).onTelegramUnauth = () => {
-      // User removed authorization from @BotFather — no action needed locally
+    // New OIDC flow callback — receives { id_token, user } or { error }.
+    // telegram-login.js injects this via `data-onauth` attribute (string of JS
+    // code). We expose a global so the auto-init shim can call it safely.
+    ;(window as any).onTelegramOidcAuth = async (data: any) => {
+      if (data?.error) {
+        if (data.error !== 'popup_closed') toast.error(`Telegram: ${data.error}`)
+        return
+      }
+      if (!data?.id_token) {
+        toast.error('Telegram не вернул id_token')
+        return
+      }
+      setLoading(true)
+      try {
+        const utmSource = sessionStorage.getItem('utm_source') || undefined
+        const resp = await authApi.telegramOidc({ id_token: data.id_token, utmSource })
+        redirectAfterAuth(resp.user)
+      } catch (err: any) {
+        toast.error(err.message)
+        setLoading(false)
+      }
     }
 
-    return () => { window.onTelegramAuth = undefined }
-  }, [tab, botName, redirectAfterAuth])
+    if (tgMode === 'oidc') {
+      // New OIDC library — spec: https://core.telegram.org/bots/telegram-login
+      // Auto-init reads these data-attrs; we set data-onauth to a global
+      // function name that accepts the { id_token, user } / { error } payload.
+      const script = document.createElement('script')
+      script.src = 'https://telegram.org/js/telegram-login.js'
+      script.setAttribute('data-client-id',      tgClientId)
+      script.setAttribute('data-request-access', 'write')
+      script.setAttribute('data-lang',           'ru')
+      script.setAttribute('data-onauth',         'onTelegramOidcAuth(data)')
+      script.async = true
+      tgRef.current.innerHTML = ''
+      tgRef.current.appendChild(script)
+
+      // The OIDC library doesn't render a button itself — it exposes
+      // Telegram.Login.open(). Provide our own styled trigger.
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.textContent = '🔐 Войти через Telegram'
+      btn.className = 'w-full py-3 rounded-xl font-medium text-white transition-all hover:brightness-110'
+      btn.style.cssText = 'background: linear-gradient(135deg, #2AABEE 0%, #229ED9 100%); box-shadow: 0 4px 12px rgba(42,171,238,0.3);'
+      btn.onclick = () => {
+        const Telegram = (window as any).Telegram
+        if (Telegram?.Login?.open) Telegram.Login.open()
+        else toast.error('Скрипт Telegram ещё загружается…')
+      }
+      tgRef.current.appendChild(btn)
+
+      return () => {
+        (window as any).onTelegramOidcAuth = undefined
+        if (tgRef.current) tgRef.current.innerHTML = ''
+      }
+    }
+
+    if (tgMode === 'hmac') {
+      // Legacy Telegram Login Widget v22
+      const script = document.createElement('script')
+      script.src = 'https://telegram.org/js/telegram-widget.js?22'
+      script.setAttribute('data-telegram-login', botName)
+      script.setAttribute('data-size', 'large')
+      script.setAttribute('data-radius', '14')
+      script.setAttribute('data-init_auth',    '1')
+      script.setAttribute('data-onauth',       'onTelegramAuth(user)')
+      script.setAttribute('data-onunauth',     'onTelegramUnauth()')
+      script.setAttribute('data-request_access', 'write')
+      script.setAttribute('data-auth-url',     window.location.origin + '/login')
+      script.async = true
+      tgRef.current.innerHTML = ''
+      tgRef.current.appendChild(script)
+
+      ;(window as any).onTelegramUnauth = () => {
+        // User removed authorization from @BotFather — no action needed locally
+      }
+
+      return () => { window.onTelegramAuth = undefined }
+    }
+
+    // tgMode === 'none' — show a help card instead of silent empty space.
+    tgRef.current.innerHTML = `
+      <div style="padding:16px;border:1px dashed var(--glass-border);border-radius:12px;color:var(--text-tertiary);font-size:12px;line-height:1.5;">
+        ⚠️ Вход через Telegram не настроен на этом сервере.<br/>
+        Администратору: задайте <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px;">TELEGRAM_BOT_NAME</code>
+        (старый flow) или <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px;">TELEGRAM_LOGIN_CLIENT_ID</code>
+        (новый OIDC) в <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px;">.env</code>
+        и пересоберите фронтенд.
+      </div>
+    `
+  }, [tab, botName, tgClientId, tgMode, redirectAfterAuth])
 
   // ── Email Login ──
   const handleEmailLogin = async (e: React.FormEvent) => {

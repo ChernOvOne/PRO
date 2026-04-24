@@ -80,6 +80,7 @@ services:
       # поэтому их нужно передавать как build args, а не только как environment.
       args:
         - NEXT_PUBLIC_TG_BOT_NAME=${TELEGRAM_BOT_NAME}
+        - NEXT_PUBLIC_TG_CLIENT_ID=${TELEGRAM_LOGIN_CLIENT_ID}
         - NEXT_PUBLIC_API_URL=/api
         - NEXT_PUBLIC_MAPTILER_KEY=${MAPTILER_KEY}
         - NEXT_PUBLIC_YANDEX_KEY=${YANDEX_MAPS_KEY}
@@ -92,6 +93,7 @@ services:
       NEXT_PUBLIC_API_URL: /api
       INTERNAL_API_URL: http://backend:4000
       NEXT_PUBLIC_TG_BOT_NAME: ${TELEGRAM_BOT_NAME}
+      NEXT_PUBLIC_TG_CLIENT_ID: ${TELEGRAM_LOGIN_CLIENT_ID}
       NEXT_PUBLIC_MAPTILER_KEY: ${MAPTILER_KEY}
       NEXT_PUBLIC_YANDEX_KEY: ${YANDEX_MAPS_KEY}
       TZ: Europe/Moscow

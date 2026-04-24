@@ -25,6 +25,13 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN:    z.string().optional().default(''),
   TELEGRAM_BOT_NAME:     z.string().optional().default(''),
   TELEGRAM_LOGIN_BOT_TOKEN: z.string().optional(),
+  // New OIDC-based Telegram Login (https://core.telegram.org/bots/telegram-login).
+  // Obtained in @BotFather → Bot Settings → Web Login. When CLIENT_ID is set the
+  // frontend shows the new OIDC button (telegram-login.js) and the backend
+  // accepts id_token at /api/auth/telegram-oidc. Otherwise the legacy
+  // HMAC-based widget at /api/auth/telegram is used.
+  TELEGRAM_LOGIN_CLIENT_ID:     z.string().optional(),
+  TELEGRAM_LOGIN_CLIENT_SECRET: z.string().optional(),
 
   YUKASSA_SHOP_ID:       z.string().optional(),
   YUKASSA_SECRET_KEY:    z.string().optional(),
@@ -116,6 +123,11 @@ export const config = {
     botName:        env.TELEGRAM_BOT_NAME ?? '',
     loginBotToken:  env.TELEGRAM_LOGIN_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || '',
     configured:     !!(env.TELEGRAM_BOT_TOKEN),
+    // OIDC login (new flow). Empty clientId → endpoint returns 503 so the
+    // frontend falls back to the legacy HMAC widget.
+    loginClientId:     env.TELEGRAM_LOGIN_CLIENT_ID || '',
+    loginClientSecret: env.TELEGRAM_LOGIN_CLIENT_SECRET || '',
+    loginOidcEnabled:  !!env.TELEGRAM_LOGIN_CLIENT_ID,
   },
 
   yukassa: {
