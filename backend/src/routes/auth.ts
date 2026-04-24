@@ -142,10 +142,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: 'Invalid Telegram id_token' })
     }
 
-    // `sub` is the canonical user identifier in OIDC. Telegram also exposes
-    // `id` as a number for convenience; prefer `sub` as a string so it aligns
-    // with our existing telegramId column (which is also String).
-    const telegramId = String(claims.sub ?? claims.id ?? '')
+    // Telegram's OIDC id_token exposes two different identifiers:
+    //   - `sub`: OIDC subject (19-digit hashed string, e.g. "1234123412341234123")
+    //   - `id` : the real Telegram user ID (~10 digits, e.g. 987654321)
+    // Our `telegramId` column everywhere else (bot, TMA, HMAC widget) stores
+    // `id`, so we MUST use `claims.id` — using `sub` creates a second user
+    // record that has no REMNAWAVE link (the bot wrote the real tg.id).
+    // Sub is only a fallback for defensive coding; in practice it shouldn't hit.
+    const telegramId = String(claims.id ?? claims.sub ?? '')
     if (!telegramId) {
       return reply.status(401).send({ error: 'Missing Telegram user id in token' })
     }
@@ -164,7 +168,6 @@ export async function authRoutes(app: FastifyInstance) {
         data: {
           telegramId,
           telegramName:  displayName,
-          email:         claims.phone_number ? undefined : undefined, // phone ≠ email — stored separately if needed later
           remnawaveUuid: rmUser?.uuid || null,
           subStatus:     rmUser ? 'ACTIVE' : 'INACTIVE',
           subExpireAt:   rmUser?.expireAt ? new Date(rmUser.expireAt) : null,
@@ -172,6 +175,26 @@ export async function authRoutes(app: FastifyInstance) {
         },
       })
       logger.info(`[telegram-oidc] New user: ${telegramId} (${displayName})`)
+    } else if (!user.remnawaveUuid) {
+      // Existing user without a REMNAWAVE link — try to back-fill the
+      // subscription from bot/TMA (same pattern as tma-auth.ts). This covers
+      // the case where the OIDC flow previously created an orphan record
+      // via `claims.sub` before v5.13.2 and the user now logs in again.
+      const rmUser = await remnawave.getUserByTelegramId(telegramId).catch(() => null)
+        || (user.email ? await remnawave.getUserByEmail(user.email).catch(() => null) : null)
+      if (rmUser) {
+        const statusMap: Record<string, string> = { ACTIVE: 'ACTIVE', DISABLED: 'INACTIVE', LIMITED: 'ACTIVE', EXPIRED: 'EXPIRED' }
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            remnawaveUuid: rmUser.uuid,
+            subStatus:     (statusMap[rmUser.status] ?? 'INACTIVE') as any,
+            subExpireAt:   rmUser.expireAt ? new Date(rmUser.expireAt) : null,
+            subLink:       remnawave.getSubscriptionUrl(rmUser.uuid, (rmUser as any).subscriptionUrl),
+          },
+        })
+        logger.info(`[telegram-oidc] ${telegramId}: synced REMNAWAVE ${rmUser.uuid}`)
+      }
     }
 
     const _utmSrc = body.utmSource
