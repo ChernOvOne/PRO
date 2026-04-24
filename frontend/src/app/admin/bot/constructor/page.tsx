@@ -73,15 +73,31 @@ interface BotBlock {
   conditions?: any[] | null
   actionType?: string | null
   actionValue?: string | null
-  promptText?: string | null
-  varName?: string | null
-  validation?: string | null
+  // Fields in DB are inputPrompt/inputVar/inputValidation — keep names aligned
+  // so the admin API roundtrip actually persists edits (zod drops unknown keys).
+  inputPrompt?: string | null
+  inputVar?: string | null
+  inputValidation?: string | null
   delayMinutes?: number | null
   delayUnit?: string | null
   paymentTitle?: string | null
   paymentDescription?: string | null
   paymentAmount?: number | null
   paymentPayload?: string | null
+  httpMethod?: string | null
+  httpUrl?: string | null
+  httpHeaders?: any
+  httpBody?: string | null
+  httpSaveVar?: string | null
+  emailSubject?: string | null
+  emailBody?: string | null
+  notifyAdminText?: string | null
+  reactionEmoji?: string | null
+  streamingText?: string | null
+  giftId?: string | null
+  funnelId?: string | null
+  redirectBlockId?: string | null
+  splitVariants?: any
   metaJson?: any
   customMessages?: Record<string, string> | null
   buttons?: BotButton[]
@@ -2805,7 +2821,7 @@ export default function BotConstructorPage() {
                 <>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Текст запроса</label>
-                    <textarea value={editForm.promptText || ''} onChange={e => updateField('promptText', e.target.value)}
+                    <textarea value={editForm.inputPrompt || ''} onChange={e => updateField('inputPrompt', e.target.value)}
                               rows={3} className="w-full px-3 py-2 rounded-lg text-[12px]"
                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                               placeholder="Введите ваш email..." />
@@ -2813,14 +2829,14 @@ export default function BotConstructorPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Имя переменной</label>
-                      <input type="text" value={editForm.varName || ''} onChange={e => updateField('varName', e.target.value)}
+                      <input type="text" value={editForm.inputVar || ''} onChange={e => updateField('inputVar', e.target.value)}
                              className="w-full px-2 py-1.5 rounded-lg text-[12px]"
                              style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                              placeholder="email" />
                     </div>
                     <div>
                       <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Валидация</label>
-                      <select value={editForm.validation || ''} onChange={e => updateField('validation', e.target.value)}
+                      <select value={editForm.inputValidation || ''} onChange={e => updateField('inputValidation', e.target.value)}
                               className="w-full px-2 py-1.5 rounded-lg text-[12px]"
                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                         <option value="">нет</option>
@@ -2830,8 +2846,8 @@ export default function BotConstructorPage() {
                   </div>
 
                   {/* ── Редактор сообщения-ошибки валидации ── */}
-                  {editForm.validation && INPUT_ERROR_FIELDS[editForm.validation] && (() => {
-                    const f = INPUT_ERROR_FIELDS[editForm.validation]
+                  {editForm.inputValidation && INPUT_ERROR_FIELDS[editForm.inputValidation] && (() => {
+                    const f = INPUT_ERROR_FIELDS[editForm.inputValidation]
                     return (
                       <div className="space-y-2 p-3 rounded-lg" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
                         <div className="text-[11px] font-semibold" style={{ color: '#34d399' }}>
@@ -2927,7 +2943,34 @@ export default function BotConstructorPage() {
                 <>
                   <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
                   {editForm.type === 'REDIRECT' && (
-                    <BlockSelector value={editForm.nextBlockTrue} onChange={v => updateField('nextBlockTrue', v || null)} label="Целевой блок перехода" />
+                    <BlockSelector value={editForm.redirectBlockId} onChange={v => updateField('redirectBlockId', v || null)} label="Целевой блок перехода" />
+                  )}
+                  {editForm.type === 'REACTION' && (
+                    <div>
+                      <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Emoji реакции</label>
+                      <input type="text" value={editForm.reactionEmoji || ''} onChange={e => updateField('reactionEmoji', e.target.value)}
+                             className="w-full px-3 py-2 rounded-lg text-[12px]"
+                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                             placeholder="👍 ❤️ 🔥 ..." maxLength={8} />
+                    </div>
+                  )}
+                  {editForm.type === 'GIFT' && (
+                    <div>
+                      <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>ID подарка</label>
+                      <input type="text" value={editForm.giftId || ''} onChange={e => updateField('giftId', e.target.value)}
+                             className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                             placeholder="6028601630946893368" />
+                    </div>
+                  )}
+                  {editForm.type === 'FUNNEL' && (
+                    <div>
+                      <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>ID воронки</label>
+                      <input type="text" value={editForm.funnelId || ''} onChange={e => updateField('funnelId', e.target.value)}
+                             className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                             placeholder="uuid из /admin/funnels" />
+                    </div>
                   )}
                 </>
               )}
@@ -2937,15 +2980,15 @@ export default function BotConstructorPage() {
                 <>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>URL запроса</label>
-                    <input type="text" value={(editForm.metaJson as any)?.url || ''} onChange={e => updateField('metaJson', { ...((editForm.metaJson as any) || {}), url: e.target.value })}
+                    <input type="text" value={editForm.httpUrl || ''} onChange={e => updateField('httpUrl', e.target.value)}
                            className="w-full px-3 py-2 rounded-lg text-[12px]"
                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                            placeholder="https://api.example.com/webhook" />
                   </div>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Метод</label>
-                    <select value={(editForm.metaJson as any)?.method || 'POST'}
-                            onChange={e => updateField('metaJson', { ...((editForm.metaJson as any) || {}), method: e.target.value })}
+                    <select value={editForm.httpMethod || 'POST'}
+                            onChange={e => updateField('httpMethod', e.target.value)}
                             className="w-full px-2 py-1.5 rounded-lg text-[12px]"
                             style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                       <option value="GET">GET</option>
@@ -2956,11 +2999,18 @@ export default function BotConstructorPage() {
                   </div>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Тело запроса (JSON)</label>
-                    <textarea value={(editForm.metaJson as any)?.body || ''}
-                              onChange={e => updateField('metaJson', { ...((editForm.metaJson as any) || {}), body: e.target.value })}
+                    <textarea value={editForm.httpBody || ''}
+                              onChange={e => updateField('httpBody', e.target.value)}
                               rows={4} className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                               placeholder='{"key": "value"}' />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Сохранить ответ в переменную (опционально)</label>
+                    <input type="text" value={editForm.httpSaveVar || ''} onChange={e => updateField('httpSaveVar', e.target.value)}
+                           className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                           style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                           placeholder="api_response" />
                   </div>
                   <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
                 </>
@@ -2971,15 +3021,15 @@ export default function BotConstructorPage() {
                 <>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Тема письма</label>
-                    <input type="text" value={(editForm.metaJson as any)?.subject || ''}
-                           onChange={e => updateField('metaJson', { ...((editForm.metaJson as any) || {}), subject: e.target.value })}
+                    <input type="text" value={editForm.emailSubject || ''}
+                           onChange={e => updateField('emailSubject', e.target.value)}
                            className="w-full px-3 py-2 rounded-lg text-[12px]"
                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                            placeholder="Тема" />
                   </div>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Текст письма</label>
-                    <textarea value={editForm.text || ''} onChange={e => updateField('text', e.target.value)}
+                    <textarea value={editForm.emailBody || ''} onChange={e => updateField('emailBody', e.target.value)}
                               rows={5} className="w-full px-3 py-2 rounded-lg text-[12px]"
                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                               placeholder="Тело письма..." />
@@ -2993,7 +3043,7 @@ export default function BotConstructorPage() {
                 <>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Текст уведомления</label>
-                    <textarea value={editForm.text || ''} onChange={e => updateField('text', e.target.value)}
+                    <textarea value={editForm.notifyAdminText || ''} onChange={e => updateField('notifyAdminText', e.target.value)}
                               rows={4} className="w-full px-3 py-2 rounded-lg text-[12px]"
                               style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                               placeholder="Текст уведомления для админа..." />
