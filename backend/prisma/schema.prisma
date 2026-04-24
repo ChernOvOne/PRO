@@ -1291,6 +1291,33 @@ model BotBlockStat {
   @@map("bot_block_stats")
 }
 
+// ── Bot main menu (inline keyboard shown after payment / referral / notifications) ──
+// Admin-editable replacement for the hardcoded mainMenuKeyboard(). If the table
+// is empty, the bot falls back to sensible defaults so the panel never goes
+// completely silent. Each row is one inline button; rows are grouped by `row`
+// and ordered within a row by `col`, matching Telegram's inline keyboard model.
+model BotMenuItem {
+  id          String   @id @default(uuid())
+  label       String
+  // linkType=callback → callback (e.g. menu:tariffs). Catch-all handler routes
+  //   legacy menu:* callbacks back into /start, so any callback keeps working.
+  // linkType=url      → opens a link in the user's browser (Telegram proxy)
+  // linkType=webapp   → opens a URL inside a Telegram WebApp
+  // linkType=block    → shorthand; payload stores a BotBlock id and the bot
+  //                     emits it as `blk:{id}` so the existing handler fires.
+  linkType    String   @default("callback") @map("link_type")
+  payload     String   @db.Text
+  row         Int      @default(0)
+  col         Int      @default(0)
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  staffOnly   Boolean  @default(false) @map("staff_only")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@index([isActive, sortOrder])
+  @@map("bot_menu_items")
+}
+
 model UserTag {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")

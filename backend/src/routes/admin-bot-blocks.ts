@@ -223,7 +223,10 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
       })
       .parse(req.body)
 
-    return prisma.botBlock.create({ data: body })
+    // Cast to any: zod produces a union-of-optionals shape that confuses
+    // Prisma's Without<CreateInput, UncheckedCreateInput> narrowing when
+    // new optional JSON fields (customMessages) are added.
+    return prisma.botBlock.create({ data: body as any })
   })
 
   // ── PUT /blocks/:id — update block ────────────────────────────
@@ -288,7 +291,7 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
       })
       .parse(req.body)
 
-    return prisma.botBlock.update({ where: { id }, data: body })
+    return prisma.botBlock.update({ where: { id }, data: body as any })
   })
 
   // ── PUT /blocks/:id/publish — publish block ───────────────────

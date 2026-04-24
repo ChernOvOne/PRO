@@ -694,6 +694,19 @@ export const adminApi = {
     apiFetch<void>(`/admin/bot-blocks/triggers/${id}`, { method: 'DELETE' }),
   botBlockStats: () => apiFetch<any>('/admin/bot-blocks/stats'),
 
+  // ── Bot main-menu editor ────────────────────────────────────
+  listBotMenu: () => apiFetch<any[]>('/admin/bot-menu'),
+  createBotMenuItem: (data: any) =>
+    apiFetch<any>('/admin/bot-menu', { method: 'POST', body: JSON.stringify(data) }),
+  updateBotMenuItem: (id: string, data: any) =>
+    apiFetch<any>(`/admin/bot-menu/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBotMenuItem: (id: string) =>
+    apiFetch<void>(`/admin/bot-menu/${id}`, { method: 'DELETE' }),
+  reorderBotMenu: (items: Array<{ id: string; row: number; col: number; sortOrder: number }>) =>
+    apiFetch<any>('/admin/bot-menu/reorder', { method: 'PUT', body: JSON.stringify({ items }) }),
+  resetBotMenuDefaults: () =>
+    apiFetch<any[]>('/admin/bot-menu/reset-defaults', { method: 'POST' }),
+
   // ── Support Wizards ─────────────────────────────────────────
   listSupportWizards: () =>
     apiFetch<any[]>('/admin/support/wizards'),

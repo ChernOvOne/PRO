@@ -162,15 +162,53 @@ bot.api.config.use(async (prev, method, payload, signal) => {
 })
 
 // ── Main menu keyboard ───────────────────────────────────────
-function mainMenuKeyboard(isStaff = false): InlineKeyboard {
+// Reads layout from `bot_menu_items` table; if empty, falls back to the
+// built-in defaults below so the notification after payment/referral keeps
+// working even on a freshly-initialised bot. The admin UI at
+// /admin/bot/menu lets the operator reorder rows, add Mini-App links, etc.
+async function mainMenuKeyboard(isStaff = false): Promise<InlineKeyboard> {
   const kb = new InlineKeyboard()
-    .text('🔑 Подписка', 'menu:subscription').text('💳 Тарифы', 'menu:tariffs').row()
-    .text('👥 Рефералы', 'menu:referral').text('💰 Баланс', 'menu:balance').row()
-    .text('🎟 Промокод', 'menu:promo').text('📱 Устройства', 'menu:devices').row()
-    .text('📖 Инструкции', 'menu:instructions').row()
-    .webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`)
-  if (isStaff) {
-    kb.row().text('⚙️ Админ-панель', 'menu:admin_panel')
+  try {
+    const items = await prisma.botMenuItem.findMany({
+      where:   { isActive: true, ...(isStaff ? {} : { staffOnly: false }) },
+      orderBy: [{ row: 'asc' }, { col: 'asc' }, { sortOrder: 'asc' }],
+    })
+
+    if (items.length === 0) {
+      // Empty table → defaults
+      kb.text('🔑 Подписка', 'menu:subscription').text('💳 Тарифы', 'menu:tariffs').row()
+        .text('👥 Рефералы', 'menu:referral').text('💰 Баланс', 'menu:balance').row()
+        .text('🎟 Промокод', 'menu:promo').text('📱 Устройства', 'menu:devices').row()
+        .text('📖 Инструкции', 'menu:instructions').row()
+        .webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`)
+      if (isStaff) kb.row().text('⚙️ Админ-панель', 'menu:admin_panel')
+      return kb
+    }
+
+    // Group by row, then emit each row in order. InlineKeyboard doesn't let
+    // us place on col N directly — we rely on the admin sorting cols 0..N.
+    const byRow = new Map<number, typeof items>()
+    for (const it of items) {
+      if (!byRow.has(it.row)) byRow.set(it.row, [])
+      byRow.get(it.row)!.push(it)
+    }
+    const rowNums = [...byRow.keys()].sort((a, b) => a - b)
+    for (const r of rowNums) {
+      const rowItems = byRow.get(r)!.sort((a, b) => a.col - b.col)
+      for (const it of rowItems) {
+        if (it.linkType === 'url')         kb.url(it.label, it.payload)
+        else if (it.linkType === 'webapp') kb.webApp(it.label, it.payload)
+        else if (it.linkType === 'block')  kb.text(it.label, `blk:${it.payload}`)
+        else                               kb.text(it.label, it.payload)
+      }
+      kb.row()
+    }
+  } catch (e: any) {
+    logger.warn(`mainMenuKeyboard: DB read failed, using defaults — ${e.message}`)
+    kb.text('🔑 Подписка', 'menu:subscription').text('💳 Тарифы', 'menu:tariffs').row()
+      .text('👥 Рефералы', 'menu:referral').text('💰 Баланс', 'menu:balance').row()
+      .webApp('🌐 Открыть ЛК', `${config.appUrl}/dashboard`)
+    return kb
   }
   return kb
 }
@@ -830,7 +868,7 @@ export async function notifyPaymentSuccess(telegramId: string, tariffName: strin
       `Подписка активирована.`,
       {
         parse_mode:   'Markdown',
-        reply_markup: mainMenuKeyboard(),
+        reply_markup: await mainMenuKeyboard(),
       },
     )
   } catch (err) {
