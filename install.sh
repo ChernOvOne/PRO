@@ -672,6 +672,13 @@ build_services() {
 apply_nginx_conf() {
   if [[ ! -f "$ENV_FILE" ]]; then return; fi
 
+  # Защита от docker-compose ловушки: если nginx/nginx.conf не существует
+  # на момент `docker compose up`, docker создаёт его как ДИРЕКТОРИЮ под
+  # bind-mount. Потом cp/sed падают с "not a regular file". Сносим.
+  [[ -d "nginx/nginx.conf" ]] && rm -rf "nginx/nginx.conf"
+  [[ -e "nginx/conf.d" && ! -d "nginx/conf.d" ]] && rm -f "nginx/conf.d"
+  mkdir -p "nginx/conf.d"
+
   local main_domain;  main_domain=$(grep  "^DOMAIN="       "$ENV_FILE" | cut -d= -f2)
   local admin_domain; admin_domain=$(grep "^ADMIN_DOMAIN=" "$ENV_FILE" | cut -d= -f2)
   local api_domain;   api_domain=$(grep   "^API_DOMAIN="   "$ENV_FILE" | cut -d= -f2)
