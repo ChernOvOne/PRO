@@ -45,3 +45,8 @@ data/db-backups/
 # Temporary nginx config backups
 nginx/*.bak
 nginx/*.tmp
+# Rendered nginx config — generated at runtime by install.sh apply_nginx_conf
+# from nginx.conf.template. Tracking it caused git reset/pull to overwrite the
+# admin's working domain config with the placeholder template (lk killed at v5.9.20).
+nginx/nginx.conf
+nginx/conf.d/*.conf
