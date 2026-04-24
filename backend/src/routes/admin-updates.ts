@@ -15,11 +15,22 @@ const GITHUB_REPO = 'ChernOvOne/PRO'
 
 let ghCache: { ts: number; releases: any[] } = { ts: 0, releases: [] }
 
+async function getGithubToken(): Promise<string> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'github_token' } })
+    if (row?.value?.trim()) return row.value.trim()
+  } catch {}
+  return (process.env.GITHUB_TOKEN || '').trim()
+}
+
 async function fetchReleases(): Promise<any[]> {
   if (Date.now() - ghCache.ts < 60_000) return ghCache.releases
   try {
+    const headers: Record<string, string> = { 'User-Agent': 'hideyou-backend' }
+    const token = await getGithubToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=30`, {
-      headers: { 'User-Agent': 'hideyou-backend' },
+      headers,
       signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok) throw new Error(`GitHub ${res.status}`)
@@ -352,29 +363,58 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
   })
 
   /**
-   * GET /backup-settings — where/when/how backups go
-   * All optional. Stored in `settings` table as individual keys.
+   * POST /github-token/test — verify a token has read access to GITHUB_REPO.
+   * Body: { token: string } (optional — if absent, tests stored value)
+   */
+  app.post('/github-token/test', admin, async (req, reply) => {
+    const body = (req.body || {}) as { token?: string }
+    const token = (body.token || '').trim() || await getGithubToken()
+    if (!token) return reply.status(400).send({ error: 'no token provided or stored' })
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, {
+        headers: {
+          'User-Agent': 'hideyou-backend',
+          'Authorization': `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (res.status === 200) {
+        const data = await res.json() as any
+        return { ok: true, private: !!data.private, permissions: data.permissions || null }
+      }
+      return reply.status(400).send({ error: `GitHub returned ${res.status}` })
+    } catch (e: any) {
+      return reply.status(500).send({ error: e.message })
+    }
+  })
+
+  /**
+   * GET /backup-settings — where/when/how backups go + GitHub token.
+   * Secrets returned as '***' if set, '' if not (H7-style masking).
    */
   app.get('/backup-settings', admin, async () => {
     const keys = [
       'backup_tg_token', 'backup_tg_chat',
       'backup_daily_enabled', 'backup_daily_hour',
       'backup_retention',
+      'github_token',
     ]
     const rows = await prisma.setting.findMany({ where: { key: { in: keys } } })
     const m: Record<string, string> = {}
     for (const r of rows) m[r.key] = r.value
+    const mask = (v?: string) => v && v.length > 0 ? '***' : ''
     return {
-      tgToken:        m['backup_tg_token']      || '',
+      tgToken:        mask(m['backup_tg_token']),
       tgChat:         m['backup_tg_chat']       || '',
       dailyEnabled:   m['backup_daily_enabled'] !== '0',  // default on
       dailyHour:      parseInt(m['backup_daily_hour']     || '4', 10),
       retention:      parseInt(m['backup_retention']      || '20', 10),
+      githubToken:    mask(m['github_token']),
     }
   })
 
   /**
-   * POST /backup-settings — save
+   * POST /backup-settings — save. Sending '***' means "keep current value".
    */
   app.post('/backup-settings', admin, async (req, reply) => {
     const body = z.object({
@@ -383,14 +423,18 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
       dailyEnabled: z.boolean().optional(),
       dailyHour:    z.number().int().min(0).max(23).optional(),
       retention:    z.number().int().min(3).max(100).optional(),
+      githubToken:  z.string().max(200).optional(),
     }).parse(req.body)
 
+    const skipMask = (v?: string) => v === '***' ? undefined : v
+
     const upserts: Array<[string, string]> = []
-    if (body.tgToken !== undefined)      upserts.push(['backup_tg_token',      body.tgToken])
-    if (body.tgChat !== undefined)       upserts.push(['backup_tg_chat',       body.tgChat])
-    if (body.dailyEnabled !== undefined) upserts.push(['backup_daily_enabled', body.dailyEnabled ? '1' : '0'])
-    if (body.dailyHour !== undefined)    upserts.push(['backup_daily_hour',    String(body.dailyHour)])
-    if (body.retention !== undefined)    upserts.push(['backup_retention',     String(body.retention)])
+    const t = skipMask(body.tgToken);     if (t !== undefined) upserts.push(['backup_tg_token', t])
+    if (body.tgChat !== undefined)        upserts.push(['backup_tg_chat',       body.tgChat])
+    if (body.dailyEnabled !== undefined)  upserts.push(['backup_daily_enabled', body.dailyEnabled ? '1' : '0'])
+    if (body.dailyHour !== undefined)     upserts.push(['backup_daily_hour',    String(body.dailyHour)])
+    if (body.retention !== undefined)     upserts.push(['backup_retention',     String(body.retention)])
+    const gh = skipMask(body.githubToken); if (gh !== undefined) upserts.push(['github_token', gh])
 
     for (const [key, value] of upserts) {
       await prisma.setting.upsert({

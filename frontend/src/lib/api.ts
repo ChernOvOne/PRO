@@ -818,6 +818,10 @@ export const adminApi = {
     apiFetch<{ ok: true }>('/admin/updates/backup-settings/test-tg', {
       method: 'POST', body: JSON.stringify(data),
     }),
+  githubTokenTest: (data: { token?: string }) =>
+    apiFetch<{ ok: true; private: boolean; permissions: any }>('/admin/updates/github-token/test', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
   backupsUpload: async (file: File, onProgress?: (loaded: number, total: number) => void) => {
     const fd = new FormData()
     fd.append('file', file, file.name)

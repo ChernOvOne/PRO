@@ -698,12 +698,15 @@ function BackupSettingsTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [testingGh, setTestingGh] = useState(false)
   const [tgToken, setTgToken] = useState('')
   const [tgChat, setTgChat] = useState('')
   const [dailyEnabled, setDailyEnabled] = useState(true)
   const [dailyHour, setDailyHour] = useState(4)
   const [retention, setRetention] = useState(20)
+  const [githubToken, setGithubToken] = useState('')
   const [showToken, setShowToken] = useState(false)
+  const [showGhToken, setShowGhToken] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -714,6 +717,7 @@ function BackupSettingsTab() {
         setDailyEnabled(d.dailyEnabled)
         setDailyHour(d.dailyHour)
         setRetention(d.retention)
+        setGithubToken((d as any).githubToken || '')
       } catch (e: any) { toast.error(e.message || 'Ошибка') }
       finally { setLoading(false) }
     })()
@@ -722,10 +726,22 @@ function BackupSettingsTab() {
   const save = async () => {
     setSaving(true)
     try {
-      await adminApi.backupSettingsSave({ tgToken, tgChat, dailyEnabled, dailyHour, retention })
+      await adminApi.backupSettingsSave({ tgToken, tgChat, dailyEnabled, dailyHour, retention, githubToken } as any)
       toast.success('Сохранено')
     } catch (e: any) { toast.error(e.message || 'Ошибка') }
     finally { setSaving(false) }
+  }
+
+  const testGithub = async () => {
+    setTestingGh(true)
+    try {
+      // If user typed a new token, test that. Otherwise test stored value.
+      const data = await adminApi.githubTokenTest({
+        token: githubToken && githubToken !== '***' ? githubToken : undefined,
+      })
+      toast.success(`Токен валиден. Репо: ${data.private ? 'приватный' : 'публичный'}.`)
+    } catch (e: any) { toast.error(e.message || 'Не валидный токен') }
+    finally { setTestingGh(false) }
   }
 
   const testTg = async () => {
@@ -892,6 +908,53 @@ function BackupSettingsTab() {
             className="w-20 px-3 py-2 rounded-lg text-sm text-center"
             style={inputStyle}
           />
+        </div>
+      </div>
+
+      {/* GitHub token */}
+      <div className="rounded-2xl p-5 space-y-3" style={cardStyle}>
+        <div className="flex items-start gap-2">
+          <GitBranch className="w-5 h-5 mt-0.5" style={{ color: '#a78bfa' }} />
+          <div className="flex-1">
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+              GitHub Token (для приватного репо)
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              Нужен только если репозиторий ChernOvOne/PRO приватный.
+              Создай <span className="font-mono">fine-grained PAT</span> на github.com → Settings →
+              Developer settings → Personal access tokens → только этот репо, права: <span className="font-mono">Contents: Read</span>.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Token
+          </label>
+          <div className="flex gap-2">
+            <input
+              type={showGhToken ? 'text' : 'password'}
+              value={githubToken}
+              onChange={e => setGithubToken(e.target.value)}
+              placeholder="github_pat_… или ghp_… (или *** = не менять)"
+              className="flex-1 px-3 py-2 rounded-lg text-sm font-mono"
+              style={inputStyle}
+            />
+            <button onClick={() => setShowGhToken(v => !v)}
+                    className="px-3 py-2 rounded-lg text-xs"
+                    style={{ background: 'var(--surface-1)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}>
+              {showGhToken ? 'Скрыть' : 'Показать'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button onClick={testGithub} disabled={testingGh}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                  style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.3)' }}>
+            {testingGh ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            Проверить токен
+          </button>
         </div>
       </div>
 

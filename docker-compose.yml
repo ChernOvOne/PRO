@@ -168,6 +168,10 @@ services:
       REPO_DIR: ${HIDEYOU_REPO_ROOT:-/opt/pro/LKHY}
       TG_BACKUP_TOKEN: ${TG_BACKUP_TOKEN:-}
       TG_BACKUP_CHAT: ${TG_BACKUP_CHAT:-}
+      # Optional fallback if settings.github_token isn't set in DB.
+      # The DB-stored value takes precedence so the admin UI can rotate
+      # the token without restarting the container.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       INTERNAL_HEALTH_URL: http://backend:4000
       TZ: Europe/Moscow
     volumes:

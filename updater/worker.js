@@ -94,6 +94,24 @@ async function loadBackupSettings() {
   } finally { await c.end() }
 }
 
+/**
+ * Loads the GitHub token from the settings table (preferred — admin can
+ * set/rotate it via UI without restarting the container) with env fallback.
+ * Used to access a private GitHub repo: releases listing + git fetch.
+ */
+async function loadGithubToken() {
+  try {
+    const c = new PgClient({ connectionString: DATABASE_URL })
+    await c.connect()
+    try {
+      const r = await c.query(`SELECT value FROM settings WHERE key='github_token' LIMIT 1`)
+      const v = r.rows[0]?.value
+      if (v && v.trim()) return v.trim()
+    } finally { await c.end() }
+  } catch {}
+  return (process.env.GITHUB_TOKEN || '').trim()
+}
+
 const GITHUB_REPO       = 'ChernOvOne/PRO'
 const HEALTH_TIMEOUT_MS = 90_000
 // Default retention — can be overridden from settings.backup_retention.
@@ -147,18 +165,35 @@ function gitCurrentSha() {
 function gitCurrentTag() {
   try { return sh(`git -C ${REPO_DIR} describe --tags --abbrev=0 2>/dev/null`) || null } catch { return null }
 }
-function gitFetch() {
-  sh(`git -C ${REPO_DIR} fetch origin --tags --prune --quiet`)
+async function gitFetch() {
+  const token = await loadGithubToken()
+  // --force: history rewrites (e.g. filter-repo for secret purges) change tag
+  // SHAs; without --force fetch fails with "would clobber existing tag".
+  if (token) {
+    // Per-invocation auth, no on-disk credential helper. Token is passed via
+    // -c http.extraheader so it doesn't end up in the remote URL or in
+    // process listings via the URL itself.
+    execFileSync('git', [
+      '-C', REPO_DIR,
+      '-c', `http.extraheader=Authorization: bearer ${token}`,
+      'fetch', 'origin', '--tags', '--force', '--prune', '--quiet',
+    ], { stdio: 'pipe' })
+  } else {
+    sh(`git -C ${REPO_DIR} fetch origin --tags --force --prune --quiet`)
+  }
 }
 
 /* ── GitHub helpers ───────────────────────────────────────── */
 
 async function fetchLatestReleases(limit = 10) {
+  const headers = { 'User-Agent': 'hideyou-updater' }
+  const token = await loadGithubToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=${limit}`, {
-    headers: { 'User-Agent': 'hideyou-updater' },
+    headers,
     signal: AbortSignal.timeout(10_000),
   })
-  if (!res.ok) throw new Error(`GitHub API ${res.status}`)
+  if (!res.ok) throw new Error(`GitHub API ${res.status}${res.status === 404 ? ' (private repo? add github_token in admin → Updates → Settings)' : ''}`)
   return res.json()
 }
 
@@ -396,7 +431,7 @@ async function runInstall(job) {
 
     // 2. Fetch & checkout target tag
     await emit(eventId, 'fetch', `Загружаю ${tag}…`)
-    gitFetch()
+    await gitFetch()
     assertSafeTag(tag)
     execFileSync('git', ['-C', REPO_DIR, 'reset', '--hard', tag], { stdio: 'pipe' })
     const newSha = gitCurrentSha()
@@ -558,7 +593,7 @@ async function runRollback(job) {
 }
 
 async function runCheck() {
-  gitFetch()
+  await gitFetch()
   const current = gitCurrentTag()
   const releases = await fetchLatestReleases(20)
   const latest = releases[0]?.tag_name

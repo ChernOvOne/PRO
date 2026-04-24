@@ -967,7 +967,22 @@ do_update() {
   fi
 
   info "Получаю информацию из git..."
-  git fetch --all --tags --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
+  # Pick up GitHub token (private repo support) from settings or .env.
+  local gh_token=""
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hideyou_postgres$'; then
+    gh_token=$(docker exec -i hideyou_postgres psql -U hideyou -d hideyou -tAc \
+      "SELECT value FROM settings WHERE key='github_token' LIMIT 1" 2>/dev/null | tr -d '[:space:]')
+  fi
+  [[ -z "$gh_token" ]] && gh_token=$(grep '^GITHUB_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+  # --force: после security-чистки истории (filter-repo) SHA тегов изменились
+  # и без --force fetch падает с "would clobber existing tag". Безопасно — мы
+  # принимаем remote как источник истины.
+  if [[ -n "$gh_token" ]]; then
+    git -c "http.extraheader=Authorization: bearer ${gh_token}" \
+      fetch --all --tags --force --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
+  else
+    git fetch --all --tags --force --prune --prune-tags 2>&1 | tee -a "$LOG_FILE"
+  fi
 
   local current_branch
   current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
