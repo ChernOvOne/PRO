@@ -1208,6 +1208,13 @@ model BotBlock {
   httpSaveVar   String?  @map("http_save_var")
   emailSubject  String?  @map("email_subject")
   emailBody     String?  @map("email_body") @db.Text
+  // Редактируемые системные сообщения для INPUT валидации и ACTION email-verify.
+  // Формат: { inputErrorEmail?: string, inputErrorPhone?: string, inputErrorNumber?: string,
+  //   sendCodeErrInvalidEmail?: string, sendCodeErrTakenByOther?: string, sendCodeErrSendFailed?: string,
+  //   sendCodeSuccess?: string,
+  //   verifyErrNoSession?: string, verifyErrWrongCode?: string, verifyErrTakenByOther?: string,
+  //   verifyErrMergeFailed?: string, verifyOkMerge?: string, verifyOkAttach?: string }
+  customMessages Json? @map("custom_messages")
   paymentTitle       String?  @map("payment_title")
   paymentDescription String?  @map("payment_description") @db.Text
   paymentAmount      Int?     @map("payment_amount")

@@ -415,6 +415,28 @@ function parseHHMM(s: string): number {
 // 4. Action Performer
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * Pull an editable message from block.customMessages with a fallback default.
+ * Variables {email}, {code}, {error}, {appUrl} are substituted if provided.
+ */
+export function getCustomMsg(
+  block: any,
+  key: string,
+  defaultText: string,
+  vars: Record<string, string | null | undefined> = {},
+): string {
+  const cm = (block?.customMessages && typeof block.customMessages === 'object')
+    ? block.customMessages as Record<string, unknown>
+    : {}
+  const raw = typeof cm[key] === 'string' && (cm[key] as string).trim()
+    ? (cm[key] as string)
+    : defaultText
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.split(`{${k}}`).join(String(v ?? '')),
+    raw,
+  )
+}
+
 export async function performAction(block: any, userId: string): Promise<{ ok: boolean }> {
   const actionType = block.actionType
   const actionValue = block.actionValue ?? ''
@@ -535,9 +557,10 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
         if (!email || !email.includes('@')) {
           logger.warn(`send_email_code: invalid email "${email}" for user ${userId}`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
+            const msg = getCustomMsg(block, 'sendCodeErrInvalidEmail',
               '❌ Не удалось прочитать email. Попробуйте снова через /email',
-            ).catch(() => {})
+              { email, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg).catch(() => {})
           }
           actionFailed = true
           break
@@ -552,13 +575,13 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
         if (taken && taken.id !== userId && taken.telegramId && taken.telegramId !== tgId) {
           logger.warn(`send_email_code: email ${email} owned by different TG user ${taken.telegramId}`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
-              `❌ *Email \`${email}\` привязан к другому Telegram-аккаунту.*\n\n` +
+            const msg = getCustomMsg(block, 'sendCodeErrTakenByOther',
+              `❌ *Email \`{email}\` привязан к другому Telegram-аккаунту.*\n\n` +
               `Если это ваш старый email и доступ утерян — напишите в поддержку:\n` +
-              `${config.appUrl}/recover\n\n` +
+              `{appUrl}/recover\n\n` +
               `Или введите другой email — /email`,
-              { parse_mode: 'Markdown' },
-            ).catch(() => {})
+              { email, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg, { parse_mode: 'Markdown' }).catch(() => {})
           }
           actionFailed = true
           break
@@ -570,13 +593,20 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
           const { verificationService } = await import('../services/verification')
           await verificationService.sendCode({ userId, email, type: 'EMAIL_CHANGE' })
           logger.info(`Action send_email_code: code sent to ${email}`)
+          // Optional confirmation message — empty default means "silent" (preserves
+          // legacy behaviour). Admins can fill this in the constructor to tell users
+          // "📧 Код отправлен — проверьте входящие и папку Спам. Придёт в течение минуты."
+          const okMsg = getCustomMsg(block, 'sendCodeSuccess', '', { email, appUrl: config.appUrl })
+          if (okMsg && tgId) {
+            await bot.api.sendMessage(tgId, okMsg, { parse_mode: 'Markdown' }).catch(() => {})
+          }
         } catch (e: any) {
           logger.error(`send_email_code failed: ${e.message}`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
-              `❌ Не удалось отправить код на \`${email}\`\n\nОшибка: ${e.message}\n\nПопробуйте позже или другой email (/email)`,
-              { parse_mode: 'Markdown' },
-            ).catch(() => {})
+            const msg = getCustomMsg(block, 'sendCodeErrSendFailed',
+              `❌ Не удалось отправить код на \`{email}\`\n\nОшибка: {error}\n\nПопробуйте позже или другой email (/email)`,
+              { email, error: e.message, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg, { parse_mode: 'Markdown' }).catch(() => {})
           }
           actionFailed = true
         }
@@ -596,9 +626,10 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
         if (!code || !pendingEmail) {
           logger.warn(`verify_email_code: missing code or email for user ${userId}`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
+            const msg = getCustomMsg(block, 'verifyErrNoSession',
               '❌ Нет кода или email в сессии. Начните заново через /email',
-            ).catch(() => {})
+              { email: pendingEmail, code, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg).catch(() => {})
           }
           actionFailed = true
           break
@@ -609,10 +640,10 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
         if (!ok) {
           logger.warn(`verify_email_code: invalid code for ${pendingEmail}`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
+            const msg = getCustomMsg(block, 'verifyErrWrongCode',
               '❌ *Неверный или просроченный код.*\n\nПроверьте email (и папку «Спам»). Для повтора — /email',
-              { parse_mode: 'Markdown' },
-            ).catch(() => {})
+              { email: pendingEmail, code, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg, { parse_mode: 'Markdown' }).catch(() => {})
           }
           actionFailed = true
           break
@@ -628,10 +659,10 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
         if (taken && taken.id !== userId && taken.telegramId && taken.telegramId !== tgId) {
           logger.warn(`verify_email_code: email ${pendingEmail} owned by different TG`)
           if (tgId) {
-            await bot.api.sendMessage(tgId,
-              `❌ Email привязан к другому Telegram. Для восстановления: ${config.appUrl}/recover`,
-              { parse_mode: 'Markdown' },
-            ).catch(() => {})
+            const msg = getCustomMsg(block, 'verifyErrTakenByOther',
+              `❌ Email привязан к другому Telegram. Для восстановления: {appUrl}/recover`,
+              { email: pendingEmail, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg, { parse_mode: 'Markdown' }).catch(() => {})
           }
           actionFailed = true
           break
@@ -679,9 +710,10 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
             } catch (e: any) {
               logger.error(`verify_email_code: fallback merge failed: ${e.message}`)
               if (tgId) {
-                await bot.api.sendMessage(tgId,
-                  `⚠️ Не удалось объединить аккаунты: ${e.message}\n\nНапишите в поддержку.`,
-                ).catch(() => {})
+                const msg = getCustomMsg(block, 'verifyErrMergeFailed',
+                  `⚠️ Не удалось объединить аккаунты: {error}\n\nНапишите в поддержку.`,
+                  { email: pendingEmail, error: e.message, appUrl: config.appUrl })
+                await bot.api.sendMessage(tgId, msg).catch(() => {})
               }
               actionFailed = true
               break
@@ -725,14 +757,15 @@ export async function performAction(block: any, userId: string): Promise<{ ok: b
             const paymentsInfo = taken.payments.length > 0
               ? `\n💳 У вас уже есть история оплат на этом аккаунте.`
               : ''
-            await bot.api.sendMessage(tgId,
+            const defaultText =
               `✅ *Аккаунты объединены!*\n\n` +
-              `📧 Email \`${pendingEmail}\` привязан к вашему Telegram.\n` +
+              `📧 Email \`{email}\` привязан к вашему Telegram.\n` +
               (hasSub ? `🔑 Подписка подтянута автоматически.` : `🔓 Пока нет активной подписки — выберите тариф.`) +
               paymentsInfo +
-              `\n\n🔑 На email отправлен пароль для входа в веб-ЛК:\n${config.appUrl}/login\n\n⚠️ Проверьте папку *«Спам»*.`,
-              { parse_mode: 'Markdown' },
-            ).catch(() => {})
+              `\n\n🔑 На email отправлен пароль для входа в веб-ЛК:\n{appUrl}/login\n\n⚠️ Проверьте папку *«Спам»*.`
+            const msg = getCustomMsg(block, 'verifyOkMerge', defaultText,
+              { email: pendingEmail, appUrl: config.appUrl })
+            await bot.api.sendMessage(tgId, msg, { parse_mode: 'Markdown' }).catch(() => {})
           }
 
           // Chain must halt — userId is now invalid (record deleted)
@@ -1279,6 +1312,14 @@ async function handleInput(block: any, ctx: Context | null, userId: string, chat
     }
   }
 
+  // Snapshot editable validation-error texts so the text handler in index.ts
+  // can show admin-customised messages without re-reading the block.
+  const cm = (block?.customMessages && typeof block.customMessages === 'object')
+    ? block.customMessages as Record<string, unknown>
+    : {}
+  const pickStr = (k: string): string | undefined =>
+    typeof cm[k] === 'string' && (cm[k] as string).trim() ? (cm[k] as string) : undefined
+
   // Set user state to waiting for input — key by chatId (telegramId) to match text handler
   await setUserState(chatId, {
     waitingInput: true,
@@ -1286,6 +1327,11 @@ async function handleInput(block: any, ctx: Context | null, userId: string, chat
     inputVar: block.inputVar || 'input',
     inputValidation: block.inputValidation || 'text',
     nextBlockId: block.nextBlockId ?? null,
+    inputErrors: {
+      email:  pickStr('inputErrorEmail'),
+      phone:  pickStr('inputErrorPhone'),
+      number: pickStr('inputErrorNumber'),
+    },
   })
 }
 

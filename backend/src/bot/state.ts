@@ -12,6 +12,14 @@ export interface UserState {
   inputVar?: string
   inputValidation?: string  // email | phone | number | text
   nextBlockId?: string | null
+  // Editable validation error messages snapshotted from BotBlock.customMessages
+  // at the time the INPUT block was executed. Fallback to built-in defaults
+  // when absent — so legacy blocks keep working.
+  inputErrors?: {
+    email?: string
+    phone?: string
+    number?: string
+  }
 }
 
 // ── Redis key helpers ────────────────────────────────────────

@@ -83,6 +83,7 @@ interface BotBlock {
   paymentAmount?: number | null
   paymentPayload?: string | null
   metaJson?: any
+  customMessages?: Record<string, string> | null
   buttons?: BotButton[]
   triggers?: BotTrigger[]
 }
@@ -196,14 +197,119 @@ const CONDITION_TYPES: { value: string; label: string }[] = [
   { value: 'language_is', label: 'Язык равен' },
 ]
 
-const ACTION_TYPES: { value: string; label: string }[] = [
-  { value: 'bonus_days', label: 'Начислить бонус дней' },
-  { value: 'balance', label: 'Изменить баланс' },
-  { value: 'trial', label: 'Выдать триал' },
-  { value: 'add_tag', label: 'Добавить тег' },
-  { value: 'remove_tag', label: 'Удалить тег' },
-  { value: 'set_var', label: 'Установить переменную' },
+const ACTION_TYPES: { value: string; label: string; hint?: string }[] = [
+  { value: 'bonus_days',       label: 'Начислить бонус дней',        hint: 'Значение: число дней (например 7)' },
+  { value: 'balance',          label: 'Изменить баланс',             hint: 'Значение: сумма (например 100 или -50)' },
+  { value: 'trial',            label: 'Выдать триал' },
+  { value: 'add_tag',          label: 'Добавить тег',                hint: 'Значение: название тега' },
+  { value: 'remove_tag',       label: 'Удалить тег',                 hint: 'Значение: название тега' },
+  { value: 'set_var',          label: 'Установить переменную',       hint: 'Значение: key=value' },
+  { value: 'send_email_code',  label: '📧 Отправить код на email',    hint: 'Значение: email или {pending_email}. Все тексты редактируются ниже.' },
+  { value: 'verify_email_code',label: '🔐 Проверить код из email',    hint: 'Значение: код или {email_code}. Все тексты редактируются ниже.' },
+  { value: 'reset_password',   label: '🔑 Сбросить пароль (email)',   hint: 'Сгенерирует новый пароль и отправит его на email пользователя.' },
 ]
+
+// ── Редактируемые системные сообщения для ACTION/INPUT блоков ───
+// Используются компонентом CustomMessagesEditor — каждая запись это textarea
+// с заголовком, подсказкой и текстом по умолчанию (фолбэк, если админ оставит пусто).
+interface CustomMessageField {
+  key: string
+  label: string
+  hint?: string
+  placeholder: string
+  rows?: number
+}
+
+const SEND_EMAIL_CODE_FIELDS: CustomMessageField[] = [
+  {
+    key: 'sendCodeSuccess',
+    label: '✅ Сообщение об отправке (опционально)',
+    hint: 'Если оставить пустым — бот промолчит после отправки кода. Рекомендуется написать что-то вроде «Код отправлен, проверьте входящие и Спам».',
+    placeholder: '📧 Код отправлен на {email}!\n\nПроверьте входящие и папку «Спам» — письмо приходит в течение минуты.',
+    rows: 3,
+  },
+  {
+    key: 'sendCodeErrInvalidEmail',
+    label: '❌ Ошибка: не удалось прочитать email',
+    hint: 'Показывается если в переменной {pending_email} нет валидного email-адреса.',
+    placeholder: '❌ Не удалось прочитать email. Попробуйте снова через /email',
+  },
+  {
+    key: 'sendCodeErrTakenByOther',
+    label: '❌ Ошибка: email уже привязан к другому Telegram',
+    hint: 'Доступны переменные: {email}, {appUrl}',
+    placeholder:
+      '❌ *Email `{email}` привязан к другому Telegram-аккаунту.*\n\n' +
+      'Если это ваш старый email и доступ утерян — напишите в поддержку:\n' +
+      '{appUrl}/recover\n\nИли введите другой email — /email',
+    rows: 4,
+  },
+  {
+    key: 'sendCodeErrSendFailed',
+    label: '❌ Ошибка: не удалось отправить код',
+    hint: 'Доступны переменные: {email}, {error}, {appUrl}',
+    placeholder: '❌ Не удалось отправить код на `{email}`\n\nОшибка: {error}\n\nПопробуйте позже или другой email (/email)',
+    rows: 3,
+  },
+]
+
+const VERIFY_EMAIL_CODE_FIELDS: CustomMessageField[] = [
+  {
+    key: 'verifyErrNoSession',
+    label: '❌ Ошибка: нет кода или email в сессии',
+    hint: 'Показывается если пользователь перезапустил бота и потерял промежуточные данные.',
+    placeholder: '❌ Нет кода или email в сессии. Начните заново через /email',
+  },
+  {
+    key: 'verifyErrWrongCode',
+    label: '❌ Ошибка: неверный или просроченный код',
+    placeholder: '❌ *Неверный или просроченный код.*\n\nПроверьте email (и папку «Спам»). Для повтора — /email',
+    rows: 3,
+  },
+  {
+    key: 'verifyErrTakenByOther',
+    label: '❌ Ошибка: email уже привязан к другому Telegram',
+    hint: 'Доступны переменные: {email}, {appUrl}',
+    placeholder: '❌ Email привязан к другому Telegram. Для восстановления: {appUrl}/recover',
+  },
+  {
+    key: 'verifyErrMergeFailed',
+    label: '⚠️ Ошибка: не удалось объединить аккаунты',
+    hint: 'Доступны переменные: {email}, {error}',
+    placeholder: '⚠️ Не удалось объединить аккаунты: {error}\n\nНапишите в поддержку.',
+    rows: 3,
+  },
+  {
+    key: 'verifyOkMerge',
+    label: '✅ Успех: аккаунты объединены',
+    hint: 'Показывается когда email был привязан к web-аккаунту без Telegram. Доступны: {email}, {appUrl}',
+    placeholder:
+      '✅ *Аккаунты объединены!*\n\n' +
+      '📧 Email `{email}` привязан к вашему Telegram.\n' +
+      '🔑 На email отправлен пароль для входа в веб-ЛК:\n{appUrl}/login\n\n' +
+      '⚠️ Проверьте папку *«Спам»*.',
+    rows: 6,
+  },
+]
+
+const INPUT_ERROR_FIELDS: Record<string, CustomMessageField> = {
+  email: {
+    key: 'inputErrorEmail',
+    label: '❌ Ошибка валидации email',
+    hint: 'Показывается если пользователь вместо email прислал что-то другое.',
+    placeholder: '❌ Введите корректный email.',
+  },
+  phone: {
+    key: 'inputErrorPhone',
+    label: '❌ Ошибка валидации телефона',
+    placeholder: '❌ Введите корректный номер телефона.',
+  },
+  number: {
+    key: 'inputErrorNumber',
+    label: '❌ Ошибка валидации числа',
+    placeholder: '❌ Введите число.',
+  },
+}
 
 const BUTTON_TYPE_LABELS: Record<string, string> = {
   block: 'Переход к блоку',
@@ -437,6 +543,18 @@ export default function BotConstructorPage() {
   /* ── Edit helpers (local state, API only on Save) ───────── */
   const updateField = (field: string, value: any) => {
     setEditForm(prev => ({ ...prev, [field]: value }))
+    setEditDirty(true)
+  }
+
+  // Merge one key into editForm.customMessages. Empty strings drop the key so
+  // the fallback default from backend kicks in.
+  const updateCustomMessage = (key: string, value: string) => {
+    setEditForm(prev => {
+      const cm: Record<string, string> = { ...(prev.customMessages || {}) }
+      if (value.trim()) cm[key] = value
+      else delete cm[key]
+      return { ...prev, customMessages: Object.keys(cm).length > 0 ? cm : null }
+    })
     setEditDirty(true)
   }
 
@@ -2601,6 +2719,12 @@ export default function BotConstructorPage() {
                       <option value="">-- выберите --</option>
                       {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
+                    {(() => {
+                      const hint = ACTION_TYPES.find(t => t.value === editForm.actionType)?.hint
+                      return hint ? (
+                        <div className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{hint}</div>
+                      ) : null
+                    })()}
                   </div>
                   <div>
                     <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Значение</label>
@@ -2609,6 +2733,63 @@ export default function BotConstructorPage() {
                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
                            placeholder="Значение действия" />
                   </div>
+
+                  {/* ── Редактор сообщений для send_email_code ── */}
+                  {editForm.actionType === 'send_email_code' && (
+                    <div className="space-y-2 p-3 rounded-lg" style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)' }}>
+                      <div className="text-[11px] font-semibold" style={{ color: '#a78bfa' }}>
+                        📧 Тексты действия «Отправить код»
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        Оставьте пустым — будет использован текст по умолчанию. Поддерживаются переменные вида {'{email}'}, {'{appUrl}'}.
+                      </div>
+                      {SEND_EMAIL_CODE_FIELDS.map(f => (
+                        <div key={f.key}>
+                          <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>{f.label}</label>
+                          {f.hint && (
+                            <div className="text-[10px] mb-1" style={{ color: 'var(--text-tertiary)', opacity: 0.7 }}>{f.hint}</div>
+                          )}
+                          <textarea
+                            value={editForm.customMessages?.[f.key] ?? ''}
+                            onChange={e => updateCustomMessage(f.key, e.target.value)}
+                            rows={f.rows || 2}
+                            className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                            placeholder={f.placeholder}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── Редактор сообщений для verify_email_code ── */}
+                  {editForm.actionType === 'verify_email_code' && (
+                    <div className="space-y-2 p-3 rounded-lg" style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)' }}>
+                      <div className="text-[11px] font-semibold" style={{ color: '#60a5fa' }}>
+                        🔐 Тексты действия «Проверить код»
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        Оставьте пустым — будет использован текст по умолчанию. Поддерживаются {'{email}'}, {'{code}'}, {'{error}'}, {'{appUrl}'}.
+                      </div>
+                      {VERIFY_EMAIL_CODE_FIELDS.map(f => (
+                        <div key={f.key}>
+                          <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>{f.label}</label>
+                          {f.hint && (
+                            <div className="text-[10px] mb-1" style={{ color: 'var(--text-tertiary)', opacity: 0.7 }}>{f.hint}</div>
+                          )}
+                          <textarea
+                            value={editForm.customMessages?.[f.key] ?? ''}
+                            onChange={e => updateCustomMessage(f.key, e.target.value)}
+                            rows={f.rows || 2}
+                            className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                            placeholder={f.placeholder}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
                 </>
               )}
@@ -2641,6 +2822,33 @@ export default function BotConstructorPage() {
                       </select>
                     </div>
                   </div>
+
+                  {/* ── Редактор сообщения-ошибки валидации ── */}
+                  {editForm.validation && INPUT_ERROR_FIELDS[editForm.validation] && (() => {
+                    const f = INPUT_ERROR_FIELDS[editForm.validation]
+                    return (
+                      <div className="space-y-2 p-3 rounded-lg" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                        <div className="text-[11px] font-semibold" style={{ color: '#34d399' }}>
+                          {f.label}
+                        </div>
+                        {f.hint && (
+                          <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{f.hint}</div>
+                        )}
+                        <textarea
+                          value={editForm.customMessages?.[f.key] ?? ''}
+                          onChange={e => updateCustomMessage(f.key, e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-lg text-[12px] font-mono"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                          placeholder={f.placeholder}
+                        />
+                        <div className="text-[10px]" style={{ color: 'var(--text-tertiary)', opacity: 0.7 }}>
+                          Оставьте пустым — будет использован текст по умолчанию.
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
                 </>
               )}

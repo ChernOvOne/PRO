@@ -393,15 +393,15 @@ bot.on('message:text', async (ctx) => {
     const validation = engineState.inputValidation
 
     if (validation === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
-      await ctx.reply('❌ Введите корректный email.')
+      await ctx.reply(engineState.inputErrors?.email || '❌ Введите корректный email.')
       return
     }
     if (validation === 'phone' && !/^\+?\d{7,15}$/.test(text.replace(/[\s()-]/g, ''))) {
-      await ctx.reply('❌ Введите корректный номер телефона.')
+      await ctx.reply(engineState.inputErrors?.phone || '❌ Введите корректный номер телефона.')
       return
     }
     if (validation === 'number' && isNaN(Number(text))) {
-      await ctx.reply('❌ Введите число.')
+      await ctx.reply(engineState.inputErrors?.number || '❌ Введите число.')
       return
     }
 

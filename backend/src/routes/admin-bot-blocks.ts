@@ -8,6 +8,7 @@ const BotBlockTypeEnum = z.enum([
   'MESSAGE', 'CONDITION', 'ACTION', 'INPUT', 'DELAY', 'SPLIT',
   'REDIRECT', 'PAYMENT', 'MEDIA_GROUP', 'EFFECT', 'REACTION',
   'STREAMING', 'GIFT', 'HTTP', 'EMAIL', 'NOTIFY_ADMIN', 'ASSIGN', 'FUNNEL',
+  'TARIFF_LIST', 'PAYMENT_SUCCESS', 'PAYMENT_FAIL', 'PROMO_ACTIVATE',
 ])
 
 export async function adminBotBlockRoutes(app: FastifyInstance) {
@@ -214,6 +215,7 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
         scheduleEnd:      z.string().nullish(),
         scheduleDays:     z.any().optional(),
         scheduleBlockId:  z.string().nullish(),
+        customMessages:   z.record(z.string(), z.string()).nullish(),
         posX:             z.number().default(0),
         posY:             z.number().default(0),
         isDraft:          z.boolean().default(true),
@@ -278,6 +280,7 @@ export async function adminBotBlockRoutes(app: FastifyInstance) {
         scheduleEnd:      z.string().nullish(),
         scheduleDays:     z.any().optional(),
         scheduleBlockId:  z.string().nullish(),
+        customMessages:   z.record(z.string(), z.string()).nullish(),
         posX:             z.number().optional(),
         posY:             z.number().optional(),
         isDraft:          z.boolean().optional(),
