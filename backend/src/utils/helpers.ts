@@ -85,12 +85,17 @@ export function safeJson<T>(str: string): T | null {
 }
 
 /**
- * Generate a random referral-friendly code (6 chars, no ambiguous chars)
+ * Generate a random referral-friendly code (6 chars, no ambiguous chars).
+ * Uses CSPRNG — referral codes back balance/days credits, predictable
+ * codes would let an attacker enumerate and steal pending bonuses.
  */
 export function generateCode(length = 6): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  // require here to keep this util usable in environments without crypto
+  // shimming (it's always available in Node).
+  const { randomInt } = require('crypto') as typeof import('crypto')
   return Array.from(
     { length },
-    () => chars[Math.floor(Math.random() * chars.length)],
+    () => chars[randomInt(0, chars.length)],
   ).join('')
 }

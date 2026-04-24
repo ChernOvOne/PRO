@@ -14,10 +14,13 @@ echo "[restore] unpacking..."
 tar -xzf "$BACKUP_TAR" -C "$WORK_DIR"
 
 META_SHA=$(cat "$WORK_DIR/meta.json" 2>/dev/null | grep -oE '"git_sha":"[^"]*"' | cut -d'"' -f4 || echo "")
+# Strip anything that isn't a-f0-9 — defends against malicious meta.json
+# in an uploaded backup tarball trying to inject shell metacharacters.
+META_SHA=$(echo "$META_SHA" | tr -cd 'a-f0-9' | head -c 40)
 echo "[restore] target git_sha: ${META_SHA:-unknown}"
 
-# 1. Git reset to backup's SHA (if known)
-if [ -n "$META_SHA" ] && [ "$META_SHA" != "unknown" ]; then
+# 1. Git reset to backup's SHA (if known and looks like a real sha)
+if [ -n "$META_SHA" ] && [ ${#META_SHA} -ge 7 ]; then
   cd "$REPO_DIR"
   echo "[restore] git fetch..."
   git fetch origin --tags --quiet

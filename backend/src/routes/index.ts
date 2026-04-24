@@ -54,21 +54,16 @@ import { userSquadAddonRoutes }   from './user-squad-addons'
 
 export async function registerRoutes(app: FastifyInstance) {
   const healthHandler = async () => {
-    // Also report maintenance flag so frontend can show banner
+    // Frontend needs maintenance flag for the user-visible banner.
+    // Version/uptime/timestamp removed — they signaled deploy windows
+    // and stack identity to anyone polling /health.
     const { prisma } = await import('../db')
     const rows = await prisma.setting.findMany({
       where: { key: { in: ['maintenance_mode', 'maintenance_message'] } },
     }).catch(() => [])
     const maintenance = rows.find(r => r.key === 'maintenance_mode')?.value === '1'
     const maintenanceMessage = rows.find(r => r.key === 'maintenance_message')?.value || null
-    return {
-      status:    'ok',
-      version:   process.env.npm_package_version ?? '1.0.0',
-      timestamp: new Date().toISOString(),
-      uptime:    Math.floor(process.uptime()),
-      maintenance,
-      maintenanceMessage,
-    }
+    return { status: 'ok', maintenance, maintenanceMessage }
   }
   app.get('/health', healthHandler)
   app.get('/api/health', healthHandler)

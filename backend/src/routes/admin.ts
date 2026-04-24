@@ -1190,9 +1190,10 @@ export async function adminRoutes(app: FastifyInstance) {
       // Existing user → promote to admin
       await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })
     } else {
-      // Create new user with temp password
+      // Create new user with temp password — CSPRNG, not Math.random
       const bcrypt = await import('bcryptjs')
-      const tempPw = Math.random().toString(36).slice(2, 10)
+      const { randomBytes } = await import('crypto')
+      const tempPw = randomBytes(16).toString('base64url')
       const hash = await bcrypt.hash(tempPw, 12)
       user = await prisma.user.create({
         data: { email, passwordHash: hash, role: 'ADMIN', emailVerified: true },

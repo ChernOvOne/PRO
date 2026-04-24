@@ -20,7 +20,18 @@
 
 const fs       = require('fs')
 const path     = require('path')
-const { execSync, spawn } = require('child_process')
+const { execSync, execFileSync, spawn } = require('child_process')
+
+// Tags reach this process via the admin API. The API already validates the
+// regex, but we re-check here so that any future code path (CLI, redis, cron)
+// that bypasses the API still can't smuggle shell metacharacters.
+const SAFE_TAG_RE = /^v?[A-Za-z0-9._-]+$/
+function assertSafeTag(tag) {
+  if (typeof tag !== 'string' || !SAFE_TAG_RE.test(tag) || tag.length > 64) {
+    throw new Error(`unsafe tag: ${JSON.stringify(tag)}`)
+  }
+  return tag
+}
 const Redis    = require('ioredis')
 const { Client: PgClient } = require('pg')
 
@@ -281,8 +292,11 @@ async function createFullBackup({ reason, eventId, createdBy }) {
   ensureDir(BACKUPS_DIR)
 
   await emit(eventId, 'backup', `Создаю бэкап: ${filename}`)
-  sh(`/app/backup.sh "${fullPath}" "${sha}" "${tag || ''}"`, {
-    env: { ...process.env, POSTGRES_PASSWORD, GIT_SHA: sha, GIT_TAG: tag || '' },
+  // execFileSync — no shell, no metacharacter expansion. tag/sha go as argv.
+  const safeTag = tag ? assertSafeTag(tag) : ''
+  execFileSync('/app/backup.sh', [fullPath, sha, safeTag], {
+    env: { ...process.env, POSTGRES_PASSWORD, GIT_SHA: sha, GIT_TAG: safeTag },
+    stdio: 'pipe',
   })
 
   const stats = fs.statSync(fullPath)
@@ -383,7 +397,8 @@ async function runInstall(job) {
     // 2. Fetch & checkout target tag
     await emit(eventId, 'fetch', `Загружаю ${tag}…`)
     gitFetch()
-    sh(`git -C ${REPO_DIR} reset --hard "${tag}"`)
+    assertSafeTag(tag)
+    execFileSync('git', ['-C', REPO_DIR, 'reset', '--hard', tag], { stdio: 'pipe' })
     const newSha = gitCurrentSha()
     await updateEventRow(eventId, { to_sha: newSha, to_tag: tag, phase: 'build' })
 

@@ -7,7 +7,11 @@ import { config }          from './config'
 
 const app = Fastify({
   logger:       false,
-  trustProxy:   true,
+  // Trust ONE proxy hop (our nginx). With `trustProxy: true`, Fastify takes
+  // the leftmost X-Forwarded-For value, which is attacker-controlled — they
+  // can prepend any IP and nginx just appends real client. With hop=1,
+  // Fastify counts back one entry from the right (nginx) → real client IP.
+  trustProxy:   1,
   bodyLimit:    10 * 1024 * 1024, // 10 MB
 })
 

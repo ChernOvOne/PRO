@@ -46,17 +46,18 @@ http {
   ssl_session_timeout       1d;
   ssl_session_tickets       off;
 
-  # Docker DNS резолвер.
-  # ВАЖНО: upstream со статическим server резолвится один раз при старте.
-  # Чтобы nginx переразрешал DNS после rebuild контейнеров — используем
-  # переменные вместо upstream-блоков (proxy_pass http://$backend_host).
   resolver 127.0.0.11 valid=10s ipv6=off;
   resolver_timeout 5s;
 
-  # Переменные для upstream — nginx резолвит их динамически через Docker DNS.
-  # Это единственный надёжный способ избежать кеширования старых IP после rebuild.
   map $host $backend_host  { default "backend:4000";  }
   map $host $frontend_host { default "frontend:3000"; }
+
+  # ── Common security headers (applied via `include` in every server) ──
+  # CSP intentionally permissive for inline Next.js bootstrapping +
+  # Telegram widget. Tighten once a nonce-based pipeline is in place.
+  map $sent_http_content_type $csp_header {
+    default  "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org https://*.telegram.org https://api-maps.yandex.ru https://api.maptiler.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-src 'self' https://oauth.telegram.org https://*.yookassa.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+  }
 
   # HTTP -> HTTPS redirect + certbot challenge
   server {
@@ -78,6 +79,10 @@ http {
     add_header X-Frame-Options           "SAMEORIGIN"                          always;
     add_header X-Content-Type-Options    "nosniff"                             always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
+    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=(), payment=(self)" always;
+    add_header Content-Security-Policy   $csp_header                           always;
+    proxy_hide_header X-Powered-By;
 
     limit_conn perip 20;
 
@@ -87,6 +92,7 @@ http {
       proxy_http_version 1.1;
       proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
     location /api/webhooks/ {
@@ -95,6 +101,7 @@ http {
       proxy_http_version 1.1;
       proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_read_timeout 60s;
     }
 
@@ -104,6 +111,7 @@ http {
       proxy_http_version 1.1;
       proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_connect_timeout 10s; proxy_read_timeout 30s;
     }
 
@@ -111,12 +119,14 @@ http {
       proxy_pass http://$backend_host;
       proxy_http_version 1.1; proxy_set_header Connection "";
       proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       expires 30d; add_header Cache-Control "public"; access_log off;
     }
 
     location /_next/static/ {
       proxy_pass http://$frontend_host;
       proxy_http_version 1.1; proxy_set_header Connection ""; proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       expires 1y; add_header Cache-Control "public, immutable"; access_log off;
     }
 
@@ -139,30 +149,48 @@ http {
     ssl_certificate     /etc/letsencrypt/live/CERT_DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/CERT_DOMAIN/privkey.pem;
 
-    add_header X-Frame-Options "DENY" always;
+    add_header X-Frame-Options           "DENY"                                always;
+    add_header X-Content-Type-Options    "nosniff"                             always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
+    add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy   $csp_header                           always;
+    proxy_hide_header X-Powered-By;
 
     limit_conn perip 10;
 
     location = / { return 302 /admin; }
+
+    # Auth endpoints get the strict zone here too — admin login is a
+    # high-value target and must be brute-force protected on every vhost.
+    location /api/auth/ {
+      limit_req zone=auth burst=5 nodelay;
+      proxy_pass http://$backend_host;
+      proxy_http_version 1.1; proxy_set_header Connection ""; proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 
     location /api/ {
       limit_req zone=api burst=20 nodelay;
       proxy_pass http://$backend_host;
       proxy_http_version 1.1; proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
     location /uploads/ {
       proxy_pass http://$backend_host;
       proxy_http_version 1.1; proxy_set_header Connection "";
       proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       expires 30d; add_header Cache-Control "public"; access_log off;
     }
 
     location /_next/static/ {
       proxy_pass http://$frontend_host;
       proxy_http_version 1.1; proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       expires 1y; add_header Cache-Control "public, immutable"; access_log off;
     }
 
@@ -170,6 +198,7 @@ http {
       proxy_pass http://$frontend_host;
       proxy_http_version 1.1; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
   }
 
@@ -182,10 +211,21 @@ http {
     ssl_certificate     /etc/letsencrypt/live/CERT_DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/CERT_DOMAIN/privkey.pem;
 
-    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Content-Type-Options    "nosniff"                             always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
+    proxy_hide_header X-Powered-By;
 
     limit_conn perip 15;
+
+    location /api/auth/ {
+      limit_req zone=auth burst=5 nodelay;
+      proxy_pass http://$backend_host;
+      proxy_http_version 1.1;
+      proxy_set_header Connection ""; proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 
     location /api/webhooks/ {
       limit_req zone=webhook burst=100 nodelay;
@@ -193,6 +233,7 @@ http {
       proxy_http_version 1.1;
       proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
     location / {
@@ -201,6 +242,7 @@ http {
       proxy_http_version 1.1;
       proxy_set_header Connection ""; proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
   }
 }

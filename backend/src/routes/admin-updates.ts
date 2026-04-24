@@ -104,9 +104,17 @@ export async function adminUpdatesRoutes(app: FastifyInstance) {
   /**
    * POST /install — queue an update job
    * Body: { tag: 'v5.7.0' }
+   *
+   * Tag is forwarded to git/shell inside the updater container (which mounts
+   * docker.sock). We strictly whitelist allowed characters here so a malicious
+   * admin token can't leverage shell expansion to break out of the container.
    */
   app.post('/install', admin, async (req, reply) => {
-    const body = z.object({ tag: z.string().min(1) }).parse(req.body)
+    const body = z.object({
+      tag: z.string().min(1).max(64).regex(/^v?[A-Za-z0-9._-]+$/, {
+        message: 'tag must be alphanumeric/dot/dash/underscore only',
+      }),
+    }).parse(req.body)
     const userId = (req as any).user?.sub
 
     // Create event row in 'pending' state

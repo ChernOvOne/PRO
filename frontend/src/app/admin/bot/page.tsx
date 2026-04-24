@@ -88,6 +88,24 @@ const isUserAction = (text: string) =>
 const cleanActionLabel = (text: string) =>
   text.replace(/^Действие:\s*/, '')
 
+// Whitelist URL schemes — bot users can send arbitrary text including
+// `[click](javascript:...)`, which would execute in the admin's session
+// (account takeover). Only http/https/mailto/tg are rendered as links;
+// everything else is shown as plain text.
+function isSafeLinkUrl(url: string): boolean {
+  const trimmed = url.trim().toLowerCase()
+  return (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('mailto:') ||
+    trimmed.startsWith('tg://') ||
+    trimmed.startsWith('/')        // relative same-origin links
+  )
+}
+function escapeHtmlAttr(s: string): string {
+  return s.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 function parseMarkdown(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -98,7 +116,10 @@ function parseMarkdown(text: string): string {
     .replace(/__(.+?)__/g, '<i>$1</i>')
     .replace(/_(.+?)_/g, '<i>$1</i>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--accent-1); text-decoration: underline;">$1</a>')
+    .replace(/\[(.+?)\]\((.+?)\)/g, (_m, label: string, url: string) => {
+      if (!isSafeLinkUrl(url)) return label
+      return `<a href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-1); text-decoration: underline;">${label}</a>`
+    })
 }
 
 /* ---------- component ---------- */

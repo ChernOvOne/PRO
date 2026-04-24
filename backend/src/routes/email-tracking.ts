@@ -1,5 +1,35 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../db'
+import { logger } from '../utils/logger'
+
+/**
+ * Allow redirects ONLY to hostnames that are part of our own deployment
+ * (config.appUrl + admin/api subdomains derived from it).
+ *
+ * Open-redirect on /click was used in audit to demonstrate phishing on
+ * the trusted admin domain — we now whitelist the destination.
+ */
+function isAllowedRedirect(target: string): boolean {
+  try {
+    const u = new URL(target)
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
+    const host = u.hostname.toLowerCase()
+    const appUrl = process.env.APP_URL || ''
+    let appHost = ''
+    try { appHost = new URL(appUrl).hostname.toLowerCase() } catch {}
+    if (!appHost) return false
+
+    // Strip leading "lk." / "admin." / "api." to get root
+    const root = appHost.replace(/^(lk|admin|api)\./, '')
+
+    // Allow exact matches OR same root domain (lk., admin., api., subdomains)
+    if (host === appHost || host === root) return true
+    if (host.endsWith('.' + root)) return true
+    return false
+  } catch {
+    return false
+  }
+}
 
 // Transparent 1x1 pixel (GIF)
 const PIXEL = Buffer.from([
@@ -33,9 +63,10 @@ export async function emailTrackingRoutes(app: FastifyInstance) {
         data: { emailClickedAt: new Date(), emailStatus: 'clicked' },
       }).catch(() => {})
     }
-    if (url && /^https?:\/\//.test(url)) {
+    if (url && isAllowedRedirect(url)) {
       return reply.redirect(url, 302)
     }
+    if (url) logger.warn(`/click rejected redirect to ${url}`)
     return reply.redirect('/', 302)
   })
 }

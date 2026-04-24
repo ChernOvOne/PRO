@@ -150,23 +150,64 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
     return { ok }
   })
 
-  // GET / — all settings as { [key]: value }
+  // Keys whose value is a secret. Bulk getter returns the literal string
+  // "***" for these (preserving the "is set" signal — empty string still
+  // means "not configured" in the UI). Use POST /reveal-secret to get the
+  // real value, which is audited and rate-limited separately.
+  const SECRET_KEYS = new Set([
+    'yukassa_secret', 'yukassa_secret_key', 'yukassa_shop_secret',
+    'crypto_token', 'cryptopay_token',
+    'platega_secret', 'platega_x_secret',
+    'remnawave_token', 'remnawave_webhook_secret',
+    'smtp_password', 'smtp_pass',
+    'telegram_bot_token', 'tg_bot_token', 'tg_backup_token', 'backup_tg_token',
+    'ai_token', 'openai_api_key', 'anthropic_api_key',
+    'jwt_secret',
+    'webhook_secret', 'admin_api_key',
+  ])
+  const isSecretKey = (k: string) => {
+    const lk = k.toLowerCase()
+    if (SECRET_KEYS.has(lk)) return true
+    return /(_secret|_token|_key|_password|_pass)$/.test(lk)
+  }
+
+  // GET / — all settings as { [key]: value }; secrets masked.
   app.get('/', admin, async () => {
     const settings = await prisma.setting.findMany()
-    return Object.fromEntries(settings.map(s => [s.key, s.value]))
+    return Object.fromEntries(settings.map(s => [
+      s.key,
+      isSecretKey(s.key) && s.value ? '***' : s.value,
+    ]))
   })
 
-  // PUT / — bulk upsert
+  // POST /reveal-secret { key } — admin-only, returns plaintext for one key.
+  // Logs the access; intended for the form re-edit flow. Adding rate limit
+  // here is overkill since adminOnly already gates it; the audit log is the
+  // important part.
+  app.post('/reveal-secret', admin, async (req) => {
+    const { key } = (req.body || {}) as { key?: string }
+    if (!key) throw new Error('key required')
+    const row = await prisma.setting.findUnique({ where: { key } })
+    if (!row) return { value: '' }
+    logger.info(`Admin revealed secret: ${key} by user ${(req as any).user?.sub}`)
+    return { value: row.value }
+  })
+
+  // PUT / — bulk upsert. Secret keys whose value is the mask "***" are
+  // ignored — that's the user re-submitting the form without retyping the
+  // secret, NOT them setting the secret to "***".
   app.put('/', admin, async (req) => {
     const { settings } = req.body as { settings: { key: string; value: string }[] }
     let settingsArray: { key: string; value: string }[] = []
 
+    const filterMask = (arr: { key: string; value: string }[]) =>
+      arr.filter(({ key, value }) => !(isSecretKey(key) && value === '***'))
+
     if (!Array.isArray(settings)) {
-      // Support legacy format { key: value } too
       const legacy = req.body as Record<string, any>
       const entries = Object.entries(legacy).filter(([k]) => k !== 'settings')
       if (entries.length) {
-        settingsArray = entries.map(([key, value]) => ({ key, value: String(value) }))
+        settingsArray = filterMask(entries.map(([key, value]) => ({ key, value: String(value) })))
         await Promise.all(
           settingsArray.map(({ key, value }) =>
             prisma.setting.upsert({
@@ -178,7 +219,7 @@ export async function adminSettingsRoutes(app: FastifyInstance) {
         )
       }
     } else {
-      settingsArray = settings.map(({ key, value }) => ({ key, value: String(value) }))
+      settingsArray = filterMask(settings.map(({ key, value }) => ({ key, value: String(value) })))
       await Promise.all(
         settingsArray.map(({ key, value }) =>
           prisma.setting.upsert({

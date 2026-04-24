@@ -5,10 +5,22 @@ import { prisma }         from '../db'
 
 export async function webhookRoutes(app: FastifyInstance) {
   // ── ЮKassa webhook ─────────────────────────────────────────
+  // Two-layer defense since YuKassa webhooks aren't HMAC-signed:
+  //   1. Source IP must match published YuKassa CIDRs (req.ip is sanitized
+  //      by Fastify trustProxy + nginx X-Forwarded-For).
+  //   2. We re-fetch the payment from YuKassa API by id and trust ONLY the
+  //      API response — body is just a notification trigger.
+  //   3. Amount in API response must equal the amount we charged.
   app.post('/yukassa', {
-    config: { rawBody: true }, // needed for signature check
+    config: { rawBody: true },
   }, async (req, reply) => {
     try {
+      const sourceIp = req.ip
+      if (!paymentService.yukassa.verifyWebhookIp(sourceIp)) {
+        logger.warn(`ЮKassa webhook rejected — IP not allowlisted: ${sourceIp}`)
+        return reply.status(403).send({ error: 'forbidden' })
+      }
+
       const body = req.body as any
       const event = body.event as string
       const obj = body.object || {}
@@ -19,8 +31,15 @@ export async function webhookRoutes(app: FastifyInstance) {
         const metadata = obj.metadata || {}
         const orderId  = metadata.orderId
 
-        if (!orderId) {
-          logger.warn('ЮKassa webhook: no orderId in metadata', obj.id)
+        if (!orderId || !yukassaPaymentId) {
+          logger.warn('ЮKassa webhook: no orderId or paymentId')
+          return reply.status(200).send({ ok: true })
+        }
+
+        // Re-verify with YuKassa API — body alone cannot be trusted
+        const verified = await paymentService.yukassa.getPaymentSafe(yukassaPaymentId)
+        if (!verified || verified.status !== 'succeeded') {
+          logger.warn(`ЮKassa webhook: API re-check says status=${verified?.status} for ${yukassaPaymentId}`)
           return reply.status(200).send({ ok: true })
         }
 
@@ -36,6 +55,13 @@ export async function webhookRoutes(app: FastifyInstance) {
 
         if (!payment) {
           logger.warn(`ЮKassa webhook: payment not found orderId=${orderId}`)
+          return reply.status(200).send({ ok: true })
+        }
+
+        // Amount must match what we created
+        const apiAmount = parseFloat(verified.amount.value)
+        if (Math.abs(apiAmount - Number(payment.amount)) > 0.01) {
+          logger.error(`ЮKassa amount mismatch: api=${apiAmount} db=${payment.amount} for ${payment.id}`)
           return reply.status(200).send({ ok: true })
         }
 

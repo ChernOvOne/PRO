@@ -13,6 +13,42 @@ import { logger } from '../utils/logger'
 import { InlineKeyboard } from 'grammy'
 import { nanoid } from 'nanoid'
 
+/**
+ * Reject URLs that point at private networks, loopback, link-local or
+ * cloud-metadata endpoints. Used by the funnel HTTP-node to prevent
+ * SSRF — even from a (compromised) admin's funnel config.
+ *
+ * Note: this is a hostname-string check. A determined attacker could
+ * still smuggle a public DNS that resolves to an internal IP. For now,
+ * combined with `redirect: 'manual'` and `AbortSignal.timeout(5000)`,
+ * this raises the bar enough.
+ */
+export function isPublicHttpUrl(raw: string): boolean {
+  let u: URL
+  try { u = new URL(raw) } catch { return false }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+  const h = u.hostname.toLowerCase()
+  if (!h) return false
+  if (h === 'localhost' || h.endsWith('.localhost')) return false
+  if (h === '0.0.0.0' || h === '::' || h === '::1') return false
+  if (h.startsWith('127.')) return false
+  if (h.startsWith('10.')) return false
+  if (h.startsWith('192.168.')) return false
+  if (h.startsWith('169.254.')) return false   // link-local + AWS/GCP/Azure metadata
+  if (h.startsWith('100.64.')) return false    // CGNAT
+  // 172.16.0.0/12 (172.16-172.31)
+  const m = h.match(/^172\.(\d{1,3})\./)
+  if (m) {
+    const o = parseInt(m[1], 10)
+    if (o >= 16 && o <= 31) return false
+  }
+  // Internal Docker service names — block them so a compromised admin
+  // can't pivot through funnel HTTP node into postgres/redis/backend.
+  if (['postgres', 'redis', 'backend', 'frontend', 'bot', 'nginx', 'updater'].includes(h)) return false
+  if (h.endsWith('.internal') || h.endsWith('.local')) return false
+  return true
+}
+
 // ── Variable documentation ──────────────────────────────────
 export const VARIABLE_DOCS = [
   // Пользователь
@@ -1024,6 +1060,14 @@ async function processNode(
       try {
         const vars = await buildVars(userId, extraVars)
         const url = subVars(node.httpUrl, vars)
+        // SSRF guard — block private/loopback/cloud-metadata destinations
+        // even if a (compromised) admin configured the funnel to hit them.
+        if (!isPublicHttpUrl(url)) {
+          await prisma.funnelLog.create({
+            data: { funnelId, userId, nodeId: node.id, stepOrder: 0, channel: 'http', status: 'failed', error: `blocked-private-url: ${url}` },
+          })
+          return { action: 'continue' }
+        }
         const method = node.httpMethod || 'POST'
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (node.httpHeaders && typeof node.httpHeaders === 'object') {
@@ -1039,6 +1083,7 @@ async function processNode(
               headers,
               body: method !== 'GET' && body ? body : undefined,
               signal: AbortSignal.timeout(5000),
+              redirect: 'manual', // a 302 → http://169.254.169.254/ would bypass the guard
             })
             if (res.ok) {
               await prisma.funnelLog.create({

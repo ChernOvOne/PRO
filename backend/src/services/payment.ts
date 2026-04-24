@@ -349,16 +349,57 @@ class YukassaService {
     return res.data
   }
 
-  verifyWebhookIp(ip: string): boolean {
-    // ЮKassa webhook IPs
-    const allowed = [
-      '185.71.76.0/27', '185.71.77.0/27',
-      '77.75.153.0/25', '77.75.156.11', '77.75.156.35',
-      '77.75.154.128/25', '2a02:5180::/32',
-    ]
-    // Simple string check for known IPs (use proper CIDR library in production)
-    return allowed.some(range => ip.startsWith(range.split('/')[0].slice(0, -1)))
+  /**
+   * Fetch a payment from YuKassa by id, returning null on any error.
+   * Used to re-verify webhook claims — since YuKassa webhooks aren't
+   * HMAC-signed, we treat the body as a notification trigger and trust
+   * only what the authenticated API call returns.
+   */
+  async getPaymentSafe(yukassaPaymentId: string): Promise<{ id: string; status: string; amount: YukassaAmount } | null> {
+    try {
+      const res = await axios.get(`${this.BASE_URL}/payments/${yukassaPaymentId}`, {
+        headers: { Authorization: `Basic ${await this.getAuth()}` },
+        timeout: 10_000,
+      })
+      return res.data
+    } catch (e: any) {
+      logger.warn(`YuKassa getPaymentSafe(${yukassaPaymentId}) failed: ${e?.message}`)
+      return null
+    }
   }
+
+  /**
+   * Strict CIDR check using ipaddr.js-style numeric comparison. YuKassa
+   * publishes a fixed list of webhook source IPs in their docs.
+   */
+  verifyWebhookIp(ip: string): boolean {
+    if (!ip) return false
+    const allowedV4: Array<[string, number]> = [
+      ['185.71.76.0', 27], ['185.71.77.0', 27],
+      ['77.75.153.0', 25], ['77.75.156.11', 32], ['77.75.156.35', 32],
+      ['77.75.154.128', 25],
+    ]
+    const allowedV6Prefixes = ['2a02:5180:']
+    if (ip.includes(':')) {
+      return allowedV6Prefixes.some(p => ip.toLowerCase().startsWith(p))
+    }
+    const ipNum = ipv4ToInt(ip)
+    if (ipNum == null) return false
+    return allowedV4.some(([cidr, bits]) => {
+      const cidrNum = ipv4ToInt(cidr)
+      if (cidrNum == null) return false
+      const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0
+      return (ipNum & mask) === (cidrNum & mask)
+    })
+  }
+}
+
+function ipv4ToInt(ip: string): number | null {
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (!m) return null
+  const parts = m.slice(1, 5).map(Number)
+  if (parts.some(p => p < 0 || p > 255)) return null
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0
 }
 
 // ── CryptoPay ────────────────────────────────────────────────

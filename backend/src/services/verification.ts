@@ -1,3 +1,4 @@
+import { randomInt }    from 'crypto'
 import { prisma }       from '../db'
 import { config }       from '../config'
 import { emailService } from './email'
@@ -27,8 +28,9 @@ class VerificationService {
       throw new Error('Подождите минуту перед повторной отправкой кода')
     }
 
-    // Generate 6-digit code
-    const code = String(Math.floor(100000 + Math.random() * 900000))
+    // CSPRNG — Math.random's state is recoverable from a few outputs,
+    // making 6-digit codes predictable for password reset / email change.
+    const code = String(randomInt(100000, 1000000))
     const ttl  = config.verification.codeTtl
 
     await prisma.emailVerification.create({

@@ -42,11 +42,19 @@ export async function adminSetupV2Routes(app: FastifyInstance) {
 
   // Does *any* admin account exist? Used by wizard to decide
   // whether to show the "Create first admin" step.
+  //
+  // Once an admin exists we stop returning setup details (publicIp /
+  // completed) — leaking those publicly was an info-disclosure: the
+  // public IP defeats CDN/WAF screening and `completed:false` told an
+  // attacker the wizard was still mid-flight.
   app.get('/bootstrap', async () => {
     const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } })
+    if (adminCount > 0) {
+      return { hasAdmin: true }
+    }
     const completed = await prisma.setting.findUnique({ where: { key: 'setup_completed' } })
     return {
-      hasAdmin: adminCount > 0,
+      hasAdmin: false,
       completed: completed?.value === '1',
       publicIp: await getPublicIP(),
     }

@@ -68,7 +68,10 @@ export async function registerPlugins(app: FastifyInstance) {
   // Add all subdomains for the root domain
   const rootDomain = config.domain?.split('.').slice(-2).join('.')
   if (rootDomain && rootDomain !== config.domain) {
-    corsOrigins.push(new RegExp(`https://[\\w-]+\\.${rootDomain.replace('.', '\\.')}$`))
+    // Escape EVERY dot in rootDomain — `.replace('.', ...)` only replaces
+    // the first occurrence, leaving the second `.` as a wildcard match
+    // (regex `.` matches any single char), allowing typo-domain bypass.
+    corsOrigins.push(new RegExp(`^https://[\\w-]+\\.${rootDomain.replace(/\./g, '\\.')}$`))
   }
   if (config.isDev) {
     corsOrigins.push('http://localhost:3000', 'http://localhost:4000')

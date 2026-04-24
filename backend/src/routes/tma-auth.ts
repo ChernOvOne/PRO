@@ -54,7 +54,7 @@ export async function tmaAuthRoute(app: FastifyInstance) {
 
     const data = validateInitData(initData, config.telegram.botToken)
     if (!data) {
-      logger.warn('[TMA Auth] Invalid initData signature or expired. Token prefix: ' + config.telegram.botToken.slice(0, 10))
+      logger.warn('[TMA Auth] Invalid initData signature or expired')
       return reply.status(401).send({ error: 'Invalid initData' })
     }
 

@@ -21,11 +21,14 @@ export async function uploadRoutes(app: FastifyInstance) {
       if (!data) return reply.status(400).send({ error: 'No file uploaded' })
 
       const buf = await data.toBuffer()
-      if (buf.length > MAX_SIZE) return reply.status(400).send({ error: 'File too large (max 5MB)' })
+      if (buf.length > MAX_SIZE) return reply.status(400).send({ error: 'File too large (max 20MB)' })
 
-      // Determine extension
+      // Determine extension. SVG is intentionally NOT allowed — SVG can
+      // contain inline <script> and is served same-origin under /uploads/,
+      // which would let an editor upload a stored-XSS payload that fires
+      // for any visitor opening the file URL.
       const ext = data.filename.split('.').pop()?.toLowerCase() || 'bin'
-      const allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'mp4', 'webm', 'mp3', 'ogg', 'pdf', 'doc', 'docx', 'zip']
+      const allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'ico', 'mp4', 'webm', 'mp3', 'ogg', 'pdf', 'doc', 'docx', 'zip']
       if (!allowed.includes(ext)) return reply.status(400).send({ error: `File type .${ext} not allowed` })
 
       const filename = `${randomUUID()}.${ext}`
