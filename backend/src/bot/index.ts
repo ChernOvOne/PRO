@@ -752,6 +752,12 @@ bot.callbackQuery(/^blk:(.+)$/, async (ctx) => {
       }
     }
 
+    // Clear any pending INPUT state — otherwise if the user taps an inline
+    // button while the bot is waiting for input (e.g. "Отправить код снова" on
+    // the code-entry step), the next text they type would be captured by the
+    // stale INPUT handler for a block they've already navigated away from.
+    await clearEngineState(chatId).catch(() => {})
+
     if (button) {
       // Log incoming callback
       logIncoming(chatId, user?.id ?? null, `Действие: ${button.label}`, `blk:${buttonId}`)

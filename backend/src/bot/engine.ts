@@ -1300,15 +1300,21 @@ async function handleAction(block: any, ctx: Context | null, userId: string, cha
 }
 
 async function handleInput(block: any, ctx: Context | null, userId: string, chatId: string) {
-  // Send the prompt message
+  // Send the prompt message with optional inline keyboard built from block.buttons.
+  // This lets admins show helper actions like "🔄 Отправить код снова" or
+  // "✉️ Другой email" right under the prompt — otherwise the user can only type
+  // or hit a text trigger, which is confusing.
   if (block.inputPrompt) {
     const prompt = await resolveVariables(block.inputPrompt, userId)
+    const keyboard = buildKeyboard(block.buttons || [])
+    const replyMarkup = keyboard.inline_keyboard.length > 0 ? keyboard : undefined
     try {
       await bot.api.sendMessage(chatId, prompt, {
         parse_mode: block.parseMode === 'HTML' ? 'HTML' : 'Markdown',
+        reply_markup: replyMarkup,
       })
     } catch {
-      await bot.api.sendMessage(chatId, prompt)
+      await bot.api.sendMessage(chatId, prompt, { reply_markup: replyMarkup })
     }
   }
 

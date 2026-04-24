@@ -1912,9 +1912,11 @@ export default function BotConstructorPage() {
             {/* Прокручиваемое тело редактора */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
-              {/* ── Поля типа СООБЩЕНИЕ ──────────────────────── */}
-              {(editForm.type === 'MESSAGE' || editForm.type === 'MEDIA_GROUP' || editForm.type === 'STREAMING') && (
+              {/* ── Поля типа СООБЩЕНИЕ / INPUT (разделяют секцию кнопок) ── */}
+              {(editForm.type === 'MESSAGE' || editForm.type === 'MEDIA_GROUP' || editForm.type === 'STREAMING' || editForm.type === 'INPUT') && (
                 <>
+                  {/* MESSAGE-only: редактор текста, медиа, закрепить, эффект */}
+                  {editForm.type !== 'INPUT' && (<>
                   {/* Панель инструментов */}
                   <div className="flex flex-wrap gap-1 mb-1">
                     <button onClick={() => insertAtCursor('**', '**')} className="p-1.5 rounded hover:bg-white/10" title="Жирный" style={{ color: 'var(--text-tertiary)' }}>
@@ -2250,10 +2252,12 @@ export default function BotConstructorPage() {
                     <HintText>Анимация появится при получении сообщения</HintText>
                   </div>
 
-                  {/* Следующий блок */}
+                  </>)}
+
+                  {/* Следующий блок — общий для MESSAGE и INPUT */}
                   <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
 
-                  {/* ── Секция кнопок ────────────────────────────── */}
+                  {/* ── Секция кнопок — общая для MESSAGE и INPUT ── */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-[11px] font-semibold" style={{ color: 'var(--text-tertiary)' }}>Кнопки</label>
@@ -2794,7 +2798,9 @@ export default function BotConstructorPage() {
                 </>
               )}
 
-              {/* ── Поля типа ВВОД ДАННЫХ ───────────────────── */}
+              {/* ── Поля типа ВВОД ДАННЫХ (только INPUT-специфичные) ──
+                  BlockSelector и секция кнопок уже отрисованы в общем
+                  MESSAGE/INPUT-блоке выше. */}
               {editForm.type === 'INPUT' && (
                 <>
                   <div>
@@ -2848,8 +2854,6 @@ export default function BotConstructorPage() {
                       </div>
                     )
                   })()}
-
-                  <BlockSelector value={editForm.nextBlockId} onChange={v => updateField('nextBlockId', v || null)} label="Следующий блок" />
                 </>
               )}
 
